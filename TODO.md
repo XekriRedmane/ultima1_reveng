@@ -9,6 +9,20 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 4 (2026-06-12): all 16 targets byte-perfect (stub bootstrap)
+
+- miu1 bootstrapped: MIU1_ENTRY (JMP OVERLAY_ENTRY at $8956) + three
+  classified stubs (mask tables $7003-$73AE, ~2.6K string region
+  $73AF-$7DCD, engine code $7DCE-$89BC).
+- All remaining targets (7 overlays, makeindata, mapchars, tcmaps,
+  stuph) emitted as single STUB chunks — **every target now verifies
+  100% byte-perfect**; remaining work is measured by the 14 ORG stub
+  chunks. The loop from here: /re-next style stub decomposition,
+  starting with MIU1_CODE (the engine: every overlay JSRs into it),
+  then MIU1_STRINGS structuring, then OUT as the first overlay.
+- PDF 373 pages (stub HEX is transitional bulk; shrinks as stubs are
+  replaced with annotated code).
+
 ### Round 3 (2026-06-12): NIF byte-perfect, rendered
 
 - `nif` 7680/7680 with rendered figure: it is the **endgame victory
@@ -78,15 +92,17 @@ plus this file — never by re-deriving history.
 - [ ] Round 2: `u1intro` (2469 B at $0800) — title/menu. Mostly hi-res
       data up front ($80-heavy), code near $0F23/$0F41 (two JMPs at
       file start). References MAKE.INDATA.
-- [ ] Round 3+: `miu1` resident engine (6589 B at $7000) — the Rosetta
-      stone: entry `JMP $8956`, item/monster/place name tables, status
-      line, player-disk I/O (`/U1.PLAYER`, `/U1.VARS`). RE before the
-      overlays.
-- [ ] Overlays in order of size/value: out, cas, twn, gen, dng, spa, tm.
-- [ ] makeindata (initial game state builder at $1E00).
-- [ ] Data targets remaining: mapchars (tiles — format TBD from the
-      blitter; tile 0 looks like dithered water), stuph (shapes),
-      tcmaps (maps; render once mapchars is decoded).
+- [ ] Decompose MIU1_CODE ($7DCE-$89BC): find the engine's JSR
+      vector table / entry points used by overlays (grep overlay
+      stubs for JSR $7xxx/$8xxx operands first — that maps the API).
+- [ ] Structure MIU1_STRINGS (name tables, prompts, pathnames) and
+      MIU1_TABLES (pixel masks; likely reveal MAPCHARS tile format).
+- [ ] Decompose OUT (smallest overlay) as the template for the other
+      six; expect MLIB_* ($B7xx) and MIU1 calls everywhere.
+- [ ] makeindata (also builds the intro art at $6000+; resolves the
+      ART_* semantics and the one TODO-SYM).
+- [ ] mapchars/stuph render once the tile blitter fixes the format;
+      tcmaps render after mapchars.
 - [ ] Synthesis chapters once MI.U1 + first overlay are understood.
 
 ## Structural
