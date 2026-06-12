@@ -9,6 +9,25 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 1 (2026-06-12): U1.SYSTEM byte-perfect
+
+- `u1system` 1682/1682, all hygiene metrics zero, PDF 70 pages.
+- U1.SYSTEM is a standard-form ProDOS system program (startup-path
+  buffer at $2004, default `U1.INTRO`): banner, then installs a
+  **resident MLI file library at $B700-$BAFF** (documented in full:
+  20 vectors — BLOAD/BLOAD_AT/BSAVE/BRUN/SET_PREFIX/DESTROY/QUIT/
+  READ_BLOCK/WRITE_BLOCK/raw MLI — JSR-plus-inline-args convention,
+  text vs pointer path variants, error translation table, parameter
+  blocks in page $BA, file buffer $BB00-$BEFF). **The game's whole
+  disk interface goes through these $B7xx vectors** — expect MI.U1
+  and overlays to JSR $B7xx everywhere; symbol names MLIB_* are
+  ready for propagation.
+- Page-one helpers at $0100-$016E survive overlay loads: inline
+  print, reset trampoline, BRUN-the-startup-file + startup error
+  display.
+- `git push` FAILS in this container (https remote, no credentials).
+  Commits are local; push from a credentialed environment.
+
 ### Round 0 (2026-06-12): Bootstrap complete
 
 - Identified the game: **Ultima I: The First Age of Darkness** (Origin
@@ -30,7 +49,7 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [ ] Round 1: `u1system` (1682 B at $2000) — ProDOS system launcher.
+- [x] Round 1: u1system — DONE.
       Contains "The First Age of Darkness" banner, startup error
       handler, jump table at $2922+. Finds/loads U1.INTRO via MLI.
 - [ ] Round 2: `u1intro` (2469 B at $0800) — title/menu. Mostly hi-res

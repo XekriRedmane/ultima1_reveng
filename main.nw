@@ -1071,7 +1071,1317 @@ RELOC_READER
 
 \chapter{Startup: U1.SYSTEM}
 
-% TODO: U1.SYSTEM — the game's launcher (ProDOS system file at $2000).
+After the kernel relocates itself into the language card and builds its
+global page at [[MLI]]--\,[[$BFFF]], ProDOS scans the volume directory
+for the first file whose name ends in \texttt{.SYSTEM} and runs it at
+[[$2000]]. On this disk that is \texttt{U1.SYSTEM}, the game's
+launcher. It has three jobs:
+
+\begin{enumerate}
+\item Show the title banner (``Ultima I --- The First Age of
+  Darkness'').
+\item Install a resident \textbf{file-access library} at
+  [[$B700]]--[[$BAFF]] --- a compact wrapper around the ProDOS MLI
+  providing BLOAD/BRUN/BSAVE-style calls with inline arguments. The
+  game proper uses this library for every disk access, which is why it
+  is installed below the kernel and protected in the system bitmap
+  rather than kept inside the launcher.
+\item Set the ProDOS prefix to the game volume and \textsc{brun} the
+  startup file --- \texttt{U1.INTRO} by default, or whatever pathname
+  a program selector placed in the startup buffer.
+\end{enumerate}
+
+\section{Defines}
+
+<<u1system defines>>=
+; --- Monitor zero page and ROM entry points ---
+MON_CH          EQU $24         ; text cursor column
+MON_A1          EQU $3C         ; monitor source start pointer
+MON_A2          EQU $3E         ; monitor source end pointer
+MON_A4          EQU $42         ; monitor destination pointer
+RESET_VEC       EQU $03F2       ; warm-reset vector
+MON_SETTXT      EQU $FB39       ; text mode
+MON_TABV        EQU $FB5B       ; set text row from A
+ROM_MACHID      EQU $FBB3       ; ROM identification byte ($06 = IIe+)
+MON_HOME        EQU $FC58       ; clear screen
+MON_WAIT        EQU $FCA8       ; delay ~(26+27A+5A^2)/2 microseconds
+MON_PRBYTE      EQU $FDDA       ; print A as two hex digits
+MON_COUT        EQU $FDED       ; character out
+MON_CROUT       EQU $FD8E       ; print carriage return
+MON_MOVE        EQU $FE2C       ; block move (A1..A2) -> (A4)
+MON_SETKBD      EQU $FE89       ; IN#0
+MON_SETVID      EQU $FE93       ; PR#0
+SPEAKER         EQU $C030       ; speaker toggle
+SET_STDZP       EQU $C008       ; main-bank zero page/stack
+SET_ALTZP       EQU $C009       ; aux-bank zero page/stack
+; --- ProDOS global page ---
+MLI             EQU $BF00       ; MLI call entry
+GP_DEVNUM       EQU $BF30       ; last-used device (unit number)
+GP_BITMAP_B0    EQU $BF6E       ; system bitmap, pages $B0-$B7
+GP_BITMAP_B8    EQU $BF6F       ; system bitmap, pages $B8-$BF
+GP_MACHID       EQU $BF98       ; machine id byte
+GP_IBAKVER      EQU $BFFC       ; interpreter compatibility version
+GP_IVERSION     EQU $BFFD       ; interpreter version
+; --- Fixed buffers ---
+SYS_PATH        EQU $0280       ; pathname this SYS file was run from
+SAVED_PATH      EQU $02C0       ; copy of the startup pathname
+MLIB_IOBUF      EQU $BB00       ; the library's ProDOS file buffer (1K)
+; --- Copy-source spans inside this file (see the RORG chunks) ---
+PAGE1_SRC       EQU $2223       ; page-one helpers, file location
+PAGE1_END       EQU $2291
+MLIB_SRC        EQU $2292       ; file library, file location
+MLIB_END        EQU $2691
+@ %def MON_CH MON_A1 MON_A2 MON_A4 RESET_VEC MON_SETTXT MON_TABV ROM_MACHID
+@ %def MON_WAIT MON_PRBYTE MON_COUT MON_CROUT MON_MOVE MON_SETKBD MON_SETVID
+@ %def SPEAKER SET_STDZP SET_ALTZP MLI GP_DEVNUM GP_BITMAP_B0 GP_BITMAP_B8
+@ %def GP_MACHID GP_IBAKVER GP_IVERSION SYS_PATH SAVED_PATH MLIB_IOBUF
+@ %def PAGE1_SRC PAGE1_END MLIB_SRC MLIB_END
+
+\section{The system file header}
+
+A ProDOS system program that supports startup files begins with a
+[[JMP]], the two-byte signature [[$EE]]~[[$EE]], a buffer-length byte,
+and a length-prefixed default pathname. A program selector (or another
+system program chaining to this one) may overwrite the buffer with a
+different startup file before launch; ProDOS itself leaves the default
+in place. The buffer is 64 bytes; the space after it, up to the code,
+includes the area at [[PREFIX_BUF]] used later to build a
+zero-terminated volume prefix.
+
+<<u1system header>>=
+        ORG $2000
+SYS_ENTRY
+        JMP SYS_INIT
+        DC.B $EE,$EE                    ; "supports startup file" signature
+        DC.B $40                        ; startup path buffer length
+STARTUP_PATH
+        DC.B $08                        ; pathname length
+        DC.B "U1.INTRO"                 ; default startup file
+        DS.B 55,$00                     ; rest of the 64-byte path buffer
+PREFIX_BUF
+        DS.B 66,$00                     ; zero-terminated prefix is built here
+@ %def SYS_ENTRY STARTUP_PATH PREFIX_BUF
+
+\section{Initialization}
+
+Standard system-program hygiene: record the interpreter version in the
+global page, reset the stack, detach any 80-column firmware
+(control-U through [[MON_COUT]]), restore keyboard/video/text, and
+clear the screen. Then the page-one helpers
+(section~\ref{sec:page-one-helpers}) are copied into place with the
+monitor's block-move so they survive whatever the startup file loads
+over this launcher.
+
+<<u1system init>>=
+        ORG $2088
+SYS_INIT
+        SUBROUTINE
+        ; Launcher entry from ProDOS.
+        ;
+        ; Behavior:
+        ;   Record interpreter version bytes, reset the stack, detach
+        ;   the 80-column firmware, reset I/O hooks and text mode,
+        ;   then copy the page-one helpers to PRINT_INLINE and fall
+        ;   into the banner display.
+        SEI
+        LDA #$00
+        STA GP_IVERSION
+        LDA #$01
+        STA GP_IBAKVER
+        LDX #$FF                        ; reset the stack
+        TXS
+        LDA #$15                        ; ctrl-U: 80-column firmware off
+        JSR MON_COUT
+        JSR MON_SETKBD
+        JSR MON_SETVID
+        JSR MON_SETTXT
+        JSR MON_HOME
+        LDA #<PAGE1_SRC
+        STA MON_A1
+        LDA #>PAGE1_SRC
+        STA MON_A1+1
+        LDA #<PAGE1_END
+        STA MON_A2
+        LDA #>PAGE1_END
+        STA MON_A2+1
+        LDA #<PRINT_INLINE
+        STA MON_A4
+        LDA #>PRINT_INLINE
+        STA MON_A4+1
+        LDY #$00
+        JSR MON_MOVE                    ; copy helpers to page one
+@ %def SYS_INIT
+
+\section{The title banner}
+
+Five positioned strings on the 40-column text screen. Each
+[[PRINT_INLINE]] call is followed by the high-ASCII text itself,
+zero-terminated; the helper prints it and returns to the instruction
+after the terminator. The title is over- and under-lined with rows of
+underscores.
+
+<<u1system banner>>=
+        ORG $20C4
+SYS_BANNER
+        SUBROUTINE
+        ; Print the title banner.
+        ;
+        ; Behavior:
+        ;   Five PRINT_INLINE calls at fixed rows/columns: over- and
+        ;   under-lined "Ultima I", the subtitle, and the copyright.
+        ;   Falls into SYS_INSTALL.
+        LDA #$07
+        JSR MON_TABV
+        LDA #$10
+        STA MON_CH
+        JSR PRINT_INLINE
+        HEX df df df df df df df df    ; "________"
+        HEX 00
+        LDA #$09
+        JSR MON_TABV
+        LDA #$10
+        STA MON_CH
+        JSR PRINT_INLINE
+        HEX d5 ec f4 e9 ed e1 a0 c9    ; "Ultima I"
+        HEX 00
+        LDA #$0A
+        JSR MON_TABV
+        LDA #$10
+        STA MON_CH
+        JSR PRINT_INLINE
+        HEX df df df df df df df df    ; "________"
+        HEX 00
+        LDA #$0D
+        JSR MON_TABV
+        LDA #$07
+        STA MON_CH
+        JSR PRINT_INLINE
+        HEX d4 e8 e5 a0 c6 e9 f2 f3    ; "The Firs"
+        HEX f4 a0 c1 e7 e5 a0 ef e6    ; "t Age of"
+        HEX a0 c4 e1 f2 eb ee e5 f3    ; " Darknes"
+        HEX f3 00                      ; "s"
+        LDA #$17
+        JSR MON_TABV
+        LDA #$01
+        STA MON_CH
+        JSR PRINT_INLINE
+        HEX c3 ef f0 f9 f2 e9 e7 e8    ; "Copyrigh"
+        HEX f4 a0 b1 b9 b8 b6 a0 e2    ; "t 1986 b"
+        HEX f9 a0 cf f2 e9 e7 e9 ee    ; "y Origin"
+        HEX a0 d3 f9 f3 f4 e5 ed f3    ; " Systems"
+        HEX ac a0 c9 ee e3 ae 00       ; ", Inc."
+@ %def SYS_BANNER
+
+\section{Installing the file library}
+
+The library image is copied from [[MLIB_SRC]] in this file to its
+running location at [[MLIB_MLI]] ([[$B700]]--[[$BAFF]]), and pages
+[[$B7]]--[[$B9]] are marked used in the ProDOS system bitmap so the
+kernel will refuse to allocate buffers over the code. (Page [[$BA]]
+holds the library's own variables and parameter blocks, and
+[[MLIB_IOBUF]] at [[$BB00]]--[[$BEFF]] is its file buffer --- ProDOS
+marks open-file buffers itself.)
+
+On a 128K machine ([[GP_MACHID]] memory bits = 11) the first two bytes
+of the \emph{auxiliary-bank} stack page are set to [[$FF]] --- scrubbing
+state left there by the firmware so a later reset cannot vector through
+it. Finally the library's default unit number is seeded from the boot
+device in [[GP_DEVNUM]].
+
+<<u1system install library>>=
+        ORG $215C
+SYS_INSTALL
+        SUBROUTINE
+        ; Copy the file library to $B700, protect it in the system
+        ; bitmap, scrub the aux stack head on 128K machines, and seed
+        ; the library's unit number from the boot device.
+        ;
+        ; Behavior:
+        ;   MON_MOVE MLIB_SRC..MLIB_END -> $B700; mark pages $B7-$B9
+        ;   in the bitmap; on 128K store #$FF at aux $0100/$0101;
+        ;   MLIB_UNIT <- GP_DEVNUM. Falls into SYS_STARTUP.
+        LDA #<MLIB_SRC
+        STA MON_A1
+        LDA #>MLIB_SRC
+        STA MON_A1+1
+        LDA #<MLIB_END
+        STA MON_A2
+        LDA #>MLIB_END
+        STA MON_A2+1
+        LDA #<MLIB_MLI
+        STA MON_A4
+        LDA #>MLIB_MLI
+        STA MON_A4+1
+        LDY #$00
+        JSR MON_MOVE                    ; install the library at $B700
+        LDA GP_BITMAP_B8
+        ORA #$C0                        ; mark pages $B8,$B9 used
+        STA GP_BITMAP_B8
+        LDA GP_BITMAP_B0
+        ORA #$01                        ; mark page $B7 used
+        STA GP_BITMAP_B0
+        LDA GP_MACHID
+        AND #$30
+        CMP #$30                        ; 128K machine?
+        BNE .seed_unit
+        LDA #$FF
+        STA SET_ALTZP                   ; aux zero page/stack in
+        STA $0100                       ; scrub aux stack head
+        STA $0101
+        STA SET_STDZP                   ; back to main bank
+.seed_unit
+        LDA GP_DEVNUM
+        STA MLIB_UNIT                   ; library default device <- boot device
+@ %def SYS_INSTALL
+
+\section{Prefix setup and launch}
+
+If no startup pathname was supplied (length byte zero), the launcher
+reports ``Can't find a startup file.''\ and dies through the reset
+vector. Otherwise the path is zero-terminated for the library's
+benefit, and the ProDOS prefix is established: if \textsc{get\_prefix}
+returns one, or the startup path is absolute (leading `/'), nothing
+needs doing; otherwise the prefix is recovered from the pathname at
+[[SYS_PATH]] that ProDOS used to launch this file --- everything up
+through the last `/' is copied into [[PREFIX_BUF]] and set via the
+library. Finally the startup path is stashed at [[SAVED_PATH]] (a
+convention selectors can rely on) and control moves to the page-one
+launcher, since the startup file may load right over this code.
+
+<<u1system prefix setup>>=
+        ORG $21A6
+SYS_STARTUP
+        SUBROUTINE
+        ; Establish the ProDOS prefix and hand off to LAUNCH_INTRO.
+        ;
+        ; Inputs:
+        ;   STARTUP_PATH - length-prefixed startup pathname
+        ;   SYS_PATH     - pathname this launcher was started from
+        ;
+        ; Behavior:
+        ;   Fail to the reset vector if no startup path. Otherwise
+        ;   zero-terminate it, GET_PREFIX; if none and the path is
+        ;   relative, copy the volume part of SYS_PATH to PREFIX_BUF
+        ;   and SET_PREFIX. Copy the path to SAVED_PATH and jump to
+        ;   the page-one launcher.
+        LDY STARTUP_PATH
+        BNE .have_path
+        ; --- no startup file: report and halt ---
+        LDA #$0F
+        JSR MON_TABV
+        LDA #$06
+        STA MON_CH
+        JSR PRINT_INLINE
+        HEX c3 e1 ee a7 f4 a0 e6 e9    ; "Can't fi"
+        HEX ee e4 a0 e1 a0 f3 f4 e1    ; "nd a sta"
+        HEX f2 f4 f5 f0 a0 e6 e9 ec    ; "rtup fil"
+        HEX e5 ae 8d 00                ; "e." CR
+        JMP GO_RESET
+.have_path
+        LDA #$00
+        STA STARTUP_PATH+1,Y            ; zero-terminate for the library
+        LDA #$C7                        ; MLI GET_PREFIX (-> MLIB_PATH)
+        JSR MLIB_MLI
+        LDA MLIB_PATH
+        BNE .launch                     ; prefix already set
+        LDA STARTUP_PATH+1
+        AND #$7F
+        CMP #$2F                        ; absolute path needs no prefix
+        BEQ .launch
+        ; --- derive the prefix from our own pathname ---
+        LDY SYS_PATH
+.find_slash
+        LDA SYS_PATH,Y
+        AND #$7F
+        CMP #$2F                        ; scan back for the last '/'
+        BEQ .got_slash
+        DEY
+        BNE .find_slash
+.got_slash
+        CPY #$02                        ; "/x..." at minimum
+        BCC .launch
+        LDA #$00
+        STA PREFIX_BUF+1,Y              ; terminate after the slash
+.copy   LDA SYS_PATH,Y
+        STA PREFIX_BUF,Y
+        DEY
+        BNE .copy
+        JSR MLIB_SET_PREFIX_P
+        DC.W PREFIX_BUF+1               ; -> zero-terminated prefix text
+.launch
+        LDY STARTUP_PATH                ; copy length + path for posterity
+.save   LDA STARTUP_PATH,Y
+        STA SAVED_PATH,Y
+        DEY
+        BPL .save
+        JMP LAUNCH_INTRO
+@ %def SYS_STARTUP
+
+\section{Page-one helpers}
+\label{sec:page-one-helpers}
+
+These three routines run at [[$0100]]--[[$016E]], on the (otherwise
+unused bottom of the) stack page, so they survive after the startup
+file overwrites the launcher. On disk they sit at
+[[PAGE1_SRC]]--[[PAGE1_END]]; the [[RORG]] makes every label carry its
+run-time address.
+
+[[PRINT_INLINE]] is the inline-string printer used throughout the
+launcher: it pops the return address into the self-modified pointer
+[[.ptr]], prints high-ASCII characters until a zero terminator, and
+returns past it. On machines older than the IIe (ROM id byte
+[[$06]]) lowercase is folded to uppercase, since a II+ cannot display
+it.
+
+[[LAUNCH_INTRO]] is the actual hand-off: \textsc{brun} the startup
+file through the library. The library loads the file at its aux-type
+address and calls it; control never comes back unless the load failed
+or the program returned, in which case the library's error code is
+shown as ``\texttt{<< Startup Error \#\$nn >>}'' and the machine dies
+through the reset vector.
+
+<<u1system page one helpers>>=
+        ORG $2223
+        RORG $0100
+PRINT_INLINE
+        SUBROUTINE
+        ; Print the zero-terminated high-ASCII string that follows
+        ; the JSR to this routine.
+        ;
+        ; Behavior:
+        ;   Pop the return address into .ptr, emit characters via
+        ;   MON_COUT (folding lowercase on pre-IIe ROMs) until a $00,
+        ;   then return to the byte after the terminator.
+        ; Clobbers: A, X
+        PLA
+        STA .ptr
+        PLA
+        STA .ptr+1
+.next   INC .ptr
+        BNE .fetch
+        INC .ptr+1
+.ptr    = *+1
+.fetch  LDA $FFFF                       ; (self-modified pointer)
+        BEQ .done
+        ORA #$80
+        LDX ROM_MACHID
+        CPX #$06                        ; IIe or later displays lowercase
+        BEQ .print
+        CMP #$E0
+        BCC .print
+        AND #$DF                        ; II+: fold to uppercase
+.print  JSR MON_COUT
+        JMP .next
+.done   LDA .ptr+1                      ; return past the terminator
+        PHA
+        LDA .ptr
+        PHA
+        RTS
+GO_RESET
+        ; die through the warm-reset vector
+        JMP (RESET_VEC)
+LAUNCH_INTRO
+        SUBROUTINE
+        ; BRUN the startup file; report if it comes back.
+        ;
+        ; Behavior:
+        ;   MLIB_BRUN_P on the zero-terminated startup path. If the
+        ;   load fails or the program returns, print the library
+        ;   error code and reset.
+        JSR MLIB_BRUN_P
+        DC.W STARTUP_PATH+1             ; -> zero-terminated path text
+        PHA                             ; library error code
+        LDA #$0F
+        JSR MON_TABV
+        LDA #$07
+        STA MON_CH
+        JSR PRINT_INLINE
+        HEX bc bc a0 d3 f4 e1 f2 f4    ; "<< Start"
+        HEX f5 f0 a0 c5 f2 f2 ef f2    ; "up Error"
+        HEX a0 a3 a4 a0 a0 a0 be be    ; " #$   >>"
+        HEX 00
+        LDA #$1A
+        STA MON_CH                      ; position over the blanks
+        PLA
+        JSR MON_PRBYTE
+        JSR MON_CROUT
+        JMP GO_RESET
+        REND
+@ %def PRINT_INLINE GO_RESET LAUNCH_INTRO
+
+\section{The file library: interface}
+\label{sec:mlib-interface}
+
+The resident library at [[$B700]] is the game's entire disk interface
+from here on --- \texttt{MI.U1} and the overlays call these vectors,
+never the MLI directly. The design is a 6502 classic: every call is a
+[[JSR]] to a fixed vector followed by \emph{inline arguments} in the
+instruction stream; the library pops the return address to read them
+and returns past them, with carry set and an error code in A on
+failure (X and Y are preserved). Each pathname-taking function exists
+in two flavors: the base form takes the zero-terminated pathname text
+itself inline, and the \texttt{\_P} form takes an inline 16-bit
+pointer to the text --- which is what callers use for variable paths.
+
+\begin{table}[H]
+\centering
+\ra{1.1}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\thead{Vector} & \thead{Name} & \thead{Inline args} & \thead{Action} \\
+\midrule
+[[$B700]] & [[MLIB_MLI]] & --- & raw MLI call, command in A \\
+[[$B703]] & [[MLIB_BLOAD]] & path & load BIN file at its aux address \\
+[[$B706]] & [[MLIB_BLOAD_AT]] & addr.w, path & load BIN file at addr \\
+[[$B709]] & [[MLIB_BSAVE]] & addr.w, len.w, path & create/write BIN file \\
+[[$B70C]] & [[MLIB_BRUN]] & path & load at aux address and call \\
+[[$B70F]] & [[MLIB_SET_PREFIX]] & path & set ProDOS prefix \\
+[[$B712]] & [[MLIB_QUIT]] & --- & close all, jump to reset \\
+[[$B715]] & [[MLIB_READ_BLOCK]] & ptr.w to block\# & read disk block to [[MLIB_IOBUF]] \\
+[[$B718]] & [[MLIB_WRITE_BLOCK]] & ptr.w to block\# & write [[MLIB_IOBUF]] to block \\
+[[$B71B]] & [[MLIB_SET_UNIT]] & --- & unit number := A \\
+[[$B71E]] & [[MLIB_BLOAD_P]] & pathptr.w & as [[MLIB_BLOAD]] \\
+[[$B721]] & [[MLIB_BLOAD_AT_P]] & addr.w, pathptr.w & as [[MLIB_BLOAD_AT]] \\
+[[$B724]] & [[MLIB_BSAVE_P]] & addr.w, len.w, pathptr.w & as [[MLIB_BSAVE]] \\
+[[$B727]] & [[MLIB_BRUN_P]] & pathptr.w & as [[MLIB_BRUN]] \\
+[[$B72A]] & [[MLIB_SET_PREFIX_P]] & pathptr.w & as [[MLIB_SET_PREFIX]] \\
+[[$B72D]] & [[MLIB_DESTROY]] & path & delete a file \\
+[[$B730]] & [[MLIB_DESTROY_P]] & pathptr.w & as [[MLIB_DESTROY]] \\
+[[$B733]] & [[MLIB_PARSE_PATH]] & path & copy path to [[MLIB_PATH]] only \\
+[[$B736]] & [[MLIB_PARSE_PATH_P]] & pathptr.w & as [[MLIB_PARSE_PATH]] \\
+[[$B739]] & [[MLIB_BUZZ]] & --- & error buzz \\
+\bottomrule
+\end{tabular}
+\caption{The resident file library's call vectors. ``path'' = inline
+zero-terminated pathname; ``.w'' = inline 16-bit word.}
+\label{tab:mlib-vectors}
+\end{table}
+
+File loads and saves insist on file type \texttt{BIN} and files no
+longer than 64K; loads use the file's recorded aux-type load address
+unless the \texttt{\_AT} form supplies one. \textsc{bsave} creates the
+file (type BIN, aux = address) if it does not exist, and updates the
+catalog's aux type and EOF afterward. Errors are translated from MLI
+codes into the game's own error numbers
+(table~\ref{tab:mlib-errors}) and buzz the speaker twice unless
+[[MLIB_QUIET]] has its high bit set.
+
+<<mlib jump table>>=
+        ORG $2292
+        RORG $B700
+MLIB_MLI            JMP MLI_CALL
+MLIB_BLOAD          JMP DO_BLOAD
+MLIB_BLOAD_AT       JMP DO_BLOAD_AT
+MLIB_BSAVE          JMP DO_BSAVE
+MLIB_BRUN           JMP DO_BRUN
+MLIB_SET_PREFIX     JMP DO_SET_PREFIX
+MLIB_QUIT           JMP DO_QUIT
+MLIB_READ_BLOCK     JMP DO_READ_BLOCK
+MLIB_WRITE_BLOCK    JMP DO_WRITE_BLOCK
+MLIB_SET_UNIT       JMP DO_SET_UNIT
+MLIB_BLOAD_P        JMP DO_BLOAD_P
+MLIB_BLOAD_AT_P     JMP DO_BLOAD_AT_P
+MLIB_BSAVE_P        JMP DO_BSAVE_P
+MLIB_BRUN_P         JMP DO_BRUN_P
+MLIB_SET_PREFIX_P   JMP DO_SET_PREFIX_P
+MLIB_DESTROY        JMP DO_DESTROY
+MLIB_DESTROY_P      JMP DO_DESTROY_P
+MLIB_PARSE_PATH     JMP DO_PARSE
+MLIB_PARSE_PATH_P   JMP DO_PARSE_P
+MLIB_BUZZ           JMP DO_BUZZ
+; --- library state ---
+MLIB_QUIET          DC.B $00    ; bit 7 set: suppress the error buzz
+MLIB_FN             DC.B $00    ; function code as called (bit 7 = ptr args)
+MLIB_FNUM           DC.B $00    ; function code & $3F
+MLIB_ADDR           DC.W $0000  ; caller-supplied load/save address
+MLIB_LEN            DC.W $0000  ; caller-supplied save length
+MLIB_ERR            DC.B $00    ; last translated error code (0 = ok)
+MLIB_LASTCMD        DC.B $00    ; MLI command of the last failure
+MLIB_MLIERR         DC.B $00    ; raw MLI error of the last failure
+MLIB_XREG           DC.B $00    ; caller's X, restored on return
+MLIB_YREG           DC.B $00    ; caller's Y, restored on return
+        REND
+@ %def MLIB_MLI MLIB_BLOAD MLIB_BLOAD_AT MLIB_BSAVE MLIB_BRUN
+@ %def MLIB_SET_PREFIX MLIB_QUIT MLIB_READ_BLOCK MLIB_WRITE_BLOCK
+@ %def MLIB_SET_UNIT MLIB_BLOAD_P MLIB_BLOAD_AT_P MLIB_BSAVE_P MLIB_BRUN_P
+@ %def MLIB_SET_PREFIX_P MLIB_DESTROY MLIB_DESTROY_P MLIB_PARSE_PATH
+@ %def MLIB_PARSE_PATH_P MLIB_BUZZ MLIB_QUIET MLIB_FN MLIB_FNUM MLIB_ADDR
+@ %def MLIB_LEN MLIB_ERR MLIB_LASTCMD MLIB_MLIERR MLIB_XREG MLIB_YREG
+
+\section{The file library: load, save, run}
+
+The function bodies share three building blocks: [[SAVE_ARGS]]
+captures registers and takes over the caller's return address as the
+inline-argument pointer; [[GET_PATHNAME]] copies the pathname (inline
+text or via inline pointer, per the function code's high bit) into
+[[MLIB_PATH]]; and [[OPEN_XFER]] does the type/access checks, OPEN,
+and READ or WRITE. Every body funnels out through [[EPILOGUE]], which
+pushes the advanced argument pointer back on the stack so the final
+[[RTS]] lands after the inline arguments.
+
+<<mlib load save run>>=
+        ORG $22DA
+        RORG $B748
+DO_BLOAD_P
+        SUBROUTINE
+        ; BLOAD at the file's aux address (path via pointer / text).
+        ;
+        ; Behavior:
+        ;   Capture args, fetch pathname, GET_FILE_INFO, then open
+        ;   and read with required access $01. Out via EPILOGUE.
+        LDA #$82
+        BNE .save
+DO_BLOAD
+        LDA #$02
+.save   JSR SAVE_ARGS
+LOAD_COMMON
+        JSR GET_PATHNAME
+        JSR MLI_GET_INFO
+        BCS .done
+        LDA #$01                        ; need read access
+        JSR OPEN_XFER
+.done   JMP EPILOGUE
+DO_BLOAD_AT_P
+        SUBROUTINE
+        ; BLOAD at an explicitly supplied address.
+        ;
+        ; Behavior:
+        ;   Fetch the inline address word into MLIB_ADDR, then join
+        ;   LOAD_COMMON (info, open, read). Out via EPILOGUE.
+        LDA #$83
+        BNE .save
+DO_BLOAD_AT
+        LDA #$03
+.save   JSR SAVE_ARGS
+        JSR GET_ARG_ADDR
+        JMP LOAD_COMMON
+DO_BSAVE_P
+        SUBROUTINE
+        ; BSAVE: create if needed, write, fix up catalog info.
+        ;
+        ; Inputs (inline): addr.w, len.w, then path text or pointer.
+        ;
+        ; Behavior:
+        ;   If GET_FILE_INFO fails, CREATE type BIN with aux = addr,
+        ;   access $C3, seedling. Then open and WRITE with required
+        ;   access $02. Out via EPILOGUE.
+        LDA #$84
+        BNE .save
+DO_BSAVE
+        LDA #$04
+.save   JSR SAVE_ARGS
+        JSR GET_ARG_ADDR
+        JSR GET_ARG_LEN
+        JSR GET_PATHNAME
+        JSR MLI_GET_INFO
+        BCC .exists
+        LDX MLIB_ADDR                   ; create: aux type <- address
+        STX PARM_CREATE+5
+        LDY MLIB_ADDR+1
+        STY PARM_CREATE+6
+        LDA #$06                        ; file type BIN
+        STA PARM_CREATE+4
+        LDX #$C3                        ; access: destroy/rename/write/read
+        LDY #$01                        ; storage: seedling
+        STX PARM_CREATE+3
+        STY PARM_CREATE+7
+        LDA #$C0                        ; MLI CREATE
+        JSR MLI_CALL
+        BCS EPILOGUE
+        JSR MLI_GET_INFO
+        BCS EPILOGUE
+.exists LDA #$02                        ; need write access
+        JSR OPEN_XFER
+        ; falls through to EPILOGUE
+EPILOGUE
+        SUBROUTINE
+        ; Common exit: A = error code, carry = error flag.
+        ;
+        ; Behavior:
+        ;   Store the code in MLIB_ERR; on error buzz twice and close
+        ;   everything. Push the advanced inline-arg pointer so RTS
+        ;   returns past the arguments; restore caller X/Y.
+        STA MLIB_ERR
+        BCC .ok
+        JSR DO_BUZZ
+        JSR DO_BUZZ
+        JSR CLOSE_ALL
+        SEC
+.ok     LDA MLIB_INLINE_PTR+1
+        PHA
+        LDA MLIB_INLINE_PTR
+        PHA
+        LDA MLIB_ERR
+        LDX MLIB_XREG
+        LDY MLIB_YREG
+        RTS
+DO_BRUN_P
+        SUBROUTINE
+        ; BRUN: load a BIN file at its aux address and call it.
+        ;
+        ; Behavior:
+        ;   As BLOAD, then push the return point, restore the
+        ;   caller's X/Y, and JSR through the load address. Returns
+        ;   (A=0, carry clear) only if the program itself returns.
+        LDA #$81
+        BNE .save
+DO_BRUN
+        LDA #$01
+.save   JSR SAVE_ARGS
+        JSR GET_PATHNAME
+        JSR MLI_GET_INFO
+        BCS EPILOGUE
+        LDA #$01                        ; need read access
+        JSR OPEN_XFER
+        BCS EPILOGUE
+        LDA MLIB_INLINE_PTR+1           ; return past the inline args
+        PHA
+        LDA MLIB_INLINE_PTR
+        PHA
+        LDX MLIB_XREG
+        LDY MLIB_YREG
+        JSR CALL_LOADED
+        CLC
+        LDA #$00
+        RTS
+CALL_LOADED
+        ; dispatch into the freshly loaded program
+        JMP (PARM_RW+2)
+        REND
+@ %def DO_BLOAD_P DO_BLOAD LOAD_COMMON DO_BLOAD_AT_P DO_BLOAD_AT
+@ %def DO_BSAVE_P DO_BSAVE EPILOGUE DO_BRUN_P DO_BRUN CALL_LOADED
+
+\section{The file library: open and transfer}
+
+[[OPEN_XFER]] is the heart of every load and save. A on entry is the
+required access bit (read [[$01]] or write [[$02]]); the function
+number distinguishes BSAVE (function 4, [[WRITE]] + catalog fixup)
+from the loads ([[READ]]). Functions below 3 take the destination
+from the file's own aux type; 3 and up use the caller's address. For
+reads, the transfer length is the file's EOF --- rejected if over
+64K.
+
+<<mlib open and transfer>>=
+        ORG $2396
+        RORG $B804
+OPEN_XFER
+        SUBROUTINE
+        ; Open MLIB_PATH and READ or WRITE its data.
+        ;
+        ; Inputs:
+        ;   A          - required access bit ($01 read, $02 write)
+        ;   MLIB_FNUM  - function: <3 load at aux, 3 load at addr,
+        ;                4 save
+        ;   PARM_INFO  - filled by a preceding GET_FILE_INFO
+        ;
+        ; Behavior:
+        ;   Verify type BIN and access; OPEN; aim PARM_RW at the
+        ;   destination; length = EOF (reads, <=64K) or MLIB_LEN
+        ;   (writes); READ or WRITE; for saves update aux type and
+        ;   EOF in the catalog; CLOSE.
+        ;
+        ; Outputs:
+        ;   carry set + error code in A on failure
+        LDX #$06                        ; required file type: BIN
+        JSR CHECK_OPEN
+        BCS .out
+        LDA MLIB_FNUM
+        LDX MLIB_ADDR
+        LDY MLIB_ADDR+1
+        CMP #$03
+        BCS .have_addr                  ; fn >= 3: caller's address
+        LDX PARM_INFO+5                 ; else the file's aux type
+        LDY PARM_INFO+6
+.have_addr
+        STX PARM_RW+2
+        STY PARM_RW+3
+        LDX MLIB_LEN
+        LDY MLIB_LEN+1
+        CMP #$04
+        BEQ .set_len                    ; saves use the caller's length
+        LDA #$D1                        ; MLI GET_EOF
+        JSR MLI_CALL
+        BCS .out
+        LDX PARM_EOF+2                  ; reads use the file length
+        LDY PARM_EOF+3
+        LDA PARM_EOF+4
+        BEQ .set_len
+        LDA #$0E                        ; file longer than 64K
+        SEC
+        RTS
+.set_len
+        STX PARM_RW+4
+        STY PARM_RW+5
+        LDX MLIB_FNUM
+        LDA #$CA                        ; MLI READ
+        CPX #$04
+        BNE .go
+        LDA #$CB                        ; MLI WRITE
+        JSR MLI_CALL
+        BCS .out
+        ; --- after a save: record aux type and EOF in the catalog ---
+        LDA MLIB_ADDR+1
+        STA PARM_INFO+6
+        LDA MLIB_ADDR
+        STA PARM_INFO+5
+        JSR MLI_SET_INFO
+        BCS .out
+        LDA #$00
+        STA PARM_EOF+4
+        LDA PARM_RW+7                   ; EOF <- bytes actually written
+        STA PARM_EOF+3
+        LDA PARM_RW+6
+        STA PARM_EOF+2
+        LDA #$D0                        ; MLI SET_EOF
+.go     JSR MLI_CALL
+        BCS .out
+        JSR MLI_CLOSE
+.out    RTS
+        REND
+@ %def OPEN_XFER
+
+\section{The file library: prefix, delete, quit, raw blocks}
+
+<<mlib prefix destroy quit blocks>>=
+        ORG $2419
+        RORG $B887
+DO_SET_PREFIX_P
+        SUBROUTINE
+        ; Set the ProDOS prefix from the inline pathname.
+        ;
+        ; Behavior:
+        ;   SET_PREFIX on MLIB_PATH; on success re-seed MLIB_UNIT
+        ;   from GP_DEVNUM. Out via EPILOGUE.
+        LDA #$85
+        BNE .save
+DO_SET_PREFIX
+        LDA #$05
+.save   JSR SAVE_ARGS
+        JSR GET_PATHNAME
+        LDA #$C6                        ; MLI SET_PREFIX
+        JSR MLI_CALL
+        BCS .done
+        LDX GP_DEVNUM
+        STX MLIB_UNIT
+.done   JMP EPILOGUE
+DO_DESTROY_P
+        SUBROUTINE
+        ; Delete the named file.
+        ;
+        ; Behavior:
+        ;   Fetch the pathname, MLI DESTROY, out via EPILOGUE.
+        LDA #$88
+        BNE .save
+DO_DESTROY
+        LDA #$08
+.save   JSR SAVE_ARGS
+        JSR GET_PATHNAME
+        LDA #$C1                        ; MLI DESTROY
+        JSR MLI_CALL
+        JMP EPILOGUE
+DO_QUIT
+        ; close every file and die through the reset vector
+        JSR CLOSE_ALL
+        JMP (RESET_VEC)
+DO_READ_BLOCK
+        SUBROUTINE
+        ; Read (or write) one 512-byte disk block.
+        ;
+        ; Inputs (inline): pointer to a 16-bit block number.
+        ;
+        ; Behavior:
+        ;   Patch READ_BLOCK/WRITE_BLOCK into the MLI call below;
+        ;   fetch the block number through the inline pointer into
+        ;   PARM_BLOCK; transfer via MLIB_IOBUF on unit MLIB_UNIT.
+        LDA #$86
+        JSR SAVE_ARGS
+        LDA #$80                        ; MLI READ_BLOCK
+        BNE .common
+DO_WRITE_BLOCK
+        LDA #$87
+        JSR SAVE_ARGS
+        LDA #$81                        ; MLI WRITE_BLOCK
+.common STA .cmd
+        JSR GET_ARG_BLOCKNUM
+        STX PARM_BLOCK+4
+        STY PARM_BLOCK+5
+        JSR MLI
+.cmd    DC.B $00                        ; command byte (self-modified)
+        DC.W PARM_BLOCK
+TO_EPILOGUE
+        JMP EPILOGUE
+DO_SET_UNIT
+        ; unit number for block I/O <- A
+        STA MLIB_UNIT
+        CLC
+        RTS
+SAVE_ARGS
+        SUBROUTINE
+        ; Capture a call's context.
+        ;
+        ; Inputs:
+        ;   A  - function code (bit 7 = pointer-style path argument)
+        ;
+        ; Behavior:
+        ;   Save A (raw and masked) and X/Y; steal the caller's
+        ;   return address into MLIB_INLINE_PTR (the inline-argument
+        ;   cursor), keeping our own return on the stack.
+        STA MLIB_FN
+        AND #$3F
+        STA MLIB_FNUM
+        STX MLIB_XREG
+        STY MLIB_YREG
+        PLA                             ; our own return address...
+        TAY
+        PLA
+        TAX
+        PLA                             ; ...the caller's return becomes
+        STA MLIB_INLINE_PTR             ;    the inline-argument cursor
+        PLA
+        STA MLIB_INLINE_PTR+1
+        TXA
+        PHA
+        TYA
+        PHA
+        RTS
+        REND
+@ %def DO_SET_PREFIX_P DO_SET_PREFIX DO_DESTROY_P DO_DESTROY DO_QUIT
+@ %def DO_READ_BLOCK DO_WRITE_BLOCK TO_EPILOGUE DO_SET_UNIT SAVE_ARGS
+
+\section{The file library: pathnames and inline arguments}
+
+The inline-argument machinery: [[GET_INLINE]] pre-increments
+[[MLIB_INLINE_PTR]] and fetches the next argument byte;
+[[GET_INDIRECT]] post-increments a second self-modified pointer
+([[MLIB_STR_PTR]]) for reading pathname text via pointer.
+[[GET_PATHNAME]] selects one of the two as the character source
+(self-modifying the [[JSR]] operand at [[MLIB_GETCHAR_VEC]]) and
+copies the zero-terminated text into [[MLIB_PATH]] as a
+length-prefixed ProDOS pathname.
+
+<<mlib pathname and inline args>>=
+        ORG $2498
+        RORG $B906
+DO_PARSE
+        SUBROUTINE
+        ; Parse a pathname into MLIB_PATH without touching the disk.
+        ;
+        ; Behavior:
+        ;   Capture args, copy the pathname argument to MLIB_PATH,
+        ;   return success via EPILOGUE.
+        LDA #$00
+        BEQ .save
+DO_PARSE_P
+        LDA #$80
+.save   JSR SAVE_ARGS
+        JSR GET_PATHNAME
+        CLC
+        BCC TO_EPILOGUE
+GET_PATHNAME
+        SUBROUTINE
+        ; Copy the call's pathname argument into MLIB_PATH.
+        ;
+        ; Inputs:
+        ;   MLIB_FN - bit 7 set: inline pointer to text; clear:
+        ;             text itself is inline
+        ;
+        ; Behavior:
+        ;   Point the fetch JSR at GET_INLINE or GET_INDIRECT, then
+        ;   copy bytes until $00, storing length at MLIB_PATH.
+        LDX #<GET_INLINE
+        LDY #>GET_INLINE
+        BIT MLIB_FN
+        BPL .set
+        JSR GET_INLINE_WORD             ; pointer-style: fetch the pointer
+        STX MLIB_STR_PTR
+        STY MLIB_STR_PTR+1
+        LDX #<GET_INDIRECT
+        LDY #>GET_INDIRECT
+.set    STX MLIB_GETCHAR_VEC
+        STY MLIB_GETCHAR_VEC+1
+        LDX #$FF
+.loop   INX
+MLIB_GETCHAR_VEC = *+1
+        JSR GET_INLINE                  ; (self-modified source)
+        BEQ .done
+        STA MLIB_PATH+1,X
+        BNE .loop
+.done   STX MLIB_PATH
+        RTS
+GET_INLINE
+        SUBROUTINE
+        ; Fetch the next inline-argument byte.
+        ;
+        ; Behavior:
+        ;   Pre-increment MLIB_INLINE_PTR (the captured caller return
+        ;   address) and load the byte it points at.
+        INC MLIB_INLINE_PTR
+        BNE .go
+        INC MLIB_INLINE_PTR+1
+MLIB_INLINE_PTR = *+1
+.go     LDA $FFFF                       ; (self-modified cursor)
+        RTS
+GET_INDIRECT
+        SUBROUTINE
+        ; Fetch the next pathname byte through the string pointer.
+        ;
+        ; Behavior:
+        ;   Load via MLIB_STR_PTR, post-increment it, and compare
+        ;   against zero so Z flags the terminator for the caller.
+MLIB_STR_PTR = *+1
+        LDA $FFFF                       ; (self-modified pointer)
+        INC MLIB_STR_PTR
+        BNE .go
+        INC MLIB_STR_PTR+1
+.go     CMP #$00
+        RTS
+GET_INLINE_WORD
+        ; next two inline bytes -> X (lo), Y (hi)
+        JSR GET_INLINE
+        TAX
+        JSR GET_INLINE
+        TAY
+        RTS
+GET_ARG_ADDR
+        ; inline word -> MLIB_ADDR
+        JSR GET_INLINE_WORD
+        STX MLIB_ADDR
+        STY MLIB_ADDR+1
+        RTS
+GET_ARG_LEN
+        ; inline word -> MLIB_LEN
+        JSR GET_INLINE_WORD
+        STX MLIB_LEN
+        STY MLIB_LEN+1
+        RTS
+GET_ARG_BLOCKNUM
+        SUBROUTINE
+        ; Fetch a block number through an inline pointer.
+        ;
+        ; Behavior:
+        ;   The inline word is the ADDRESS of a 16-bit block number;
+        ;   read it and return the number in X (lo) / Y (hi).
+        JSR GET_INLINE_WORD
+        STX .src
+        STY .src+1
+        LDY #$01
+.src    = *+1
+.get    LDA $FFFF,Y                     ; (self-modified pointer)
+        PHA
+        DEY
+        BPL .get
+        PLA
+        TAX
+        PLA
+        TAY
+        RTS
+        REND
+@ %def DO_PARSE DO_PARSE_P GET_PATHNAME GET_INLINE GET_INDIRECT
+@ %def GET_INLINE_WORD GET_ARG_ADDR GET_ARG_LEN GET_ARG_BLOCKNUM
+@ %def MLIB_INLINE_PTR MLIB_STR_PTR MLIB_GETCHAR_VEC
+
+\section{The file library: file info and open checks}
+
+<<mlib file info and open checks>>=
+        ORG $2522
+        RORG $B990
+MLI_GET_INFO
+        SUBROUTINE
+        ; GET_FILE_INFO on MLIB_PATH into PARM_INFO.
+        ;
+        ; Behavior:
+        ;   Set the parameter count for GET ($0A) or SET ($07,
+        ;   second entry, with nulled modification date) and issue
+        ;   the MLI call through MLI_CALL.
+        LDY #$0A                        ; parameter count for GET
+        LDA #$C4                        ; MLI GET_FILE_INFO
+        BNE .go
+MLI_SET_INFO
+        ; SET_FILE_INFO from PARM_INFO, nulling the modification date
+        LDA #$00
+        LDX #$03
+.clr    STA PARM_INFO+10,X              ; null modification date/time
+        DEX
+        BPL .clr
+        LDY #$07                        ; parameter count for SET
+        LDA #$C3                        ; MLI SET_FILE_INFO
+.go     STY PARM_INFO
+        JMP MLI_CALL
+CHECK_OPEN
+        SUBROUTINE
+        ; Validate the file and open it.
+        ;
+        ; Inputs:
+        ;   X - required file type ($06 BIN)
+        ;   A - required access bit ($01 read / $02 write)
+        ;   PARM_INFO - from a preceding GET_FILE_INFO
+        ;
+        ; Behavior:
+        ;   Type or access mismatch fails with the game's own codes
+        ;   $0D / $0A. Otherwise MLI OPEN; copy the ref number into
+        ;   the read/write, close, and EOF parameter blocks.
+        ;
+        ; Outputs:
+        ;   carry set + error code in A on failure
+        CPX PARM_INFO+4
+        BNE .badtype
+        AND PARM_INFO+3
+        BEQ .locked
+        LDA #$C8                        ; MLI OPEN
+        JSR MLI_CALL
+        BCS .out
+        LDA PARM_OPEN+5                 ; ref number feeds three parm blocks
+        STA PARM_RW+1
+        STA PARM_CLOSE+1
+        STA PARM_EOF+1
+.out    RTS
+.badtype
+        LDA #$0D                        ; wrong file type
+        SEC
+        RTS
+.locked LDA #$0A                        ; access denied
+        SEC
+        RTS
+        REND
+@ %def MLI_GET_INFO MLI_SET_INFO CHECK_OPEN
+
+\section{The file library: close and the error buzz}
+
+<<mlib close and beep>>=
+        ORG $2562
+        RORG $B9D0
+CLOSE_ALL
+        ; close every open file (ref number 0)
+        LDA #$00
+        STA PARM_CLOSE+1
+MLI_CLOSE
+        ; MLI CLOSE on PARM_CLOSE
+        LDA #$CC
+        JMP MLI_CALL
+DO_BUZZ
+        SUBROUTINE
+        ; Sound the error buzz.
+        ;
+        ; Behavior:
+        ;   Unless MLIB_QUIET bit 7 is set, pulse the speaker $20
+        ;   times with uneven spacing (a harsh buzz), interrupts
+        ;   masked so the pitch stays steady.
+        BIT MLIB_QUIET
+        BMI .out
+        PHP
+        SEI                             ; keep the pitch steady
+        LDA #$20
+        STA .count
+.loop   LDA #$02
+        JSR MON_WAIT
+        STA SPEAKER
+        LDA #$24
+        JSR MON_WAIT
+        STA SPEAKER
+        DEC .count
+        BNE .loop
+        PLP
+.out    RTS
+.count  DC.B $00
+        REND
+@ %def CLOSE_ALL MLI_CLOSE DO_BUZZ
+
+\section{The file library: MLI dispatch and error translation}
+
+Every MLI command the library issues goes through [[MLI_CALL]]: the
+command byte and the address of its parameter block (all blocks live
+in one page, low bytes from [[PARM_LO_TBL]] indexed by the command's
+low five bits) are patched into an inline [[JSR MLI]] frame. On
+failure, the raw MLI error is recorded and translated through a pair
+of tables into the game's own error numbering.
+
+\begin{table}[H]
+\centering
+\ra{1.05}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\thead{MLI error} & \thead{Meaning} & \thead{Game code} \\
+\midrule
+\$28 & no device connected & \$03 \\
+\$2B & disk write protected & \$04 \\
+\$40 & invalid pathname syntax & \$10 \\
+\$41, \$42 & file control block / too many files & \$0C \\
+\$43 & invalid reference number & \$12 \\
+\$44, \$45 & path / volume not found & \$06 \\
+\$46 & file not found & \$07 \\
+\$47 & duplicate filename & \$13 \\
+\$48 & volume full & \$09 \\
+\$49 & directory full & \$11 \\
+\$4B & unsupported storage type & \$0D \\
+\$4C & end of file & \$05 \\
+\$4D & position out of range & \$02 \\
+\$4E & access denied & \$0A \\
+\$50 & file open & \$14 \\
+\$53 & invalid parameter & \$0B \\
+\$56 & bad buffer address & \$0C \\
+(other) & --- & \$08 \\
+\bottomrule
+\end{tabular}
+\caption{MLI-to-game error code translation. The library also issues
+\$0D (wrong type), \$0A (locked), and \$0E (file over 64K) directly.}
+\label{tab:mlib-errors}
+\end{table}
+
+<<mlib mli dispatch>>=
+        ORG $2590
+        RORG $B9FE
+MLI_CALL
+        SUBROUTINE
+        ; Issue MLI command A with its canonical parameter block.
+        ;
+        ; Inputs:
+        ;   A - MLI command byte; its parameter block must have been
+        ;       prepared at the page-$BA address in PARM_LO_TBL
+        ;
+        ; Behavior:
+        ;   Patch command and parameter pointer into the JSR MLI
+        ;   frame below. On error, record raw code and command, then
+        ;   translate via MLI_ERR_TBL -> APP_ERR_TBL.
+        ;
+        ; Outputs:
+        ;   carry set + translated error code in A on failure
+        STA .cmd
+        AND #$1F
+        TAX
+        LDA PARM_LO_TBL,X
+        STA .parm
+        JSR MLI
+.cmd    DC.B $00                        ; command byte (self-modified)
+.parm   DC.B $7A                        ; parm block low byte (self-modified)
+        DC.B $BA                        ; all parameter blocks sit in page $BA
+        BCS .err
+        RTS
+.err    STA MLIB_MLIERR
+        LDY .cmd
+        STY MLIB_LASTCMD
+        LDX #$12
+.scan   CMP MLI_ERR_TBL,X
+        BEQ .got
+        DEX
+        BPL .scan
+        LDX #$13                        ; unknown: default code
+.got    LDA APP_ERR_TBL,X
+        SEC
+        RTS
+        REND
+@ %def MLI_CALL
+
+<<mlib dispatch tables>>=
+        ORG $25BF
+        RORG $BA2D
+PARM_LO_TBL                             ; parm block low byte per cmd & $1F
+        HEX bb c7 ca cf cf e1 c7 c7    ; CREATE DESTROY RENAME SET/GET_INFO
+        HEX e6 ec f0 f0 f8 f8 e1 e1    ; ON_LINE S/G_PREFIX OPEN NEWLINE R/W
+        HEX e1 e1 e1 e1                ; CLOSE FLUSH S/G_MARK S/G_EOF S/G_BUF
+MLI_ERR_TBL                             ; recognized MLI error codes
+        HEX 28 2b 40 41 42 43 44 45
+        HEX 46 47 48 49 4b 4c 4d 4e
+        HEX 50 53 56
+APP_ERR_TBL                             ; game error code per table above
+        HEX 03 04 10 0c 0c 12 06 06
+        HEX 07 13 09 11 0d 05 02 0a
+        HEX 14 0b 0c 08
+        DS.B 17,$00                     ; unused
+        REND
+@ %def PARM_LO_TBL MLI_ERR_TBL APP_ERR_TBL
+
+\section{The file library: pathname buffer and parameter blocks}
+
+All MLI parameter blocks live in page [[$BA]], pre-initialized on disk
+with their parameter counts and fixed pointers; the per-call fields
+(ref numbers, lengths, addresses) are filled in at run time. Several
+blocks are shared between commands of identical shape ---
+[[PARM_PATHONLY]] serves \textsc{destroy} and both prefix calls, and
+[[PARM_EOF]] serves \textsc{on\_line}, \textsc{set/get\_mark},
+\textsc{set/get\_eof}, and \textsc{set/get\_buf}.
+
+<<mlib path buffer and parameter blocks>>=
+        ORG $260B
+        RORG $BA79
+MLIB_PATH
+        DS.B 66,$00                     ; length-prefixed pathname buffer
+PARM_CREATE
+        DC.B $07                        ; CREATE: 7 parameters
+        DC.W MLIB_PATH
+        DC.B $C3                        ; access
+        DC.B $00                        ; file type (set per call)
+        DC.W $0000                      ; aux type (set per call)
+        DC.B $00                        ; storage type (set per call)
+        DC.W $0000                      ; create date
+        DC.W $0000                      ; create time
+PARM_PATHONLY
+        DC.B $01                        ; DESTROY / SET_PREFIX / GET_PREFIX
+        DC.W MLIB_PATH
+PARM_RENAME
+        DC.B $02                        ; RENAME (unused by the launcher)
+        DC.W MLIB_PATH
+        DC.W $0200                      ; new name: parsed input buffer
+PARM_INFO
+        DC.B $00                        ; GET/SET_FILE_INFO: count set per call
+        DC.W MLIB_PATH
+        DS.B 15,$00                     ; access,type,aux,storage,blocks,dates
+PARM_EOF
+        DC.B $02                        ; EOF/MARK/BUF/ON_LINE: 2 parameters
+        DC.B $00                        ; ref number
+        HEX 00 00 00                    ; 3-byte EOF / mark value
+PARM_OPEN
+        DC.B $03                        ; OPEN: 3 parameters
+        DC.W MLIB_PATH
+        DC.W MLIB_IOBUF                 ; the library's 1K file buffer
+        DC.B $00                        ; -> ref number
+PARM_NEWLINE
+        DC.B $03                        ; NEWLINE (unused by the launcher)
+        DC.B $00                        ; ref number
+        DC.B $7F                        ; enable mask
+        DC.B $0D                        ; newline char
+PARM_RW
+        DC.B $04                        ; READ/WRITE: 4 parameters
+        DC.B $00                        ; ref number
+        DC.W $0000                      ; data buffer (the load address)
+        DC.W $0000                      ; request count
+        DC.W $0000                      ; -> transfer count
+PARM_CLOSE
+        DC.B $01                        ; CLOSE: 1 parameter
+        DC.B $00                        ; ref number (0 = all)
+PARM_BLOCK
+        DC.B $03                        ; READ/WRITE_BLOCK: 3 parameters
+MLIB_UNIT
+        DC.B $00                        ; unit number (seeded from DEVNUM)
+        DC.W MLIB_IOBUF                 ; block buffer
+        DC.W $0000                      ; block number
+        REND
+@ %def MLIB_PATH PARM_CREATE PARM_PATHONLY PARM_RENAME PARM_INFO PARM_EOF
+@ %def PARM_OPEN PARM_NEWLINE PARM_RW PARM_CLOSE PARM_BLOCK MLIB_UNIT
+
+\section{Collection}
+
+<<u1system.asm>>=
+        PROCESSOR 6502
+<<u1system defines>>
+<<u1system header>>
+<<u1system init>>
+<<u1system banner>>
+<<u1system install library>>
+<<u1system prefix setup>>
+<<u1system page one helpers>>
+<<mlib jump table>>
+<<mlib load save run>>
+<<mlib open and transfer>>
+<<mlib prefix destroy quit blocks>>
+<<mlib pathname and inline args>>
+<<mlib file info and open checks>>
+<<mlib close and beep>>
+<<mlib mli dispatch>>
+<<mlib dispatch tables>>
+<<mlib path buffer and parameter blocks>>
+@
 
 \chapter{Title and introduction: U1.INTRO}
 
