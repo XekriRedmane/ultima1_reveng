@@ -1,0 +1,8 @@
+# Shell scripts and the Docker entrypoint must use LF endings, otherwise the
+# container fails with "exec docker-entrypoint.sh: no such file or directory"
+# (the kernel reads the "#!/bin/bash\r" shebang literally). Force LF even on
+# Windows checkouts.
+*.sh            text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile      text eol=lf
+*.py            text eol=lf

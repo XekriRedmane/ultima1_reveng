@@ -1,0 +1,27 @@
+{
+  "game": "Ultima I: The Beginning (California Pacific, 1981; 4am ProDOS conversion)",
+  "disk_image": "Ultima I - The Beginning (4am crack).dsk",
+  "dsk_sector_order": "dos33",
+  "filesystem": "ProDOS 1.1.1 volume /U1 (extract with .claude/scripts/prodos_extract.py)",
+  "nw_source": "main.nw",
+  "output_dir": "output",
+  "targets": [
+    {"name": "boot1",      "base": "$0800", "reference": "reference/boot1.bin",      "description": "ProDOS boot block (T0 phys S0+S2)"},
+    {"name": "u1system",   "base": "$2000", "reference": "reference/u1system.bin",   "description": "U1.SYSTEM — startup system file, launches U1.INTRO"},
+    {"name": "u1intro",    "base": "$0800", "reference": "reference/u1intro.bin",    "description": "U1.INTRO — title/intro program"},
+    {"name": "miu1",       "base": "$7000", "reference": "reference/miu1.bin",       "description": "MI.U1 — resident machine-interface engine"},
+    {"name": "out",        "base": "$8956", "reference": "reference/out.bin",        "description": "OUT — outdoor (overworld) overlay"},
+    {"name": "dng",        "base": "$8956", "reference": "reference/dng.bin",        "description": "DNG — dungeon overlay"},
+    {"name": "twn",        "base": "$8956", "reference": "reference/twn.bin",        "description": "TWN — town overlay"},
+    {"name": "cas",        "base": "$8956", "reference": "reference/cas.bin",        "description": "CAS — castle overlay"},
+    {"name": "spa",        "base": "$8956", "reference": "reference/spa.bin",        "description": "SPA — space overlay"},
+    {"name": "gen",        "base": "$8956", "reference": "reference/gen.bin",        "description": "GEN — character generation overlay"},
+    {"name": "tm",         "base": "$8956", "reference": "reference/tm.bin",         "description": "TM — time machine / endgame overlay"},
+    {"name": "makeindata", "base": "$1E00", "reference": "reference/makeindata.bin", "description": "MAKE.INDATA — initial game state builder"},
+    {"name": "mapchars",   "base": "$0800", "reference": "reference/mapchars.bin",   "description": "MAPCHARS — tile/character graphics data"},
+    {"name": "tcmaps",     "base": "$4000", "reference": "reference/tcmaps.bin",     "description": "TCMAPS — town/castle map data"},
+    {"name": "nif",        "base": "$4000", "reference": "reference/nif.bin",        "description": "NIF — hi-res image data"},
+    {"name": "stuph",      "base": "$0800", "reference": "reference/stuph.bin",      "description": "STUPH — graphics/shape data"}
+  ],
+  "pdf_pregen": []
+}

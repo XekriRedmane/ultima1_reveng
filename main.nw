@@ -45,9 +45,8 @@
 % Assemble a target with (from output/):
 %   dasm NAME.asm -f3 -oNAME.bin -lNAME.lst -sNAME.sym
 
-% TODO(bootstrap): set the game title and author.
 \title{%
-  GAME TITLE \\
+  Ultima I: The First Age of Darkness \\
   \large Reverse engineered from the Apple II version}
 \author{}
 \date{}
@@ -61,42 +60,1066 @@
 
 \chapter{Introduction}
 
-% TODO(bootstrap): one-page description of the game — publisher, year,
-% what the player sees and does. Written for a reader who has never
-% seen the game.
+This document is a literate reverse engineering of \emph{Ultima I: The
+First Age of Darkness} for the Apple~II. Every byte of the original
+program is reproduced by the assembly chunks herein: tangling this
+document and assembling the result yields binaries identical to the
+original disk image. The document is written for a reader who wants to
+understand how the game was built --- in enough detail to reproduce or
+port it in any language, on any platform. Platform-independent
+descriptions of the game's design, data structures, and algorithms
+accompany the annotated assembly throughout.
 
-This document is a literate reverse engineering of GAME TITLE for the
-Apple~II. Every byte of the original program is reproduced by the
-assembly chunks herein: tangling this document and assembling the
-result yields binaries identical to the original disk image. The
-document is written for a reader who wants to understand how the game
-was built --- in enough detail to reproduce or port it in any language,
-on any platform. Platform-independent descriptions of the game's
-design, data structures, and algorithms accompany the annotated
-assembly throughout.
+\section{The game}
+
+\emph{Ultima} was written by Richard Garriott (``Lord British'') and
+published by California Pacific Computer in 1981, the first entry in
+what became one of the longest-running role-playing series in computer
+gaming. The original was largely Applesoft BASIC. In 1986 Origin
+Systems published a complete rewrite in 6502 assembly language for the
+Apple~II --- faster, with redrawn graphics --- under the title
+\emph{Ultima I: The First Age of Darkness}. That 1986 remake is the
+program reverse engineered here. (The disk image is the ``4am crack''
+preservation release, which removes only the original disk's copy
+protection; the program itself is Origin's. The startup banner in the
+binary reads ``Copyright 1986 by Origin Systems, Inc.'')
+
+The player creates a character (race, sex, class, attribute points)
+and explores the realm of Sosaria to defeat the evil wizard Mondain.
+Play moves between six distinct modes, each with its own presentation:
+
+\begin{itemize}
+\item \textbf{Outdoors} --- a tile-scrolled overworld map of four
+  continents, with towns, castles, and dungeon entrances.
+\item \textbf{Towns} --- tile maps with shops (weapons, armour, food,
+  magic, pubs) and citizens.
+\item \textbf{Castles} --- tile maps where kings give quests and
+  rewards.
+\item \textbf{Dungeons} --- first-person three-dimensional wireframe
+  mazes, ten levels deep, populated by monsters.
+\item \textbf{Space} --- a first-person space-flight shooter sequence;
+  destroying enemy craft earns the ``space ace'' status the endgame
+  requires.
+\item \textbf{Time machine} --- the endgame confrontation with
+  Mondain, fought in the past.
+\end{itemize}
+
+The program is structured exactly along these lines: a memory-resident
+engine provides shared services, and one overlay file per mode is
+loaded over a common overlay region as the player moves between modes.
+This architecture is visible directly in the disk's file listing and
+drives the organization of this document.
+
+\section{How the program is organized}
+
+The game runs under ProDOS, Apple's then-current operating system, and
+its data lives in ordinary ProDOS files on a volume named
+\texttt{/U1}. The boot chain is:
+
+\begin{enumerate}
+\item The Disk~II controller PROM loads the 512-byte \textbf{boot
+  block} at [[$0800]] and jumps to it.
+\item The boot block finds the file \texttt{PRODOS} in the volume
+  directory, loads it at [[$2000]], and jumps to it. This file is the
+  stock ProDOS~1.1.1 kernel (dated 18-SEP-84), byte-identical to
+  Apple's release; it is treated as an external dependency in this
+  document, like the monitor ROM.
+\item ProDOS relocates itself high, then loads and runs the first
+  \texttt{.SYSTEM} file in the directory: \texttt{U1.SYSTEM}, the
+  game's launcher.
+\item \texttt{U1.SYSTEM} loads and runs \texttt{U1.INTRO} (title and
+  main menu), which in turn starts the game proper: the resident
+  engine \texttt{MI.U1} at [[$7000]] plus one mode overlay at
+  [[$8956]].
+\end{enumerate}
 
 \chapter{Disk layout and boot chain}
 
-% TODO(bootstrap): document the disk format, sector order, boot chain,
-% page table, and track/sector-to-memory tables discovered in Round 0.
+\section{Disk image format}
 
-\chapter{Boot sequence}
+The disk image is a 140K \texttt{.dsk} file: 35 tracks of 16 sectors
+of 256 bytes, stored in DOS~3.3 logical order. The volume on it,
+however, is a ProDOS volume, which addresses the disk in 512-byte
+\emph{blocks} (two sectors each, 8 blocks per track, 280 blocks per
+volume).
 
-% TODO(bootstrap): boot sector documentation and the <<boot1.asm>>=
-% collection chunk go here.
+Three sector orderings are therefore in play, and all the extraction
+tooling reduces to composing two fixed permutations:
 
-\chapter{Loader}
+\begin{itemize}
+\item \textbf{Physical order} --- the order sectors pass under the
+  drive head; the order in the sector address fields. The controller
+  PROM and the boot code address physical sectors.
+\item \textbf{DOS 3.3 logical order} --- the order sectors are stored
+  in the \texttt{.dsk} file. Physical sector $P$ of track $T$ is at
+  file offset $T \cdot 4096 + \mathit{DOS}[P] \cdot 256$ with
+  $$\mathit{DOS} = [0,7,14,6,13,5,12,4,11,3,10,2,9,1,8,15].$$
+\item \textbf{ProDOS block order} --- ProDOS block $B$ lives on track
+  $\lfloor B/8 \rfloor$; its two halves are ProDOS logical sectors
+  $2(B \bmod 8)$ and $2(B \bmod 8)+1$, which map to physical sectors
+  through $$\mathit{PRO} = [0,2,4,6,8,10,12,14,1,3,5,7,9,11,13,15].$$
+  Note the two halves of a block always sit two physical sectors
+  apart --- a fact the boot block's sector reader exploits
+  (section~\ref{sec:diskii-read-block}).
+\end{itemize}
 
-% TODO: second-stage loader / RWTS documentation.
+The script \texttt{.claude/scripts/prodos\_extract.py} implements this
+mapping, walks the ProDOS volume directory, and extracts every file
+into \texttt{reference/} as the flat reference binaries that all
+assembly targets verify against.
 
-\chapter{Game code}
+\section{The volume directory}
 
-% TODO: main loop, subsystems, and synthesis sections.
+The volume \texttt{/U1} contains sixteen files. Apart from
+\texttt{PRODOS} itself (the stock kernel), every file is part of the
+game and is a reverse-engineering target of this document. Type
+\texttt{SYS} is a ProDOS system program (loaded at [[$2000]]); type
+\texttt{BIN} carries its load address in the directory entry's aux
+field.
+
+\begin{table}[H]
+\centering
+\ra{1.1}
+\begin{tabular}{@{}llrlll@{}}
+\toprule
+\thead{File} & \thead{Type} & \thead{Bytes} & \thead{Load addr} &
+\thead{Target} & \thead{Contents} \\
+\midrule
+\texttt{PRODOS}      & SYS & 14848 & ---  & ---        & stock ProDOS 1.1.1 kernel \\
+\texttt{U1.SYSTEM}   & SYS &  1682 & [[$2000]] & [[u1system.asm]] & launcher \\
+\texttt{U1.INTRO}    & BIN &  2469 & [[$0800]] & [[u1intro.asm]] & title and main menu \\
+\texttt{MI.U1}       & BIN &  6589 & [[$7000]] & [[miu1.asm]] & resident engine \\
+\texttt{OUT}         & BIN &  5230 & [[$8956]] & [[out.asm]] & outdoors overlay \\
+\texttt{TWN}         & BIN &  8461 & [[$8956]] & [[twn.asm]] & town overlay \\
+\texttt{CAS}         & BIN &  5524 & [[$8956]] & [[cas.asm]] & castle overlay \\
+\texttt{DNG}         & BIN & 10051 & [[$8956]] & [[dng.asm]] & dungeon overlay \\
+\texttt{SPA}         & BIN &  9930 & [[$8956]] & [[spa.asm]] & space overlay \\
+\texttt{GEN}         & BIN &  8932 & [[$8956]] & [[gen.asm]] & character generation overlay \\
+\texttt{TM}          & BIN &  8123 & [[$8956]] & [[tm.asm]] & time machine (endgame) overlay \\
+\texttt{MAKE.INDATA} & BIN & 13877 & [[$1E00]] & [[makeindata.asm]] & initial game state builder \\
+\texttt{MAPCHARS}    & BIN &  1024 & [[$0800]] & [[mapchars.asm]] & tile graphics \\
+\texttt{TCMAPS}      & BIN &  7660 & [[$4000]] & [[tcmaps.asm]] & town/castle maps \\
+\texttt{NIF}         & BIN &  7680 & [[$4000]] & [[nif.asm]] & hi-res image \\
+\texttt{STUPH}       & BIN &  6144 & [[$0800]] & [[stuph.asm]] & graphics/shape data \\
+\bottomrule
+\end{tabular}
+\caption{Files on the ProDOS volume \texttt{/U1} and the assembly
+targets they correspond to.}
+\label{tab:volume-files}
+\end{table}
+
+The seven files loaded at [[$8956]] are the mode overlays: the
+resident engine \texttt{MI.U1} occupies [[$7000]]--[[$8955]] and ends
+exactly where the overlay region begins. The game also creates two
+files on a separate player disk, \texttt{U1.PLAYER} and
+\texttt{U1.VARS} (their pathnames appear in \texttt{MI.U1}), holding
+the saved character and game state.
+
+\chapter{Boot block}
+
+The first 512 bytes of the disk --- ProDOS block~0, physical track~0
+sectors~0 and~2 --- are Apple's standard ProDOS~1.x boot loader, the
+same on every ProDOS-formatted disk of the era. It is included here in
+full because it is part of the byte-exact reproduction, and because it
+is a beautifully compact piece of code: in half a kilobyte it boots
+two different machines (Apple~II and Apple~///), drives the Disk~II
+stepper motor, reads sectors by borrowing and patching the
+controller's own PROM code, parses the ProDOS volume directory, and
+loads a file by walking its index block.
+
+The PROM loads the first half at [[$0800]]--[[$08FF]] and jumps to
+[[BOOT_ENTRY]]. Execution proceeds in five phases:
+
+\begin{enumerate}
+\item Re-enter the PROM to fetch the block's second half to
+  [[$0900]]--[[$09FF]].
+\item Build a standalone sector-read routine by copying the
+  controller's PROM code into RAM and patching it
+  (\ref{sec:build-reader}).
+\item Read the volume directory (blocks 2--5) to [[DIR_BUF]].
+\item Find the directory entry named \texttt{PRODOS} with file type
+  \texttt{SYS}.
+\item Load that file's data blocks at [[KERNEL_ENTRY]] and jump to it.
+\end{enumerate}
+
+\section{Layout and defines}
+
+The boot block uses the same zero-page locations as the controller
+PROM, plus a scratch area of its own. The PROM leaves the slot number
+times 16 in [[ZP_SLOT16]] and the X~register, and maintains its
+destination-page pointer at [[ZP_SECTOR_BUF]]; the boot code reuses
+both, along with the PROM's sector ([[ZP_SECTOR]]) and track
+([[ZP_CUR_TRACK]], [[ZP_TRG_TRACK]]) cells, so that the relocated PROM
+code keeps working unmodified.
+
+<<boot1 defines>>=
+; --- Zero page: controller PROM workspace (reused by the boot code) ---
+ZP_SECTOR_BUF   EQU $26         ; PROM read destination pointer (lo, hi)
+ZP_SLOT16       EQU $2B         ; boot slot * 16, set by the PROM
+ZP_FIELD_NIB    EQU $31         ; nibble scratch inside the PROM field reader
+ZP_SECTOR       EQU $3D         ; physical sector to read
+ZP_CUR_TRACK    EQU $40         ; track the head is on now
+ZP_TRG_TRACK    EQU $41         ; track the PROM reader expects in address fields
+; --- Zero page: ProDOS block-read interface ---
+ZP_CMD          EQU $42         ; command for smart controllers: 1 = READ
+ZP_UNIT         EQU $43         ; unit number (slot * 16)
+ZP_IOBUF        EQU $44         ; data buffer pointer passed to the reader
+ZP_BLOCK        EQU $46         ; block number to read
+; --- Zero page: boot block scratch ---
+ZP_READ_VEC     EQU $48         ; pointer: block-read entry (also ROM scan ptr)
+ZP_DIR_PTR      EQU $4A         ; directory entry ptr / index-block lo-byte ptr
+ZP_IDXHI_PTR    EQU $4C         ; index-block hi-byte ptr
+ZP_BLK_IDX      EQU $4E         ; index of next data block within index block
+ZP_PREV_HALF    EQU $50         ; previous half-track (phase to release)
+ZP_TRG_HALF     EQU $51         ; target half-track (track * 2)
+ZP_TIMEOUT      EQU $52         ; sector-search timeout, outer counter
+ZP_CUR_HALF     EQU $53         ; current half-track (phase to energize)
+ZP_SEEK_HI      EQU $54         ; cleared alongside the seek state
+ZP_DATA_BUF     EQU $60         ; destination buffer for block reads
+; --- Buffers and entry points outside this binary ---
+DIR_BUF         EQU $0C00       ; volume directory read buffer (4 blocks)
+INDEX_BUF       EQU $1E00       ; kernel file's index block buffer
+KERNEL_ENTRY    EQU $2000       ; ProDOS kernel load address and entry
+RELOC_TAIL      EQU $0A7F       ; where the reader tail is appended at runtime
+; --- ROM entry points ---
+MON_HOME        EQU $FC58       ; monitor: clear screen
+MON_PRERR       EQU $FF2D       ; monitor: print "ERR" and sound bell
+A3_ROM_EXIT     EQU $F479       ; Apple /// ROM: boot-failure exit
+; --- Disk II controller soft switches (indexed by slot * 16) ---
+IWM_PHASE0      EQU $C080       ; stepper phase 0 off; +1 on, +2/+3 phase 1...
+IWM_MOTOR_OFF   EQU $C088       ; drive motor off
+IWM_MOTOR_ON    EQU $C089       ; drive motor on
+IWM_Q6L         EQU $C08C       ; read data latch
+@ %def ZP_SECTOR_BUF ZP_SLOT16 ZP_FIELD_NIB ZP_SECTOR ZP_CUR_TRACK ZP_TRG_TRACK
+@ %def ZP_CMD ZP_UNIT ZP_IOBUF ZP_BLOCK ZP_READ_VEC ZP_DIR_PTR ZP_IDXHI_PTR
+@ %def ZP_BLK_IDX ZP_PREV_HALF ZP_TRG_HALF ZP_TIMEOUT ZP_CUR_HALF ZP_SEEK_HI
+@ %def ZP_DATA_BUF DIR_BUF INDEX_BUF KERNEL_ENTRY RELOC_TAIL
+@ %def MON_HOME MON_PRERR A3_ROM_EXIT
+@ %def IWM_PHASE0 IWM_MOTOR_OFF IWM_MOTOR_ON IWM_Q6L
+
+\section{Entry and controller detection}
+
+Byte 0 of the boot sector is the sector count the PROM honors. It
+starts as 1 --- the PROM loads just this sector --- and the code below
+rewrites it to 3 before re-entering the PROM, which then fetches
+physical sectors 1 and~2 to the following pages. (Sector~1 belongs to
+a file's data and is simply overwritten later; sector~2 is the second
+half of this block, landing at [[$0900]].)
+
+<<boot1 sector count>>=
+        ORG $0800
+BOOT_BASE
+        DC.B $01                        ; sectors for the PROM to load
+@ %def BOOT_BASE
+
+The same 512 bytes also boot an Apple~///, whose ROM loads block~0 at
+\$A000 in its own address space and enters past the count byte with
+carry clear, so the [[BCS]] falls through to the [[JMP]]. The operand
+[[SOS_ABORT+$9800]] is the Apple~///-relative address of the abort
+routine below ([[$0932]] seen at \$A132); an Apple~/// disk would carry
+SOS boot code there instead, so on this ProDOS-only disk the ///~path
+just reports a failed boot.
+
+On the Apple~II the PROM enters at [[BOOT_ENTRY]] with carry state
+undefined, so the [[SEC]] forces the branch. The routine then probes
+the last byte of the controller card's ROM ([[$CnFF]]): zero marks a
+Disk~II 16-sector controller, which can only deliver one sector at a
+time and needs the full treatment; non-zero marks an intelligent
+controller (hard disk, 3.5'' drive) that has already deposited the
+whole 512-byte block and whose ROM provides a block-read entry point
+at \$Cn00 plus that byte.
+
+A on entry holds the PROM's sector count (the byte at [[BOOT_BASE]]):
+1~the first time, 3~after the re-entered PROM has also loaded the
+second half. The [[CMP]]/[[PHP]]/[[PLP]] dance preserves that
+distinction across the slot computation, and the carry then selects
+phase one (load the rest) or phase two ([[BUILD_READER]]).
+
+<<boot1 entry>>=
+        ORG $0801
+BOOT_ENTRY
+        SUBROUTINE
+        ; Boot block entry from the controller ROM.
+        ;
+        ; Inputs:
+        ;   X          - boot slot * 16 (from the PROM)
+        ;   A          - PROM sector count: 1 on first entry, 3 on re-entry
+        ;
+        ; Behavior:
+        ;   Distinguishes Apple II from Apple ///, then Disk II from
+        ;   intelligent controllers ($CnFF == 0 means Disk II). First
+        ;   Disk II entry: bump the sector count to 3 and re-enter the
+        ;   PROM to load the rest of the boot block. Second entry:
+        ;   continue at BUILD_READER. Intelligent controller: continue
+        ;   at SET_READ_VECTOR with A = $CnFF entry offset.
+        SEC                             ; Apple II: force the branch
+        BCS .apple2
+        JMP SOS_ABORT+$9800             ; Apple ///: block is at $A000
+.apple2 STX ZP_UNIT
+        CMP #$03                        ; carry <- second entry
+        PHP
+        TXA                             ; A <- slot * 16
+        AND #$70
+        LSR
+        LSR
+        LSR
+        LSR
+        ORA #$C0                        ; A <- $Cn, controller ROM page
+        STA ZP_READ_VEC+1
+        LDY #$FF
+        STY ZP_READ_VEC                 ; ZP_READ_VEC -> $CnFF
+        PLP
+        INY                             ; Y <- 0
+        LDA (ZP_READ_VEC),Y             ; last byte of controller ROM
+        BNE SET_READ_VECTOR             ; nonzero: intelligent controller
+        BCS BUILD_READER                ; Disk II, second entry
+        ; --- Disk II, first entry: fetch the rest of the boot block ---
+        LDA #$03
+        STA BOOT_BASE                   ; sector count <- #$03
+        INC ZP_SECTOR                   ; skip physical sector 1
+        LDA ZP_READ_VEC+1               ; push $Cn5B as return address:
+        PHA                             ;   re-enters the PROM read loop
+        LDA #$5B                        ;   at $Cn5C with the new count
+        PHA
+        RTS
+@ %def BOOT_ENTRY
+
+The PROM's read loop advances its destination page and its sector
+counter separately; incrementing [[ZP_SECTOR]] before re-entry makes
+it read physical sector~2 (skipping~1) into the next page, [[$0900]]
+--- which is exactly where ProDOS block~0's second half belongs, since
+consecutive ProDOS sectors sit two physical sectors apart. When the
+count reaches 3 the PROM jumps back to [[BOOT_ENTRY]] with
+$A = 3$.
+
+\section{Building a standalone sector reader}
+\label{sec:build-reader}
+
+The PROM can read sectors, but only as part of its boot sequence ---
+it always starts over from track~0, sector~0, page [[$0800]]. To read
+arbitrary blocks the boot code steals the PROM's sector-reading core:
+it copies [[$Cn63]]--[[$CnEA]] (the address-field search, data-field
+read, and denibbling loop) to [[RELOC_READER]]--[[$0A7E]], then makes
+three kinds of surgical edits:
+
+\begin{enumerate}
+\item \textbf{Seven single-byte patches} (offsets and values from
+  [[PATCH_OFFSET]]/[[PATCH_BYTE]], applied relative to
+  [[READ_NIBBLE]]). These retarget the routine's internal branches for
+  its new home --- chiefly the error/retry paths, which now restart
+  the boot block's own timeout-counting search loop instead of the
+  PROM's.
+\item \textbf{A seven-byte tail} ([[READER_TAIL]]) appended at
+  [[RELOC_TAIL]]: \emph{LDX ZP\_SLOT16 / CLC / RTS} --- so a
+  successful sector read returns to the caller with carry clear ---
+  followed by \emph{JMP SEEK\_READ}, the patched-in retry used when
+  the address field shows the head is on the wrong track.
+\item \textbf{A fourteen-byte splice} ([[SPLICE_A]]/[[SPLICE_B]],
+  copied over the start of the relocated code by [[APPLY_PATCH]]): a
+  tighter prologue search that hunts for the \$D5~\$AA nibble pair
+  marking the start of any sector field, branching back into the
+  timeout loop on every miss.
+\end{enumerate}
+
+The copy source pointer is [[ZP_READ_VEC]], still aimed at the
+controller ROM page; A is zero here (the [[$CnFF]] byte), zeroing both
+the pointer's low byte and [[ZP_CUR_TRACK]] (the head is on track~0
+after booting).
+
+<<build the relocated sector reader>>=
+        ORG $0831
+BUILD_READER
+        SUBROUTINE
+        ; Construct a standalone sector reader at RELOC_READER from
+        ; the controller PROM's own code.
+        ;
+        ; Inputs:
+        ;   A            - zero (the $CnFF byte that routed us here)
+        ;   ZP_READ_VEC+1 - $Cn, controller ROM page
+        ;
+        ; Behavior:
+        ;   Copy $Cn63-$CnEA to RELOC_READER..$0A7E, apply seven
+        ;   relocation patches plus a 14-byte prologue-search splice
+        ;   and a 7-byte exit tail, then fall into SET_READ_VECTOR
+        ;   with ZP_READ_VEC aimed at DISKII_READ_BLOCK.
+        ;
+        ; Modifies:
+        ;   ZP_CUR_TRACK, ZP_READ_VEC, RELOC_READER..RELOC_TAIL+6
+        STA ZP_CUR_TRACK                ; ZP_CUR_TRACK <- #$00
+        STA ZP_READ_VEC                 ; ZP_READ_VEC -> $Cn00
+        LDY #$63
+.copy   LDA (ZP_READ_VEC),Y             ; PROM code $Cn63..$CnEA
+        STA RELOC_READER-$63,Y          ; -> RELOC_READER..$0A7E
+        INY
+        CPY #$EB
+        BNE .copy
+        LDX #$06
+.patch  LDY PATCH_OFFSET,X
+        LDA PATCH_BYTE,X
+        STA READ_NIBBLE,Y               ; retarget branches in the copy
+        LDA READER_TAIL,X
+        JSR APPLY_PATCH                 ; append tail byte, redo splice
+        DEX
+        BPL .patch
+        LDA #>DISKII_READ_BLOCK
+        STA ZP_READ_VEC+1
+        LDA #<DISKII_READ_BLOCK
+        ; falls through to SET_READ_VECTOR
+@ %def BUILD_READER
+
+\section{Loading the volume directory}
+
+Both controller flavors converge here with A holding the low byte of
+the block-read entry: [[<DISKII_READ_BLOCK]] for a Disk~II, or the
+[[$CnFF]] byte for an intelligent controller (whose entry is then
+[[$Cn00]] plus that byte; values of [[$F9]] and up are reserved and
+rejected). [[ZP_READ_VEC]] becomes the uniform ``read one block''
+interface used by [[READ_BLOCK]]: block number in [[ZP_BLOCK]], buffer
+in [[ZP_DATA_BUF]], command 1 (READ) in [[ZP_CMD]], unit in
+[[ZP_UNIT]], carry set on return means failure.
+
+The volume directory occupies blocks 2--5; all four are read to
+[[DIR_BUF]]--[[$13FF]] before the search starts. A key block whose
+previous-block link at [[DIR_BUF]] is non-zero is not really the start
+of the directory, so the boot fails.
+
+<<set read vector and load the volume directory>>=
+        ORG $085B
+SET_READ_VECTOR
+        SUBROUTINE
+        ; Finalize the block-read vector, then read directory blocks
+        ; 2..5 into DIR_BUF.
+        ;
+        ; Inputs:
+        ;   A  - low byte of the block-read entry point
+        ;
+        ; Behavior:
+        ;   Reject entry bytes >= $F9, store the vector, zero the
+        ;   block-read parameter area, then loop READ_BLOCK over
+        ;   blocks 2..5 with the buffer advancing $200 per block.
+        ;   Falls into FIND_KERNEL.
+        ;
+        ; Modifies:
+        ;   ZP_READ_VEC, ZP_DATA_BUF, ZP_DIR_PTR, ZP_IDXHI_PTR,
+        ;   ZP_BLK_IDX, ZP_CMD, ZP_BLOCK, DIR_BUF..$13FF
+        LDY #$00
+        CMP #$F9                        ; $F9..$FF: not a boot device
+        BCS .fail_nz
+        STA ZP_READ_VEC
+        STY ZP_DATA_BUF
+        STY ZP_DIR_PTR
+        STY ZP_IDXHI_PTR
+        STY ZP_BLK_IDX
+        STY ZP_BLOCK+1
+        INY
+        STY ZP_CMD                      ; ZP_CMD <- #$01 = READ
+        INY
+        STY ZP_BLOCK                    ; ZP_BLOCK <- #$0002, directory key
+        LDA #>DIR_BUF
+        STA ZP_DATA_BUF+1
+        STA ZP_DIR_PTR+1
+.read   JSR READ_BLOCK
+        BCS FAIL_C
+        INC ZP_DATA_BUF+1               ; buffer += $200
+        INC ZP_DATA_BUF+1
+        INC ZP_BLOCK
+        LDA ZP_BLOCK
+        CMP #$06                        ; blocks 2..5
+        BCC .read
+        LDA DIR_BUF                     ; key block must have no
+        ORA DIR_BUF+1                   ;   previous-block link
+.fail_nz
+        BNE BOOT_FAIL
+        ; falls through to FIND_KERNEL
+@ %def SET_READ_VECTOR
+
+(The [[.fail_nz]] branch doubles as the bad-entry-byte rejection
+above: an entry byte of [[$F9]] exactly would leave the zero flag set
+and slip through --- a latent quirk in Apple's code, harmless in
+practice.)
+
+\section{Finding the kernel's directory entry}
+
+Directory entries are [[$27]] bytes long (read from the entry-length
+field of the volume header rather than assumed), 13 per block, first
+entry at offset 4 past the block's 4-byte header. The scan walks
+[[ZP_DIR_PTR]] through all four blocks of [[DIR_BUF]]; crossing onto
+an even page means a new 512-byte block, so the entry offset resets to
+4, and reaching page [[$14]] means the directory is exhausted ---
+there is no \texttt{PRODOS} here, and the boot fails.
+
+The name comparison covers the length byte itself ([[KERNEL_NAME]]
+starts [[$26]]: storage type 2 in the high nibble, name length 6 in
+the low), so only a \emph{sapling} file (2 levels, 512 bytes to 128K)
+with the exact name \texttt{PRODOS} matches; the [[AND]]/[[CMP]]
+re-check of the storage type after the loop is belt and braces. The
+file must also have type [[$FF]] (\texttt{SYS}). Its key-block number
+--- the index block --- comes from entry offset [[$11]].
+
+<<find the kernel directory entry>>=
+        ORG $0892
+FIND_KERNEL
+        SUBROUTINE
+        ; Scan the volume directory in DIR_BUF for a sapling SYS file
+        ; named PRODOS.
+        ;
+        ; Behavior:
+        ;   Advance ZP_DIR_PTR entry by entry (length from the volume
+        ;   header). Compare each entry's storage/length byte and name
+        ;   against KERNEL_NAME. On match, validate type SYS and load
+        ;   the key (index) block number into ZP_BLOCK. Exhausting the
+        ;   directory fails the boot.
+        ;
+        ; Outputs:
+        ;   ZP_BLOCK - index block of the kernel file
+        ;
+        ; Modifies:
+        ;   ZP_DIR_PTR, ZP_BLOCK
+        LDA #$04                        ; first entry: offset 4 in block
+        BNE .add                        ; always (A nonzero)
+.next   LDA ZP_DIR_PTR
+.add    CLC
+        ADC DIR_BUF+$23                 ; + entry length from volume header
+        TAY
+        BCC .set
+        INC ZP_DIR_PTR+1
+        LDA ZP_DIR_PTR+1
+        LSR                             ; odd page: same block, keep going
+        BCS .set
+        CMP #$0A                        ; page $14: past the directory
+        BEQ BOOT_FAIL
+        LDY #$04                        ; new block: entries restart at 4
+.set    STY ZP_DIR_PTR
+        LDA KERNEL_NAME
+        AND #$0F                        ; Y <- name length (6)
+        TAY
+.cmp    LDA (ZP_DIR_PTR),Y              ; compare storage/len byte + name
+        CMP KERNEL_NAME,Y
+        BNE .next
+        DEY
+        BPL .cmp
+        AND #$F0                        ; A = storage/len byte after loop
+        CMP #$20                        ; must be a sapling file
+        BNE BOOT_FAIL
+        LDY #$10
+        LDA (ZP_DIR_PTR),Y              ; file type
+        CMP #$FF                        ; must be SYS
+        BNE BOOT_FAIL
+        INY
+        LDA (ZP_DIR_PTR),Y              ; key block (index block) number
+        STA ZP_BLOCK
+        INY
+        LDA (ZP_DIR_PTR),Y
+        STA ZP_BLOCK+1
+        ; falls through to LOAD_KERNEL
+@ %def FIND_KERNEL
+
+\section{Loading the kernel}
+
+A sapling file's key block is an \emph{index block}: up to 256 data
+block numbers, low bytes in the first half, high bytes in the second.
+The loader reads the index block itself to [[INDEX_BUF]], aims
+[[ZP_DIR_PTR]] (reused) at its low-byte half and [[ZP_IDXHI_PTR]] at
+its high-byte half, then streams data blocks to [[KERNEL_ENTRY]]
+onward, 512 bytes at a time, until the next block number is zero.
+ProDOS~1.1.1 is 29 blocks; control then transfers to the kernel's
+relocator at [[KERNEL_ENTRY]], and the boot block's job is done.
+
+<<load the kernel>>=
+        ORG $08D6
+LOAD_KERNEL
+        SUBROUTINE
+        ; Read the kernel file's data blocks to KERNEL_ENTRY and run it.
+        ;
+        ; Inputs:
+        ;   ZP_BLOCK - index block number of the kernel file
+        ;
+        ; Behavior:
+        ;   Read the index block to INDEX_BUF; then repeatedly fetch
+        ;   the next data block number from it (lo half / hi half)
+        ;   and read that block, advancing the buffer $200 each time,
+        ;   until a block number of 0 terminates the file.
+        ;
+        ; Modifies:
+        ;   ZP_DIR_PTR, ZP_IDXHI_PTR, ZP_DATA_BUF, ZP_BLOCK,
+        ;   ZP_BLK_IDX, INDEX_BUF, KERNEL_ENTRY..
+        LDA #$00
+        STA ZP_DIR_PTR
+        LDY #>INDEX_BUF
+        STY ZP_DIR_PTR+1                ; -> index block, low bytes
+        STY ZP_DATA_BUF+1               ; first read target: INDEX_BUF
+        INY
+        STY ZP_IDXHI_PTR+1              ; -> index block, high bytes
+.read   JSR READ_BLOCK
+FAIL_C  BCS BOOT_FAIL
+        INC ZP_DATA_BUF+1               ; buffer += $200
+        INC ZP_DATA_BUF+1               ;   (INDEX_BUF -> KERNEL_ENTRY ...)
+        LDY ZP_BLK_IDX
+        INC ZP_BLK_IDX
+        LDA (ZP_DIR_PTR),Y              ; next data block number
+        STA ZP_BLOCK
+        LDA (ZP_IDXHI_PTR),Y
+        STA ZP_BLOCK+1
+        ORA (ZP_DIR_PTR),Y              ; block 0 terminates the file
+        BNE .read
+        JMP KERNEL_ENTRY
+@ %def LOAD_KERNEL FAIL_C
+
+([[FAIL_C]] is the error branch for every [[READ_BLOCK]] call in the
+boot --- the directory loop's failure case branches here too, because
+[[BOOT_FAIL]] is out of its branch range.)
+
+\section{Failure trampoline and the kernel's name}
+
+Every failure path funnels through [[BOOT_FAIL]]. Its [[JMP]]
+instruction straddles the sector boundary: the opcode is the last byte
+of the first sector and the operand is the first two bytes of the
+second --- so a boot failure on a disk whose second sector never
+loaded would jump through whatever bytes happen to be at [[$0900]].
+
+<<boot failure and kernel file name>>=
+        ORG $08FF
+BOOT_FAIL
+        ; trampoline: every error path funnels here
+        JMP DISK_ERROR
+KERNEL_NAME
+        DC.B $26                        ; storage type 2 | name length 6
+        DC.B "PRODOS         "          ; 15-character name field
+@ %def BOOT_FAIL KERNEL_NAME
+
+\section{The block-read dispatcher}
+
+All block reads go through this thunk: it copies the caller-visible
+buffer pointer [[ZP_DATA_BUF]] into [[ZP_IOBUF]] (the location
+intelligent-controller firmware expects) and jumps through
+[[ZP_READ_VEC]] --- to [[DISKII_READ_BLOCK]] or to controller
+firmware, whichever [[SET_READ_VECTOR]] installed.
+
+<<smart controller dispatch>>=
+        ORG $0912
+READ_BLOCK
+        SUBROUTINE
+        ; Read one 512-byte block: number in ZP_BLOCK, buffer in
+        ; ZP_DATA_BUF.
+        ;
+        ; Behavior:
+        ;   Copy ZP_DATA_BUF to ZP_IOBUF and dispatch through
+        ;   ZP_READ_VEC.
+        ;
+        ; Outputs:
+        ;   carry set on failure
+        LDA ZP_DATA_BUF
+        STA ZP_IOBUF
+        LDA ZP_DATA_BUF+1
+        STA ZP_IOBUF+1
+        JMP (ZP_READ_VEC)
+@ %def READ_BLOCK
+
+\section{Reader patch tables}
+
+The data behind section~\ref{sec:build-reader}: patch offsets are
+relative to [[READ_NIBBLE]], and the tail is raw machine code deposited
+at [[RELOC_TAIL]] (disassembled in the comments).
+
+<<reader patch tables>>=
+        ORG $091D
+PATCH_OFFSET                            ; patch locations - READ_NIBBLE
+        HEX 08 1e 24 3f 45 47 76
+PATCH_BYTE                              ; values written there
+        HEX d0 d7 d1 b6 4b b4 ac
+READER_TAIL                             ; appended at RELOC_TAIL:
+        DC.B $A6,$2B                    ;   LDX ZP_SLOT16
+        DC.B $18                        ;   CLC (sector read OK)
+        DC.B $60                        ;   RTS
+        DC.B $4C                        ;   JMP SEEK_READ (wrong-track retry)
+        DC.W SEEK_READ
+@ %def PATCH_OFFSET PATCH_BYTE READER_TAIL
+
+\section{Error handlers}
+
+The Apple~/// path: push [[$9FFF]] as a return address and call the
+///~ROM's boot-exit routine with $A=1$ (boot error), $X=0$.
+
+<<apple iii abort>>=
+        ORG $0932
+SOS_ABORT
+        SUBROUTINE
+        ; Apple /// boot failure: re-enter the /// ROM.
+        ;
+        ; Behavior:
+        ;   Push $9FFF as the return address and call the /// ROM
+        ;   exit with A = 1 (boot error), X = 0. Never returns.
+        LDA #$9F
+        PHA
+        LDA #$FF
+        PHA
+        LDA #$01
+        LDX #$00
+        JMP A3_ROM_EXIT
+@ %def SOS_ABORT
+
+The Apple~II path: clear the screen, print \texttt{ERR} with a bell,
+and hang.
+
+<<disk error handler>>=
+        ORG $093F
+DISK_ERROR
+        SUBROUTINE
+        ; Fatal boot error: clear screen, print "ERR", hang.
+        ;
+        ; Behavior:
+        ;   MON_HOME, MON_PRERR, then spin forever.
+        JSR MON_HOME
+        JSR MON_PRERR
+.hang   JMP .hang
+@ %def DISK_ERROR
+
+\section{Patch helper and splice bytes}
+
+Called once per patch-table iteration with X descending 6 to 0; each
+call appends one tail byte and (redundantly, all seven times) re-lays
+the 14-byte prologue-search splice over the start of the relocated
+reader. It also seeds [[ZP_FIELD_NIB]] with [[$AA]], a workspace byte
+of the PROM's field reader.
+
+<<apply one reader patch>>=
+        ORG $0948
+APPLY_PATCH
+        SUBROUTINE
+        ; Apply one byte of the reader tail plus the full splice.
+        ;
+        ; Inputs:
+        ;   A  - tail byte (from READER_TAIL)
+        ;   X  - byte index, 6 down to 0
+        ;
+        ; Behavior:
+        ;   Store the tail byte at RELOC_TAIL+X, copy SPLICE_A/_B over
+        ;   RELOC_READER..RELOC_READER+13, seed ZP_FIELD_NIB with #$AA.
+        ;
+        ; Modifies:
+        ;   RELOC_TAIL+X, RELOC_READER..+13, ZP_FIELD_NIB
+        STA RELOC_TAIL,X
+        LDA SPLICE_A,X
+        STA RELOC_READER,X
+        LDA SPLICE_B,X
+        STA RELOC_READER+7,X
+        LDA #$AA
+        STA ZP_FIELD_NIB
+        RTS
+@ %def APPLY_PATCH
+
+The splice itself, as it executes at [[RELOC_READER]] (see
+section~\ref{sec:seek-read} for the loop it cooperates with):
+
+\begin{verbatim}
+RELOC_READER  LSR                ; nibble was $D5? ($D5 >> 1 = $6A)
+              CMP #$6A
+              BNE near READ_NIBBLE    ; no: keep searching
+              LDA IWM_Q6L,X      ; next nibble
+              BPL *-3
+              CMP #$AA           ; $D5 $AA = field prologue
+              BNE near READ_NIBBLE    ; no: search on (timeout ticking)
+              ...                ; falls into relocated PROM reader
+\end{verbatim}
+
+<<prolog search splice bytes>>=
+        ORG $095C
+SPLICE_A                                ; first 7 bytes of the splice
+        HEX 4a c9 6a d0 f3 bd 8c
+SPLICE_B                                ; second 7 bytes
+        HEX c0 10 fb c9 aa d0 ea
+        HEX aa aa aa                    ; unused filler
+@ %def SPLICE_A SPLICE_B
+
+\section{Stepper phase control}
+
+One half-track step: energize or release (carry set/clear) the stepper
+phase for a given half-track, then wait roughly 20\,ms for the head to
+move. Phase number is half-track mod~4; the [[ROL]] folds the carry
+into the soft-switch address's low bit (odd offsets energize). The
+final [[LDX]] reloads the slot index --- and, since the slot byte is
+never zero, guarantees the zero flag is clear on return, which
+[[SEEK_READ]] uses to make its loop branch unconditional.
+
+<<stepper phase control>>=
+        ORG $096D
+STEP_PHASE
+        SUBROUTINE
+        ; Pulse one stepper phase and wait for the head to settle.
+        ;
+        ; Inputs:
+        ;   carry        - 1 = energize phase, 0 = release it
+        ;   ZP_CUR_HALF  - half-track selecting the phase (entry 1)
+        ;   A            - half-track (alternate entry STEP_PHASE_A)
+        ;
+        ; Behavior:
+        ;   Touch IWM_PHASE0 + (halftrack mod 4)*2 + carry, then
+        ;   delay ~20 ms via a $2C x $11 countdown.
+        ;
+        ; Outputs:
+        ;   Z = 0 always (X reloaded with the nonzero slot byte)
+        ; Clobbers: A, X
+        LDA ZP_CUR_HALF
+STEP_PHASE_A
+        AND #$03
+        ROL                             ; A <- phase*2 + carry
+        ORA ZP_SLOT16
+        TAX
+        LDA IWM_PHASE0,X                ; touch the phase switch
+        LDA #$2C
+        LDX #$11
+.inner  DEX
+        BNE .inner
+        SBC #$01
+        BNE .inner-2                    ; reload X, loop $2C times
+        LDX ZP_SLOT16
+        RTS
+@ %def STEP_PHASE STEP_PHASE_A
+
+\section{Reading a block on the Disk II}
+\label{sec:diskii-read-block}
+
+The Disk~II block-read entry installed in [[ZP_READ_VEC]]. It converts
+the ProDOS block number to physical geometry --- track = block/8, and
+first sector $= 4(b \bmod 4) + \lfloor (b \bmod 8)/4 \rfloor$, the
+arithmetic form of the ProDOS interleave --- then reads the block's
+two sectors. The two halves of a ProDOS block always lie exactly two
+physical sectors apart, so the second read just increments
+[[ZP_SECTOR]] twice. The PROM reader deposits whole 256-byte pages, so
+the buffer page in [[ZP_SECTOR_BUF+1]] advances by one between reads.
+
+<<disk ii block read>>=
+        ORG $0986
+DISKII_READ_BLOCK
+        SUBROUTINE
+        ; Read ProDOS block ZP_BLOCK to the page pair at ZP_IOBUF.
+        ;
+        ; Inputs:
+        ;   ZP_BLOCK   - block number (0..279)
+        ;   ZP_IOBUF   - page-aligned destination buffer
+        ;
+        ; Behavior:
+        ;   sector <- 4*(block mod 4) + (block mod 8)/4, track <-
+        ;   block/8; motor on; seek and read each of the block's two
+        ;   sectors (two physical sectors apart); motor off.
+        ;
+        ; Outputs:
+        ;   carry set on failure
+        ;
+        ; Modifies:
+        ;   ZP_SECTOR, ZP_TRG_TRACK, ZP_TRG_HALF, ZP_SECTOR_BUF+1
+        ; Clobbers: A, X, Y
+        LDA ZP_BLOCK
+        AND #$07
+        CMP #$04                        ; carry <- bit 2
+        AND #$03
+        PHP
+        ASL
+        PLP
+        ROL                             ; A <- 4*(blk mod 4) + carry
+        STA ZP_SECTOR
+        LDA ZP_BLOCK+1
+        LSR
+        LDA ZP_BLOCK
+        ROR
+        LSR
+        LSR
+        STA ZP_TRG_TRACK                ; track <- block / 8
+        ASL
+        STA ZP_TRG_HALF
+        LDA ZP_IOBUF+1
+        STA ZP_SECTOR_BUF+1             ; PROM reader's destination page
+        LDX ZP_SLOT16
+        LDA IWM_MOTOR_ON,X
+        JSR SEEK_READ                   ; first sector of the block
+        INC ZP_SECTOR_BUF+1
+        INC ZP_SECTOR                   ; second half: two sectors on
+        INC ZP_SECTOR
+        BCS .done                       ; first read timed out: give up
+        JSR SEEK_READ                   ; second sector of the block
+.done   LDY IWM_MOTOR_OFF,X
+RD_EXIT RTS
+@ %def DISKII_READ_BLOCK RD_EXIT
+
+\section{Seek, settle, and the sector search}
+\label{sec:seek-read}
+
+[[SEEK_READ]] does everything between ``motor on'' and ``sector in
+memory.'' First the seek: half-tracks are stepped one at a time from
+[[ZP_CUR_TRACK]]$\times 2$ toward [[ZP_TRG_HALF]], energizing the new
+phase and releasing the previous one each step. The closing [[BNE]] is
+unconditional ([[STEP_PHASE]] guarantees $Z=0$), re-evaluating the
+distance every iteration.
+
+Then the search-with-timeout loop, the cleverest corner of the boot
+block. [[ZP_TIMEOUT]] counts [[$7F]] passes of a [[$7F]]-iteration
+inner loop (Y); each pass pushes saved flags with carry \emph{clear}
+and falls into [[READ_NIBBLE]], where the spliced prologue search
+(section~\ref{sec:build-reader}) reads nibbles hunting for \$D5~\$AA.
+Misses branch back into the loop body, burning Y; when Y expires the
+flags are popped and the outer counter decrements. If it reaches zero
+the routine returns through [[RD_EXIT]] with carry \emph{set} ---
+that [[SEC]] before the decrement is the error flag --- and the
+failure propagates out of [[DISKII_READ_BLOCK]] to [[FAIL_C]]. On a
+prologue hit, execution continues into the relocated PROM reader,
+which checks that the address field matches [[ZP_TRG_TRACK]] and
+[[ZP_SECTOR]] (a wrong track re-enters [[SEEK_READ]] via the patched
+tail, after the PROM code updates [[ZP_CUR_TRACK]] from the address
+field), denibbles the data field into page [[ZP_SECTOR_BUF+1]], and
+returns carry-clear through the appended tail at [[RELOC_TAIL]].
+
+<<seek and read sector>>=
+        ORG $09BC
+SEEK_READ
+        SUBROUTINE
+        ; Seek to ZP_TRG_HALF and read physical sector ZP_SECTOR into
+        ; page ZP_SECTOR_BUF+1, via the relocated PROM reader.
+        ;
+        ; Inputs:
+        ;   ZP_CUR_TRACK   - track the head is on
+        ;   ZP_TRG_HALF    - destination half-track
+        ;   ZP_SECTOR      - physical sector wanted
+        ;   ZP_SECTOR_BUF+1 - destination page
+        ;
+        ; Behavior:
+        ;   Step the head one half-track at a time to the target,
+        ;   then search for a field prologue with a $7F x $7F nibble
+        ;   timeout, falling into the relocated PROM reader on a hit.
+        ;
+        ; Outputs:
+        ;   carry clear = sector read; carry set = timeout
+        ;
+        ; Modifies:
+        ;   ZP_CUR_HALF, ZP_PREV_HALF, ZP_SEEK_HI, ZP_TIMEOUT
+        ; Clobbers: A, X, Y
+        LDA ZP_CUR_TRACK
+        ASL
+        STA ZP_CUR_HALF
+        LDA #$00
+        STA ZP_SEEK_HI
+        ; --- step toward the target one half-track at a time ---
+.step   LDA ZP_CUR_HALF
+        STA ZP_PREV_HALF
+        SEC
+        SBC ZP_TRG_HALF
+        BEQ .settle                     ; arrived
+        BCS .dec
+        INC ZP_CUR_HALF                 ; target is further in
+        BCC .move
+.dec    DEC ZP_CUR_HALF                 ; target is further out
+.move   SEC
+        JSR STEP_PHASE                  ; energize new half-track phase
+        LDA ZP_PREV_HALF
+        CLC
+        JSR STEP_PHASE_A                ; release previous phase
+        BNE .step                       ; always (Z=0 from STEP_PHASE)
+        ; --- prologue search with timeout ---
+.settle LDY #$7F
+        STY ZP_TIMEOUT
+        PHP                             ; keep a flags byte on the stack
+.tick   PLP
+        SEC                             ; carry set = timeout error
+        DEC ZP_TIMEOUT
+        BEQ RD_EXIT                     ; give up (returns carry set)
+        CLC
+        PHP                             ; saved carry clear for the reader
+        DEY
+        BEQ .tick
+READ_NIBBLE
+        LDA IWM_Q6L,X                   ; next nibble from the drive
+        BPL READ_NIBBLE
+        ; falls into the spliced prologue search at RELOC_READER
+@ %def SEEK_READ READ_NIBBLE
+
+\section{The relocated reader area}
+
+On disk the rest of the block is zero. At runtime
+[[BUILD_READER]] fills [[RELOC_READER]] (and onward past the end of
+this block, to [[RELOC_TAIL]]+6) with the patched copy of the
+controller PROM's sector reader.
+
+<<relocated reader area>>=
+        ORG $09F7
+RELOC_READER
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00                          ; filled at boot time
+@ %def RELOC_READER
+
+\section{Collection}
+
+<<boot1.asm>>=
+        PROCESSOR 6502
+<<boot1 defines>>
+<<boot1 sector count>>
+<<boot1 entry>>
+<<build the relocated sector reader>>
+<<set read vector and load the volume directory>>
+<<find the kernel directory entry>>
+<<load the kernel>>
+<<boot failure and kernel file name>>
+<<smart controller dispatch>>
+<<reader patch tables>>
+<<apple iii abort>>
+<<disk error handler>>
+<<apply one reader patch>>
+<<prolog search splice bytes>>
+<<stepper phase control>>
+<<disk ii block read>>
+<<seek and read sector>>
+<<relocated reader area>>
+@
+
+\chapter{Startup: U1.SYSTEM}
+
+% TODO: U1.SYSTEM — the game's launcher (ProDOS system file at $2000).
+
+\chapter{Title and introduction: U1.INTRO}
+
+% TODO: U1.INTRO — title screen and main menu.
+
+\chapter{The resident engine: MI.U1}
+
+% TODO: MI.U1 — resident machine-interface engine at $7000.
+
+\chapter{Mode overlays}
+
+% TODO: OUT, TWN, CAS, DNG, SPA, GEN, TM — one section or chapter per
+% overlay as they are reverse engineered.
+
+\chapter{Game data}
+
+% TODO: MAPCHARS (tiles), TCMAPS (town/castle maps), NIF (hi-res
+% image), STUPH (shapes), MAKE.INDATA (initial game state).
 
 \appendix
 
 \chapter{Memory map}
 
-% TODO: memory map tables as they become known.
+The map below records what is known so far; it grows as the
+reverse engineering proceeds.
+
+\begin{table}[H]
+\centering
+\ra{1.1}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\thead{Range} & \thead{Contents} & \thead{Source} \\
+\midrule
+\$0000--\$00FF & zero page (PROM, boot, game workspaces) & --- \\
+\$0800--\$09FF & boot block (boot time only) & block 0 \\
+\$0800--\$0BFF & \texttt{MAPCHARS} tile graphics (run time) & file \\
+\$0C00--\$13FF & volume directory buffer (boot time) & boot \\
+\$1E00--\$1FFF & kernel index block buffer (boot time) & boot \\
+\$2000--\$3FFF & hi-res page 1; kernel load area (boot time) & --- \\
+\$4000--\$5FFF & hi-res page 2; \texttt{TCMAPS}/\texttt{NIF} data & files \\
+\$7000--\$8955 & \texttt{MI.U1} resident engine & file \\
+\$8956--\$ABFF & mode overlay region (\texttt{OUT} \dots \texttt{TM}) & files \\
+high memory & ProDOS kernel (relocated) & \texttt{PRODOS} \\
+\bottomrule
+\end{tabular}
+\caption{Memory map as currently known. Boot-time and run-time uses of
+the same ranges are noted; details will be refined in later rounds.}
+\label{tab:memory-map}
+\end{table}
 
 \end{document}

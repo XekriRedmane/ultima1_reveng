@@ -7,12 +7,53 @@ items, and blocked list live at the bottom. Every round updates this
 file before committing. A fresh session resumes from `/re-status` output
 plus this file — never by re-deriving history.
 
+## Milestones
+
+### Round 0 (2026-06-12): Bootstrap complete
+
+- Identified the game: **Ultima I: The First Age of Darkness** (Origin
+  Systems, 1986 assembly remake; 4am crack). The disk is a ProDOS 1.1.1
+  volume `/U1` in a DOS-order `.dsk` — no custom RWTS, all game data in
+  ordinary ProDOS files.
+- Wrote `.claude/scripts/prodos_extract.py` (ProDOS filesystem reader);
+  extracted all 16 reference binaries plus the stock kernel
+  (`reference/prodos111.bin`, verified "PRODOS 1.1.1 18-SEP-84
+  COPYRIGHT APPLE" — excluded from RE targets as an OS dependency).
+- Wrote `targets.json` (16 targets), filled all CLAUDE.md bootstrap
+  sections (targets table, disk layout, memory map).
+- `main.nw`: intro chapter, disk-layout chapter (sector-order math,
+  volume file table), and the **boot block fully annotated and
+  byte-perfect** (512/512) — entry/controller detection, PROM code
+  relocation+patching trick, directory scan, sapling-file kernel load,
+  Disk II seek/read with the overlapped timeout/nibble-search loop.
+- PDF builds cleanly (37 pages).
+
 ## Work queue
 
-- [ ] Round 0: `/bootstrap` — extract reference binaries from the disk
-      image, write `targets.json`, document the boot chain and disk
-      layout, fill in the TODO(bootstrap) sections of CLAUDE.md and
-      main.nw
+- [ ] Round 1: `u1system` (1682 B at $2000) — ProDOS system launcher.
+      Contains "The First Age of Darkness" banner, startup error
+      handler, jump table at $2922+. Finds/loads U1.INTRO via MLI.
+- [ ] Round 2: `u1intro` (2469 B at $0800) — title/menu. Mostly hi-res
+      data up front ($80-heavy), code near $0F23/$0F41 (two JMPs at
+      file start). References MAKE.INDATA.
+- [ ] Round 3+: `miu1` resident engine (6589 B at $7000) — the Rosetta
+      stone: entry `JMP $8956`, item/monster/place name tables, status
+      line, player-disk I/O (`/U1.PLAYER`, `/U1.VARS`). RE before the
+      overlays.
+- [ ] Overlays in order of size/value: out, cas, twn, gen, dng, spa, tm.
+- [ ] makeindata (initial game state builder at $1E00).
+- [ ] Data targets with graphics rendering (standing rule): mapchars
+      (tiles, likely 1024 B = shapes), stuph (shapes), nif (hi-res
+      image — render early, probably the title picture), tcmaps (maps —
+      render as map images; contains shop-sign text like "ARMOUR").
+- [ ] Synthesis chapters once MI.U1 + first overlay are understood.
+
+## Structural
+
+- Hi-res rendering helper exists (`.claude/scripts/render_hires.py`);
+  build per-data-file renderers on it as graphics are uncovered.
+- The `aux=$8956` overlays likely share a common calling convention
+  into MI.U1 — document the interface table once two overlays are RE'd.
 
 ## Blocked
 

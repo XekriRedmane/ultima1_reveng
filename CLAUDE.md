@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Reverse engineering of an Apple II game from a `.dsk` disk image. The project uses literate programming (noweb format) to produce annotated 6502 assembly that assembles to byte-perfect matches against the original disk image.
 
-> **TODO(bootstrap):** replace this paragraph with the game's name, publisher, year, and a one-line description once known.
+The game is **Ultima I: The First Age of Darkness** (Origin Systems, 1986) — the all-assembly remake of Richard Garriott's 1981 *Ultima*. The disk is the 4am crack preservation release: a ProDOS 1.1.1 volume named `/U1` containing the unmodified game files. The player explores Sosaria across six play modes (outdoors, towns, castles, 3-D dungeons, space flight, time-machine endgame), each implemented as a separate overlay file loaded at `$8956` over a memory-resident engine (`MI.U1` at `$7000`).
 
 **Audience and goal.** The reader of `main.nw` wants to learn how the game was written and how it works, in enough detail to reproduce or port the game in any language on any platform — not just 6502 assembly on the Apple II. Byte-perfect annotated assembly is the evidence base; the document is not done until the design has also been recovered into platform-independent prose (see the `/synthesize` skill and `reveng.md`).
 
@@ -34,7 +34,28 @@ Skill: `/assemble` runs the full tangle+build+verify pipeline. `/re-status` prin
 
 ## Assembly targets
 
-> **TODO(bootstrap):** table of targets (name, output, reference, base address, description), mirroring `targets.json`.
+The 16 assembly targets mirror `targets.json` — one per ProDOS file (plus the boot block). All produce `output/NAME.bin` verified against `reference/NAME.bin`.
+
+| Target | Base | Bytes | Contents |
+|---|---|---|---|
+| `boot1` | `$0800` | 512 | ProDOS boot block (T0 phys S0+S2) |
+| `u1system` | `$2000` | 1682 | `U1.SYSTEM` — launcher (SYS) |
+| `u1intro` | `$0800` | 2469 | `U1.INTRO` — title and main menu |
+| `miu1` | `$7000` | 6589 | `MI.U1` — resident engine |
+| `out` | `$8956` | 5230 | outdoors overlay |
+| `twn` | `$8956` | 8461 | town overlay |
+| `cas` | `$8956` | 5524 | castle overlay |
+| `dng` | `$8956` | 10051 | dungeon overlay |
+| `spa` | `$8956` | 9930 | space overlay |
+| `gen` | `$8956` | 8932 | character generation overlay |
+| `tm` | `$8956` | 8123 | time machine (endgame) overlay |
+| `makeindata` | `$1E00` | 13877 | initial game state builder |
+| `mapchars` | `$0800` | 1024 | tile graphics data |
+| `tcmaps` | `$4000` | 7660 | town/castle map data |
+| `nif` | `$4000` | 7680 | hi-res image data |
+| `stuph` | `$0800` | 6144 | graphics/shape data |
+
+The ProDOS 1.1.1 kernel (file `PRODOS`, byte-identical to Apple's 18-SEP-84 release) is extracted as `reference/prodos111.bin` for inspection but is **not** an RE target — it is treated as an external dependency like the monitor ROM.
 
 ## Architecture: main.nw
 
@@ -230,10 +251,27 @@ After writing any new assembly chunk:
 
 ## Disk layout
 
-> **TODO(bootstrap):** document the boot chain and disk layout once traced: which tracks/sectors load where, the page table, persistent vs. swappable regions.
+The disk is a **ProDOS 1.1.1 volume** (`/U1`) stored in a DOS-order `.dsk`. There is no custom RWTS and no page table — all game data lives in ordinary ProDOS files (see the targets table above). Reference binaries are extracted with `.claude/scripts/prodos_extract.py`, which understands the volume directory and seedling/sapling/tree storage.
+
+Boot chain: Disk II PROM loads the 512-byte boot block (ProDOS block 0 = T0 physical sectors 0 and 2) at `$0800` → boot block loads the `PRODOS` kernel at `$2000` via the volume directory → ProDOS relocates high and runs the first `.SYSTEM` file (`U1.SYSTEM` at `$2000`) → `U1.SYSTEM` runs `U1.INTRO` → intro loads `MI.U1` (resident, `$7000-$8955`) and one mode overlay at `$8956`.
+
+ProDOS block math (for manual sector work): block B is on track B//8; its halves are ProDOS sectors 2*(B%8) and 2*(B%8)+1; ProDOS sector s maps to physical sector `PRODOS_PHYS[s]` with `PRODOS_PHYS = [0,2,4,6,8,10,12,14,1,3,5,7,9,11,13,15]`. Compose with `DOS_SKEW` below for `.dsk` file offsets. The two halves of any block are exactly two physical sectors apart.
 
 The P5A Disk II PROM reads sectors in physical position order: 0, 7, E, 6, D, 5, C, 4, B, 3, A, 2, 9, 1, 8, F. A DOS-order `.dsk` file stores sectors in DOS 3.3 logical order; to read physical sector P from the file: `dsk_offset = track * 4096 + DOS_SKEW[P] * 256`, where `DOS_SKEW = [0, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 15]`. The actual sector order for this game is recorded in `targets.json` (`dsk_sector_order`).
 
 ## Memory map
 
-> **TODO(bootstrap):** memory map after boot, updated as RE progresses.
+Known so far (refined as RE progresses):
+
+| Range | Contents |
+|---|---|
+| `$0800-$09FF` | boot block (boot time); `MAPCHARS` tiles / `U1.INTRO` / `STUPH` load here at run time |
+| `$0C00-$13FF` | boot-time volume directory buffer |
+| `$1E00-$1FFF` | boot-time kernel index-block buffer; `MAKE.INDATA` load address |
+| `$2000-$3FFF` | hi-res page 1; `PRODOS` / `U1.SYSTEM` load here first |
+| `$4000-$5FFF` | hi-res page 2; `TCMAPS` / `NIF` data load address |
+| `$7000-$8955` | `MI.U1` resident engine |
+| `$8956-` | mode overlay region (`OUT`/`TWN`/`CAS`/`DNG`/`SPA`/`GEN`/`TM`) |
+| high memory | relocated ProDOS kernel (`$9A00+` MLI, language card) |
+
+Saved state lives on a player disk in ProDOS files `U1.PLAYER` and `U1.VARS`.
