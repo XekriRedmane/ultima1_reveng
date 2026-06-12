@@ -5874,10 +5874,10 @@ during an effect so the mouse VBL cannot warp the pitch.
 
 Effects are usually not played directly: the engine \emph{queues}
 them ([[SFX_QUEUE]] into [[ZP_SFX_Q]]) and [[PAGE_FLIP]] plays the
-queue back at the frame boundary ([[SFX_DRAIN]]). Names follow their
-observed use in the engine: code 0 is queued when the player takes
-damage, 2 twice at death, [[$10]] is the ``Huh?'' error blat, 8 the
-command beep.
+queue back at the frame boundary ([[SFX_DRAIN]]). Names follow
+their observed use: code 0 is the per-turn move thump (every
+outdoor turn queues it through [[TICK_SND]]), 2 plays twice at
+death, [[$10]] is the ``Huh?'' error blat, 8 the command beep.
 
 <<stuph sfx dispatch>>=
         ORG $1AB2
@@ -7190,7 +7190,10 @@ CMD_KEYS
 PLR_SOUND
         DC.B $FF                        ; saved master-sound flag
 PLR_SFX DC.B $FF                        ; saved effects flag
-        HEX 20 20                       ; fields not yet identified
+PLR_OUT_X
+        DC.B $20                        ; outdoor map position,
+PLR_OUT_Y
+        DC.B $20                        ;   restored by OUT's entry
 OWNED_GEMS
         HEX 00 00 00 00                 ; the four gems
 READY_SPELL
@@ -7248,7 +7251,7 @@ PLR_EXP DC.W $0237                      ; experience (binary)
 PLR_BSS DS.B 325,$00                    ; zeroed working storage,
                                         ;   up to the engine code
 @ %def LOC_NAME WIN_SAVE_BUF CAP_FLAG PATH_PLAYER PATH_VARS
-@ %def SAVE_PAGE_TGL HILITE_IDX
+@ %def SAVE_PAGE_TGL HILITE_IDX PLR_OUT_X PLR_OUT_Y
 @ %def TICK_FOOD TICK_MOVE DIR_STR_PTR CMD_KEYS PLR_SOUND PLR_SFX
 @ %def OWNED_GEMS READY_SPELL READY_WEAPON READY_ARMOUR
 @ %def READY_TRANSPORT OWNED_ARMOUR OWNED_WEAPONS OWNED_SPELLS
@@ -8005,11 +8008,11 @@ GET_COMMAND
 
 Every turn costs food and advances the move counter, and that
 arithmetic lives in one dual-entry routine. [[TICK]] is the silent
-entry; [[TICK_HURT]] additionally queues the damage thud (effect 0)
---- the engine's convention for ``this turn hurt you''. Y is the
-food cost in BCD \emph{hundredths} (the visible food number only
-drops when [[FOOD_FRAC]] borrows), and A is added to the
-multi-byte BCD [[MOVE_CNT]]. Food clamps at zero --- starvation's
+entry; [[TICK_SND]] additionally queues effect 0, the per-turn
+move thump (the outdoor overlay charges every turn through this
+entry). Y is the food cost in BCD \emph{hundredths} (the visible
+food number only drops when [[FOOD_FRAC]] borrows), and A is added
+to the multi-byte BCD [[MOVE_CNT]]. Food clamps at zero --- starvation's
 consequences are the overlays' business.
 
 <<miu1 tick>>=
@@ -8022,7 +8025,8 @@ TICK    SUBROUTINE
         ;   A       -- move-counter increment (BCD)
         ;
         ; Behavior:
-        ;   TICK_HURT also queues sound effect 0 (the damage thud).
+        ;   TICK_SND also queues sound effect 0 -- the per-turn
+        ;   move thump (the OUT overlay uses it for every turn).
         ;   Subtract from FOOD_FRAC; on borrow, decrement the
         ;   16-bit binary PLR_FOOD, clamping at zero. Add A into
         ;   the multi-byte BCD MOVE_CNT with carry propagation.
@@ -8033,13 +8037,13 @@ TICK    SUBROUTINE
         CLC                             ; silent entry
         DC.B $B0                        ; BCS: never taken; its
                                         ;   operand is the SEC below
-TICK_HURT
+TICK_SND
         SEC                             ; sound entry ($38 doubles
                                         ;   as the BCS operand)
         STY TICK_FOOD
         STA TICK_MOVE
         BCC .food
-        LDA #$00                        ; queue the damage thud
+        LDA #$00                        ; queue the move thump
         JSR SFX_QUEUE
 .food   SED
         SEC
@@ -8071,7 +8075,7 @@ TICK_HURT
         BCS .prop
         CLD
         RTS
-@ %def TICK TICK_HURT
+@ %def TICK TICK_SND
 
 \section{The stats panel}
 

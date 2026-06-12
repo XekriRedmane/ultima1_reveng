@@ -9,6 +9,28 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 11 (2026-06-12): OUT scouted; cross-corrections applied
+
+- OUT entry ($8956) read: restores zp $00/$01 from $7E73/74 (now
+  labeled PLR_OUT_X/Y), enables double-buffering, copies $6000
+  +14 pages to $A900 (buffer above the overlay -- purpose TBD),
+  zeroes DIR_STR_PTR hi (default direction names), checks $B600
+  flag else JSR $9691 (world/map load?), JSR $94C1 (initial draw),
+  death-check, then THE MAIN LOOP at $8995: stack reset, prompt,
+  $8A6A (key fetch) -- idle turn = JSR $82E4 with Y=5/A=$50 (food
+  5/100, +50 moves?? verify) -- GET_COMMAND -> patched-JSR dispatch
+  through the address table at $9AAA (26 entries, X=2*index), then
+  $96B0 (end-of-turn/monsters), loop. Death penalty path: lose
+  current transport, all weapons/armour/spells zeroed, respawn
+  position from $9461.
+- Corrections from this evidence: TICK_HURT renamed TICK_SND --
+  effect 0 is the per-turn MOVE THUMP, not a damage cue; $7E73/74
+  identified as the saved outdoor position.
+- Next session: decompose OUT from this skeleton (entry/main loop
+  first, then the 26 command handlers via the $9AAA table, then
+  $9461/$9691/$94C1/$96B0 world machinery). Then DNG (wireframe
+  via PLOT/LINE_TO), then the town/castle pair w/ TCMAPS format.
+
 ### Round 10 (2026-06-12): MI.U1 100% decomposed; world census in hand
 
 - The "mask tables" are exactly one picture: the 10x94 death SKULL
