@@ -1,0 +1,102 @@
+\documentclass[10pt]{report}
+\setlength{\parskip}{1em plus 0.1em minus 0.2em}
+\usepackage {amsmath}
+\usepackage {noweb}
+\usepackage {graphicx}
+\usepackage {ltablex}
+\usepackage {caption, booktabs}
+% For more space between table rows.
+\newcommand{\ra}[1]{\renewcommand{\arraystretch}{#1}}
+
+% To prevent floatables like tables from leaving their sections.
+\usepackage[section]{placeins}
+
+% Provides the [H] "here, exactly" placement specifier for figures.
+\usepackage{float}
+
+% To make \thead in tables bold.
+\usepackage{makecell}
+\renewcommand\theadfont{\bfseries}
+
+\usepackage[table,dvipsnames]{xcolor}
+
+\usepackage[colorlinks=true, urlcolor=blue, linkcolor=red]{hyperref}
+
+% Apple II hi-res pixel colors for graphics figures.
+\definecolor{apple_white}{rgb}{0.9,0.9,0.9}
+\newcommand{\Cbk}{\cellcolor{black}}
+\newcommand{\Cbw}{\cellcolor{apple_white}}
+\newcommand{\Cbg}{\cellcolor{green}}
+\newcommand{\Cbv}{\cellcolor{violet}}
+
+\usepackage {booktabs}
+
+\usepackage {tikz}
+\usetikzlibrary {positioning, shapes.geometric, shapes.multipart, svg.path, arrows.meta, quotes, calc, decorations.pathreplacing}
+
+\noweboptions {smallcode,longchunks}
+
+% Tangle assembly files and main.tex with:
+%   python3 weave.py main.nw output
+%
+% Generate the PDF with (two passes, from output/):
+%   pdflatex main.tex
+%
+% Assemble a target with (from output/):
+%   dasm NAME.asm -f3 -oNAME.bin -lNAME.lst -sNAME.sym
+
+% TODO(bootstrap): set the game title and author.
+\title{%
+  GAME TITLE \\
+  \large Reverse engineered from the Apple II version}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+\pagestyle{noweb}
+
+\chapter{Introduction}
+
+% TODO(bootstrap): one-page description of the game — publisher, year,
+% what the player sees and does. Written for a reader who has never
+% seen the game.
+
+This document is a literate reverse engineering of GAME TITLE for the
+Apple~II. Every byte of the original program is reproduced by the
+assembly chunks herein: tangling this document and assembling the
+result yields binaries identical to the original disk image. The
+document is written for a reader who wants to understand how the game
+was built --- in enough detail to reproduce or port it in any language,
+on any platform. Platform-independent descriptions of the game's
+design, data structures, and algorithms accompany the annotated
+assembly throughout.
+
+\chapter{Disk layout and boot chain}
+
+% TODO(bootstrap): document the disk format, sector order, boot chain,
+% page table, and track/sector-to-memory tables discovered in Round 0.
+
+\chapter{Boot sequence}
+
+% TODO(bootstrap): boot sector documentation and the <<boot1.asm>>=
+% collection chunk go here.
+
+\chapter{Loader}
+
+% TODO: second-stage loader / RWTS documentation.
+
+\chapter{Game code}
+
+% TODO: main loop, subsystems, and synthesis sections.
+
+\appendix
+
+\chapter{Memory map}
+
+% TODO: memory map tables as they become known.
+
+\end{document}

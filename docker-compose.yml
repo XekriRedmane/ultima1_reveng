@@ -1,0 +1,28 @@
+# Apple II reverse-engineering agent container.
+#
+# Configuration via environment (or a .env file next to this compose file):
+#   ANTHROPIC_API_KEY  — required
+#   GIT_USER_NAME      — git committer name  (default: "RE Agent")
+#   GIT_USER_EMAIL     — git committer email (default: "re-agent@localhost")
+#   CLAUDE_STATE_DIR   — host dir for persistent Claude Code state
+#                        (default: ~/.a2re-claude-container-state)
+#
+# Usage:
+#   docker compose build
+#   docker compose run --rm re
+#   # inside the container:
+#   yolo    # claude --dangerously-skip-permissions
+services:
+  re:
+    build: .
+    image: a2re
+    volumes:
+      - .:/project/repo
+      - ${CLAUDE_STATE_DIR:-~/.a2re-claude-container-state}:/host-state
+      - ~/.ssh:/mnt/host-ssh:ro
+    environment:
+      - ANTHROPIC_API_KEY
+      - GIT_USER_NAME
+      - GIT_USER_EMAIL
+    stdin_open: true
+    tty: true

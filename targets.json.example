@@ -1,0 +1,13 @@
+{
+  "game": "Game Name (Publisher, Year)",
+  "disk_image": "game.dsk",
+  "dsk_sector_order": "dos33",
+  "nw_source": "main.nw",
+  "output_dir": "output",
+  "targets": [
+    {"name": "boot1",  "base": "$0800", "reference": "reference/boot1.bin",  "description": "Boot sector (T0S0)"},
+    {"name": "loader", "base": "$5000", "reference": "reference/loader.bin", "description": "Second-stage loader"},
+    {"name": "main",   "base": "$0800", "reference": "reference/main.bin",   "description": "Game code"}
+  ],
+  "pdf_pregen": []
+}
