@@ -1,0 +1,1 @@
+- [toolchain-pitfalls](toolchain_pitfalls.md) — dasm RORG chunks, inline-arg disasm misalignment, stale SMC operands (proven rounds 0-2)

@@ -2385,7 +2385,1626 @@ MLIB_UNIT
 
 \chapter{Title and introduction: U1.INTRO}
 
-% TODO: U1.INTRO — title screen and main menu.
+\texttt{U1.INTRO} is the animated title sequence: the castle of Lord
+British is painted piece by piece on the hi-res screen while a tune
+plays, a bird crosses the sky, a banner unfurls, and the picture
+finally dissolves into the title image. It runs in a loop as an
+attract mode --- any key launches the game proper (\textsc{brun}
+\texttt{MI.U1}); ESC pauses.
+
+Two facts shape the code. First, on cold start it \textsc{brun}s
+\texttt{MAKE.INDATA}, which builds the intro's artwork in memory
+(the pixel data the animation draws from lives at
+[[ART_BASE]]--[[$8Fxx]] % TODO-SYM: upper bound after makeindata RE
+and is \emph{not} part of this file); until that program is reverse
+engineered, the art tables here are named by the routine that consumes
+them. Second, nearly every drawing loop is built around
+\emph{self-modified operands}: a stream pointer patched into an
+absolute [[LDA]], and row/column limits patched into [[CPY]]/[[CPX]]
+immediates. The annotations name each patched byte with the
+[[= *+1]] idiom.
+
+The animation engine is a frame loop ([[ANIM_RUN]]) that calls a fixed
+list of per-frame actors; each actor decides from its own state
+variables (the [[V_]] block) whether to do anything this frame. The
+show is divided into \emph{steps} 0--4; [[SET_STEP]] redraws the base
+picture from one of five progressively more complete frames
+([[STEP_IMG_PTRS]]), and the actors fill in the differences ---
+exactly the structure of a cartoon: key frames plus in-betweens.
+
+\section{Defines}
+
+<<u1intro defines>>=
+; --- Zero page ---
+ZP_STREAM       EQU $00         ; event/score stream pointer (page 9)
+ZP_LFSR         EQU $00         ; dissolve: 16-bit LFSR state (alias)
+ZP_DIS_DST      EQU $02         ; dissolve: hi-res page 1 pointer
+ZP_DIS_SRC      EQU $05         ; dissolve: hi-res page 2 pointer
+ZP_SRC          EQU $06         ; copy source / second line pointer
+ZP_DIS_CNT      EQU $07         ; dissolve: 16-bit pass counter (alias)
+ZP_DST          EQU $08         ; copy destination pointer
+ZP_DIS_TMP      EQU $09         ; dissolve: masked-bit scratch (alias)
+ZP_LINE         EQU $26         ; current hi-res line pointer
+ZP_RAND         EQU $4E         ; 2-byte additive pseudo-random state
+; --- Mailbox shared with MAKE.INDATA / MI.U1 ---
+INTRO_FLAG      EQU $03CE       ; intro mode/mailbox flag
+; --- Soft switches ---
+KBD             EQU $C000       ; keyboard data
+KBDSTRB         EQU $C010       ; clear keyboard strobe
+SPEAKER         EQU $C030       ; speaker toggle
+TXTCLR          EQU $C050       ; graphics on
+MIXCLR          EQU $C052       ; full-screen graphics
+TXTPAGE1        EQU $C054       ; display page 1
+TXTPAGE2        EQU $C055       ; display page 2
+HIRES           EQU $C057       ; hi-res mode
+; --- External entry points and buffers ---
+MLIB_BRUN       EQU $B70C       ; file library: BRUN, inline path text
+HGR1            EQU $2000       ; hi-res page 1
+HGR2            EQU $4000       ; hi-res page 2
+HGR_SAVE        EQU $9000       ; backup copy of page 1 ($9000-$AFFF)
+; --- Intro artwork, built in memory by MAKE.INDATA ---
+; (semantic names pending the MAKE.INDATA chapter; named for the
+; routine that consumes each block)
+ART_BASE        EQU $6000       ; five key frames, $535 bytes each
+ART_CASTLE      EQU $7A09       ; castle strip stream (STRIP_DRAW)
+ART_PANEL_A     EQU $7CE1       ; gate panel, first state
+ART_PANEL_B     EQU $7C91       ; gate panel, second state
+ART_STRIPS      EQU $7D31       ; beat strips, 7 x $1C bytes (STRIP_ON_BEAT)
+ART_WIPE_PIX    EQU $7DF5       ; sky-wipe pixel rows, 3 bytes per line
+ART_WIPE_MASK   EQU $7F60       ; sky-wipe mask rows
+ART_CURTAIN     EQU $80CB       ; curtain panel rows (CURTAIN_DROP)
+ART_CURTAIN2    EQU $815B       ; curtain overlay rows
+ART_BIRD        EQU $81CA       ; bird sprite frames, $28 bytes apart
+; --- Fixed screen bytes the beat actor animates ---
+PENNANT_UP      EQU $3732       ; pennant pixels, upper line
+PENNANT_DN      EQU $3B32       ; pennant pixels, lower line
+STAR_BYTE       EQU $2F88       ; the twinkling star in the sky
+DRIVE_OFF       EQU $C0E8       ; slot 6 drive motor off
+@ %def ZP_STREAM ZP_LFSR ZP_DIS_DST ZP_DIS_SRC ZP_SRC ZP_DIS_CNT ZP_DST
+@ %def ZP_DIS_TMP ZP_LINE ZP_RAND INTRO_FLAG KBD KBDSTRB TXTCLR MIXCLR
+@ %def TXTPAGE1 TXTPAGE2 HIRES HGR1 HGR2 HGR_SAVE ART_BASE ART_CASTLE
+@ %def ART_PANEL_A ART_PANEL_B ART_STRIPS ART_WIPE_PIX ART_WIPE_MASK
+@ %def ART_CURTAIN ART_CURTAIN2 ART_BIRD PENNANT_UP PENNANT_DN STAR_BYTE
+@ %def DRIVE_OFF
+
+\section{Entry vectors}
+
+The file loads at [[$0800]] and is entered at its first byte by the
+library's \textsc{brun}. The second vector replays the animation
+without re-running \texttt{MAKE.INDATA} (the attract loop uses it),
+and the third is a no-op hook.
+
+<<u1intro entry vectors>>=
+        ORG $0800
+INTRO_ENTRY
+        JMP INTRO_COLD
+INTRO_REPLAY_VEC
+        JMP INTRO_REPLAY
+        RTS                             ; spare no-op vector
+@ %def INTRO_ENTRY INTRO_REPLAY_VEC
+
+\section{Hi-res line address tables}
+
+Lookup tables for the base address of each of the 192 hi-res screen
+lines (page 1, [[HGR1]]); every drawing routine indexes these by line
+number instead of computing the interleaved address. Adding [[$70]] to
+a high byte retargets the same line in the [[HGR_SAVE]] copy at
+[[$9000]]; adding [[$20]] retargets page 2.
+
+<<hires line tables>>=
+        ORG $0807
+HGR_LINE_LO
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+HGR_LINE_HI
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 23 27 2b 2f 33 37 3b 3f
+@ %def HGR_LINE_LO HGR_LINE_HI
+
+\section{Animation tables}
+
+The five key frames are [[$535]] bytes apart in the art region: 43
+rows (lines [[$28]]--[[$52]] of the picture area) of 31 bytes (columns
+9--39). [[FLASH_POS]] holds seven (column, line) pairs --- the screen
+spots flashed in time with the score. [[STRIP_PTRS]] points at seven
+28-byte strips drawn on random beats, in the order given by
+[[STRIP_SEQ]] (terminated by [[$FF]]). [[BIRD_PTRS]] holds the bird's
+wing frames, and [[BANNER_PTRS]] the two alternating row lists (data
+in this file, section~\ref{sec:banner-rows}) for the waving banner.
+
+<<intro animation tables>>=
+        ORG $0987
+STEP_IMG_PTRS                           ; key frame images, $535 bytes apart
+        DC.W ART_BASE
+        DC.W ART_BASE+$535
+        DC.W ART_BASE+$A6A
+        DC.W ART_BASE+$F9F
+        DC.W ART_BASE+$14D4
+FLASH_POS                               ; (column, line) pairs, one per note
+        HEX 05 01 07 18 0a 09 0e 04
+        HEX 17 17 1c 10 25 08
+STRIP_PTRS                              ; beat strips, $1C bytes each
+        DC.W ART_STRIPS
+        DC.W ART_STRIPS+$1C
+        DC.W ART_STRIPS+$38
+        DC.W ART_STRIPS+$54
+        DC.W ART_STRIPS+$70
+        DC.W ART_STRIPS+$8C
+        DC.W ART_STRIPS+$A8
+BIRD_PTRS                               ; wing animation frames
+        DC.W ART_BIRD
+        DC.W ART_BIRD+$50
+        DC.W ART_BIRD+$28
+        DC.W ART_BIRD+$3C
+        DC.W ART_BIRD+$50
+BANNER_PTRS                             ; alternating banner row lists
+        DC.W BANNER_ROWS1
+        DC.W BANNER_ROWS0
+STRIP_SEQ                               ; order the beat strips appear in
+        HEX 00 01 00 01 02 01 00 01
+        HEX 02 03 04 03 04 03 02 01
+        HEX 00 05 06 05 06 05 06 ff
+@ %def STEP_IMG_PTRS FLASH_POS STRIP_PTRS BIRD_PTRS BANNER_PTRS STRIP_SEQ
+
+\section{Animation state variables}
+
+<<intro variables>>=
+        ORG $09D3
+V_STRIP_X       DC.B $00        ; castle strip: current column
+V_STRIP_LINE    DC.B $00        ; castle strip: current top line
+V_BIRD_COL      DC.B $00        ; bird: column bias (wraps)
+V_BIRD_LINE     DC.B $00        ; bird: top line (wraps)
+V_SPARK_PHASE   DC.B $00        ; sparkle: 0-5 sub-phase counter
+V_FIRST_PASS    DC.B $00        ; bit 7: first run of the show
+V_STRIP_IDX     DC.B $00        ; index into STRIP_SEQ
+V_DIV3          DC.B $00        ; beat divider for the strip actor
+V_BIRD_PHASE    DC.B $00        ; bird: wing frame sub-phase
+V_WIPE_LINE     DC.B $00        ; sky wipe: current line ($96 down to $17)
+V_STEP          DC.B $00        ; current show step (0-4)
+V_WIPE_PAUSE    DC.B $00        ; set by the wipe; not read back
+V_CURTAIN_LINE  DC.B $00        ; curtain: lowest drawn line
+V_GLINT_LINE    DC.B $00        ; glint: current line ($7A-$82)
+V_FLIP          DC.B $00        ; toggles $00/$FF every frame
+V_BANNER_COL    DC.B $00        ; banner: leftmost column (wraps)
+V_BANNER_LINE   DC.B $00        ; banner: top line
+V_BANNER_DIV3   DC.B $00        ; beat divider for the banner
+V_FRAME_CTR     DC.B $00        ; frames remaining in ANIM_RUN
+@ %def V_STRIP_X V_STRIP_LINE V_BIRD_COL V_BIRD_LINE V_SPARK_PHASE
+@ %def V_FIRST_PASS V_STRIP_IDX V_DIV3 V_BIRD_PHASE V_WIPE_LINE V_STEP
+@ %def V_WIPE_PAUSE V_CURTAIN_LINE V_GLINT_LINE V_FLIP V_BANNER_COL
+@ %def V_BANNER_LINE V_BANNER_DIV3 V_FRAME_CTR
+
+\section{Drawing the castle in strips}
+
+[[STRIP_DRAW]] blits one 6-column-wide, 18-line-tall patch of the
+castle: bytes stream from the self-modified pointer [[.src]]
+(starting at [[ART_CASTLE]], reset by [[STRIP_SRC_RESET]]), are
+[[ORA]]-combined with the saved background ([[HGR_SAVE]], the line's
+high byte plus [[$70]]), and stored with the palette bit cleared.
+Columns at or beyond [[$28]] are fetched but not stored --- the
+stream must stay in step even where the patch hangs off the right
+edge. [[STRIP_CASCADE]] runs patches diagonally down-left across the
+whole image: three at a time, stepping the column down and the line
+up, restarting the stream each pass.
+
+<<draw one castle strip>>=
+        ORG $09E6
+STRIP_DRAW
+        SUBROUTINE
+        ; Blit one 6 x 18 patch of the castle picture.
+        ;
+        ; Inputs:
+        ;   V_STRIP_X, V_STRIP_LINE - top-left corner
+        ;   .src stream             - art bytes (self-modified pointer)
+        ;
+        ; Behavior:
+        ;   For 18 lines, OR each art byte with the saved background
+        ;   and store it (palette bit stripped) unless the column is
+        ;   past the right edge. The stream pointer advances even for
+        ;   clipped columns.
+        ;
+        ; Modifies:
+        ;   ZP_LINE, ZP_SRC, .src, .xlimit, .llimit
+        ; Clobbers: A, X, Y
+        LDA V_STRIP_X
+        CLC
+        ADC #$06
+        STA .xlimit                     ; right edge of the patch
+        LDA V_STRIP_LINE
+        TAX
+        CLC
+        ADC #$12
+        STA .llimit                     ; bottom edge of the patch
+.line   LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        STA ZP_SRC
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        ADC #$70                        ; same line in HGR_SAVE
+        STA ZP_SRC+1
+        LDY V_STRIP_X
+.src    = *+1
+.fetch  LDA ART_BASE                    ; stale operand; reset to ART_CASTLE
+        INC .src
+        BNE .merge
+        INC .src+1
+.merge  ORA (ZP_SRC),Y                  ; combine with saved background
+        CPY #$28
+        BCS .clip                       ; off-screen: consume, don't store
+        AND #$7F
+        STA (ZP_LINE),Y
+.clip   INY
+.xlimit = *+1
+        CPY #$00                        ; (patched: V_STRIP_X + 6)
+        BNE .fetch
+        INX
+.llimit = *+1
+        CPX #$00                        ; (patched: V_STRIP_LINE + $12)
+        BNE .line
+        RTS
+STRIP_SRC_RESET
+        ; restart the castle art stream
+        LDA #>ART_CASTLE
+        STA .src+1
+        LDA #<ART_CASTLE
+        STA .src
+        RTS
+@ %def STRIP_DRAW STRIP_SRC_RESET
+
+<<castle strip cascade>>=
+        ORG $0A37
+STRIP_CASCADE
+        SUBROUTINE
+        ; Sweep STRIP_DRAW patches diagonally across the picture.
+        ;
+        ; Behavior:
+        ;   Draw three patches, stepping line down and column left
+        ;   each time; when the column underflows, restart the art
+        ;   stream and repeat until done.
+.three  JSR STRIP_DRAW
+        JSR STRIP_DRAW
+        JSR STRIP_DRAW
+        INC V_STRIP_LINE
+        DEC V_STRIP_X
+        BMI .done
+        JSR STRIP_DRAW
+        JSR STRIP_DRAW
+        JSR STRIP_DRAW
+        INC V_STRIP_LINE
+        DEC V_STRIP_X
+        JSR STRIP_SRC_RESET
+        JMP .three
+.done   RTS
+@ %def STRIP_CASCADE
+
+\section{The gate sparkle}
+
+[[SPARKLE]] is a per-frame actor whose first byte is \emph{patched}
+between [[JSR]] ([[$20]]) and [[RTS]] ([[$60]]) by the rest of the
+program --- enabling or disabling the effect wholesale. While enabled,
+it draws one castle strip per frame and counts phases; every sixth
+frame it restarts the stream and advances the patch position, and on
+phase 3 of the final position it clears a rectangle, redraws the
+two-state gate panel ([[ART_PANEL_A]] then, one [[ANIM_RUN]] burst
+later, [[ART_PANEL_B]]), and clears the first-pass flag.
+
+<<gate sparkle>>=
+        ORG $0A5E
+SPARKLE
+        SUBROUTINE
+        ; Per-frame castle-completion actor. The opcode byte at
+        ; SPARKLE itself is toggled between JSR ($20) and RTS ($60)
+        ; by INTRO_REPLAY / ANIM_STEP to switch the actor on or off.
+        ;
+        ; Behavior:
+        ;   Draw one strip per frame; every 6th frame restart the
+        ;   stream and step the patch. On the closing phase, blank
+        ;   the gate area, draw panel A, run a one-step animation,
+        ;   then draw panel B and clear V_FIRST_PASS.
+        JSR STRIP_DRAW
+        INC V_SPARK_PHASE
+        LDA V_SPARK_PHASE
+        CMP #$06
+        BNE .check3
+        JSR STRIP_SRC_RESET
+        LDA #$00
+        STA V_SPARK_PHASE
+        INC V_STRIP_LINE
+        DEC V_STRIP_X
+        RTS
+.check3 CMP #$03
+        BNE .out
+        INC V_STRIP_LINE
+        DEC V_STRIP_X
+        LDA V_STRIP_X
+        CMP #$06
+        BCC .finish
+.out    RTS
+.finish LDA #$60                        ; SPARKLE <- RTS: actor off
+        STA SPARKLE
+        ; --- blank the gate area (lines $31-$42, columns 7-9) ---
+        LDX #$31
+.blank  LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        LDY #$07
+        LDA #$00
+.bcol   STA (ZP_LINE),Y
+        INY
+        CPY #$0A
+        BNE .bcol
+        INX
+        CPX #$43
+        BNE .blank
+        LDA #$01
+        JSR SET_STEP                    ; key frame 1 as background
+        ; --- draw gate panel A (lines $38-$47, columns 4-8) ---
+        LDA #>ART_PANEL_A
+        STA .pa+1
+        LDA #<ART_PANEL_A
+        STA .pa
+        LDX #$38
+.parow  LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        LDY #$04
+.pa     = *+1
+.pacol  LDA $85DD                       ; stale operand; patched to ART_PANEL_A
+        INC .pa
+        BNE .pastore
+        INC .pa+1
+.pastore
+        STA (ZP_LINE),Y
+        INY
+        CPY #$09
+        BNE .pacol
+        INX
+        CPX #$48
+        BNE .parow
+        ; --- one nested animation burst, then panel B ---
+        LDA V_FRAME_CTR
+        PHA
+        LDA #$01
+        JSR ANIM_RUN
+        PLA
+        STA V_FRAME_CTR
+        LDA #<ART_PANEL_B
+        STA .pb
+        LDA #>ART_PANEL_B
+        STA .pb+1
+        LDX #$38
+.pbrow  LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        STA ZP_SRC+1
+        LDY #$04
+.pb     = *+1
+.pbcol  LDA ART_PANEL_A                 ; stale operand; patched to ART_PANEL_B
+        INC .pb
+        BNE .pbstore
+        INC .pb+1
+.pbstore
+        STA (ZP_LINE),Y
+        INY
+        CPY #$09
+        BNE .pbcol
+        INX
+        CPX #$48
+        BNE .pbrow
+        LSR V_FIRST_PASS                ; first pass complete
+        RTS
+@ %def SPARKLE
+
+\section{Keyboard and launching the game}
+
+The per-frame key check. Two special keys set the mailbox flag
+([[INTRO_FLAG]]) and continue the show --- `K' selects value 4
+(enables the banner sequence) and ctrl-@ value [[$10]] (enables the
+bird) --- ESC freezes until another key, and \emph{any other key
+starts the game}: the display is flipped to page 2 (hiding the
+animation work) and \texttt{MI.U1} is \textsc{brun}. Every recognized
+key clicks the speaker.
+
+<<keyboard and launch>>=
+        ORG $0B23
+KEY_CHECK
+        SUBROUTINE
+        ; Per-frame keyboard actor.
+        ;
+        ; Behavior:
+        ;   No key: return. 'K': INTRO_FLAG <- #$04. ctrl-@:
+        ;   INTRO_FLAG <- #$10. ESC: wait for another key. Anything
+        ;   else: KEY_LAUNCH (never returns).
+        LDA KBD
+        BPL .out
+        BIT KBDSTRB
+        BIT SPEAKER                     ; key click
+        LDX #$00
+.pause  DEX
+        BNE .pause
+        BIT SPEAKER
+        CMP #$CB                        ; 'K'
+        BEQ .flag4
+        CMP #$80                        ; ctrl-@
+        BNE KEY_LAUNCH
+        LDA #$10
+        STA INTRO_FLAG
+        BIT SPEAKER
+        RTS
+.flag4  LDA #$04
+        STA INTRO_FLAG
+        BIT SPEAKER
+        RTS
+KEY_LAUNCH
+        ; any other key: ESC pauses, the rest start the game
+        CMP #$9B                        ; ESC
+        BEQ .wait
+        BIT TXTPAGE2                    ; park the display on page 2
+        JSR MLIB_BRUN
+        DC.B "MI.U1"                    ; (never returns)
+        DC.B $00
+.out    RTS
+.wait   LDA KBD                         ; frozen until the next key
+        BPL .wait
+        BIT KBDSTRB
+        RTS
+@ %def KEY_CHECK KEY_LAUNCH
+
+\section{Logo strips on random beats}
+
+Every third frame, a two-byte additive generator ([[ZP_RAND]],
+seeded by [[INTRO_COLD]]) decides whether the next strip from [[STRIP_SEQ]]/[[STRIP_PTRS]] appears ---
+each is two columns wide and 14 lines tall (lines [[$95]]--[[$A2]],
+columns 7--8). When the sequence index hits the [[$FF]] terminator it
+wraps. After each strip the display is switched to full-screen hi-res
+page 1 --- the first strip drawn is what actually turns the picture
+on.
+
+<<logo strips on random beat>>=
+        ORG $0B6A
+STRIP_ON_BEAT
+        SUBROUTINE
+        ; Random-paced reveal of the bottom strip row.
+        ;
+        ; Behavior:
+        ;   Every 3rd frame, advance ZP_RAND (Fibonacci-style add);
+        ;   when bit 7 is set, draw the next 2 x 14 strip from
+        ;   STRIP_SEQ at lines $95-$A2 (ORed over HGR_SAVE) and
+        ;   switch the display to full hi-res page 1.
+        INC V_DIV3
+        LDA V_DIV3
+        EOR #$03
+        BNE .out
+        STA V_DIV3
+        LDA ZP_RAND
+        CLC
+        ADC ZP_RAND+1
+        LDX ZP_RAND+1
+        STX ZP_RAND
+        STA ZP_RAND+1
+        BPL .out
+        LDY V_STRIP_IDX
+        LDA STRIP_SEQ,Y
+        CMP #$FF
+        BNE .pick
+        LDA #$00
+        STA V_STRIP_IDX
+.pick   ASL
+        TAY
+        LDA STRIP_PTRS,Y
+        STA .strip
+        LDA STRIP_PTRS+1,Y
+        STA .strip+1
+        LDX #$95
+.row    LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        STA ZP_DST
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        ADC #$70                        ; same line in HGR_SAVE
+        STA ZP_DST+1
+        LDY #$07
+.strip  = *+1
+.col    LDA ART_STRIPS                  ; (self-modified stream)
+        INC .strip
+        BNE .merge
+        INC .strip+1
+.merge  ORA (ZP_DST),Y
+        STA (ZP_LINE),Y
+        INY
+        CPY #$09
+        BNE .col
+        INX
+        CPX #$A3
+        BNE .row
+        INC V_STRIP_IDX
+        BIT HIRES                       ; show the picture:
+        BIT TXTPAGE1                    ;   full-screen hi-res page 1
+        BIT MIXCLR
+        BIT TXTCLR
+.out    RTS
+@ %def STRIP_ON_BEAT
+
+\section{The sky wipe}
+
+A three-column ([[$1F]]--[[$21]]) vertical feature is revealed one
+line per call, from line [[$96]] upward to [[$17]]: each line combines
+the existing screen byte with a mask row and pixel row from the art
+region, the two streams advancing three bytes per line. Lines outside
+[[$0E]]--[[$88]] are skipped (the streams still advance), keeping the
+data in step across the whole span; each pass covers [[$72]] lines
+upward from [[V_WIPE_LINE]] with 8-bit wraparound.
+
+<<sky wipe>>=
+        ORG $0BDE
+SKY_WIPE
+        SUBROUTINE
+        ; Redraw the 3-column feature from V_WIPE_LINE to the top.
+        ;
+        ; Inputs:
+        ;   V_WIPE_LINE - lowest line of this pass
+        ;
+        ; Behavior:
+        ;   For $72 lines starting at V_WIPE_LINE (8-bit wrap), AND
+        ;   the screen byte with the mask stream and OR in the pixel
+        ;   stream, columns $1F-$21. Lines outside $0E-$88 are
+        ;   skipped; both streams advance 3 bytes per line
+        ;   regardless.
+        ;
+        ; Modifies:
+        ;   ZP_LINE, ZP_DST, .pix, .mask
+        ; Clobbers: A, X, Y
+        LDA #<ART_WIPE_PIX
+        STA .pix
+        LDA #>ART_WIPE_PIX
+        STA .pix+1
+        LDA #<ART_WIPE_MASK
+        STA .mask
+        LDA #>ART_WIPE_MASK
+        STA .mask+1
+        LDA V_WIPE_LINE
+        TAX
+        CLC
+        ADC #$72
+        STA .end                        ; line counter wrap point
+.line   STX ZP_SRC
+        CPX #$89
+        BCS .skip
+        CPX #$0E
+        BCC .skip
+        LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        STA ZP_DST
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        CLC
+        ADC #$70                        ; same line in HGR_SAVE
+        STA ZP_DST+1
+        LDY #$1F
+        LDX #$00
+.col    LDA (ZP_DST),Y
+.mask   = *+1
+        AND ART_WIPE_MASK,X             ; (self-modified row pointer)
+.pix    = *+1
+        ORA ART_WIPE_PIX,X              ; (self-modified row pointer)
+        STA (ZP_LINE),Y
+        INX
+        INY
+        CPY #$22
+        BNE .col
+.skip   LDA #$03                        ; advance both streams 3/line
+        CLC
+        ADC .pix
+        STA .pix
+        BCC .nc1
+        INC .pix+1
+        CLC
+.nc1    LDA #$03
+        ADC .mask
+        STA .mask
+        BCC .nc2
+        INC .mask+1
+.nc2    LDX ZP_SRC
+        INX
+.end    = *+1
+        CPX #$00                        ; (patched: V_WIPE_LINE + $72)
+        BNE .line
+        RTS
+@ %def SKY_WIPE
+
+\section{Wipe sequencer and the curtain}
+
+During step 4 the wipe creeps upward one line per frame (pausing the
+pacing by seeding [[V_WIPE_PAUSE]]) until line [[$17]]. Afterwards,
+[[CURTAIN_DROP]] takes over: on its first call it repaints the
+curtain area from [[ART_CURTAIN]] (lines [[$6B]]--[[$75]]), then each
+call re-copies the saved background down to [[V_CURTAIN_LINE]] and
+ORAs the [[ART_CURTAIN2]] overlay from there down to line [[$87]] ---
+the curtain visibly drops one line per frame.
+
+<<wipe sequencer and curtain>>=
+        ORG $0C4F
+WIPE_STEP
+        SUBROUTINE
+        ; Step-4 actor: creep the sky wipe up, then drop the curtain.
+        ;
+        ; Behavior:
+        ;   In step 4, until V_WIPE_LINE reaches $17: decrement it,
+        ;   seed V_WIPE_PAUSE, SKY_WIPE. Then CURTAIN_DROP each
+        ;   frame until V_CURTAIN_LINE reaches $88.
+        LDA V_STEP
+        CMP #$04
+        BNE .out
+        LDA V_WIPE_LINE
+        EOR #$17
+        BEQ CURTAIN_DROP
+        DEC V_WIPE_LINE
+        LDA #$10
+        STA V_WIPE_PAUSE
+        JSR SKY_WIPE
+.out    RTS
+CURTAIN_DROP
+        ; Lower the curtain one line per frame: first call paints the
+        ; curtain panel; every call advances V_CURTAIN_LINE, restores
+        ; background above it, ORs the overlay below. (Shares the
+        ; WIPE_STEP scope so it can reuse its exit.)
+        LDA V_CURTAIN_LINE
+        CMP #$88
+        BEQ .out
+        CMP #$6A
+        BNE .advance
+        ; --- first call: paint the curtain panel (lines $6B-$75) ---
+        LDA #<ART_CURTAIN
+        STA .cur
+        LDA #>ART_CURTAIN
+        STA .cur+1
+        CLC
+        LDX #$6B
+.crow   LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        LDA HGR_LINE_HI,X
+        ADC #$70
+        STA ZP_LINE+1                   ; paint into HGR_SAVE
+        LDY #$1F
+.cur    = *+1
+.ccol   LDA ART_CURTAIN                 ; (self-modified stream)
+        INC .cur
+        BNE .cstore
+        INC .cur+1
+.cstore STA (ZP_LINE),Y
+        INY
+        CPY #$22
+        BNE .ccol
+        INX
+        CPX #$76
+        BNE .crow
+.advance
+        INC V_CURTAIN_LINE
+        ; --- restore background down to the curtain line ---
+        LDX #$6B
+        CLC
+.rrow   LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        STA ZP_DST
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        ADC #$70
+        STA ZP_DST+1
+        LDY #$1F
+.rcol   LDA (ZP_DST),Y
+        STA (ZP_LINE),Y
+        INY
+        CPY #$22
+        BNE .rcol
+        CPX V_CURTAIN_LINE
+        BEQ .overlay
+        INX
+        BNE .rrow
+.overlay
+        ; --- OR the overlay from the curtain line to line $87 ---
+        LDA #<ART_CURTAIN2
+        STA .ov
+        LDA #>ART_CURTAIN2
+        STA .ov+1
+        CPX #$88
+        BEQ .done
+.orow   LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        STA ZP_DST
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        CLC
+        ADC #$70
+        STA ZP_DST+1
+        LDY #$1F
+.ov     = *+1
+.ocol   LDA ART_CURTAIN2                ; (self-modified stream)
+        INC .ov
+        BNE .omerge
+        INC .ov+1
+.omerge ORA (ZP_DST),Y
+        STA (ZP_LINE),Y
+        INY
+        CPY #$22
+        BNE .ocol
+        CPX #$88
+        BEQ .done
+        INX
+        BNE .orow
+.done   RTS
+@ %def WIPE_STEP CURTAIN_DROP
+
+\section{Beats: pennant, twinkle, and note flashes}
+
+[[SCORE_BEAT]] consumes one byte per frame from the stream at
+[[ZP_STREAM]] (pointed into page [[$09]] of this file --- the tables
+themselves double as the rhythm track). Bits 2--4 select one of seven
+[[FLASH_POS]] screen spots whose byte is inverted ([[EOR #$80]],
+flipping the palette bit) for three lines --- the windows and flames
+that pulse with the music. Value 7 just fetches the next byte. Bit 0
+of each byte swaps two screen bytes between lines (the pennant
+flutter, [[PENNANT_SWAP]]), and on first-pass frames an additive
+random threshold twinkles a single sky byte.
+
+<<pennant and twinkle beat>>=
+        ORG $0D0C
+PENNANT_SWAP
+        SUBROUTINE
+        ; Flutter the castle pennant.
+        ;
+        ; Behavior:
+        ;   If A bit 0 is set, exchange the two pennant screen bytes
+        ;   between their upper and lower lines.
+        AND #$01
+        BEQ .out
+        LDX PENNANT_UP+1
+        LDY PENNANT_DN+1
+        STX PENNANT_DN+1
+        STY PENNANT_UP+1
+        LDX PENNANT_UP
+        LDY PENNANT_DN
+        STX PENNANT_DN
+        STY PENNANT_UP
+.out    RTS
+SCORE_BEAT
+        SUBROUTINE
+        ; Per-frame rhythm actor.
+        ;
+        ; Behavior:
+        ;   Fetch the next score byte from (ZP_STREAM). Bit 0 drives
+        ;   PENNANT_SWAP; on the first pass an additive random
+        ;   threshold twinkles the star byte; bits 2-4 (0-6) flash a
+        ;   FLASH_POS spot for 3 lines, 7 fetches another byte.
+.next   LDY #$00
+        LDA (ZP_STREAM),Y
+        LSR
+        LSR
+        INC ZP_STREAM                   ; wraps within page $09
+        AND #$07
+        PHA
+        JSR PENNANT_SWAP
+        BIT V_FIRST_PASS
+        BMI .nostar
+        LDA STAR_BYTE
+        AND #$0D                        ; twinkle off
+        STA STAR_BYTE
+        LDA ZP_RAND
+        CLC
+        ADC ZP_RAND+1
+        LDX ZP_RAND
+        STA ZP_RAND
+        STX ZP_RAND+1
+        CMP #$E8                        ; bright only past the threshold
+        BCC .nostar
+        LDA STAR_BYTE
+        ORA #$02                        ; twinkle on
+        STA STAR_BYTE
+.nostar PLA
+        CMP #$07
+        BEQ .next                       ; 7 = no flash, refetch
+        ASL
+        TAX
+        LDY FLASH_POS+1,X
+        DEY
+        LDA #$03
+        STA ZP_DST+1                    ; 3 lines to flash
+.flash  STY ZP_DST
+        LDA HGR_LINE_LO,Y
+        STA ZP_SRC
+        LDA HGR_LINE_HI,Y
+        STA ZP_SRC+1
+        LDY FLASH_POS,X
+        LDA (ZP_SRC),Y
+        EOR #$80                        ; invert the palette bit
+        STA (ZP_SRC),Y
+        LDY ZP_DST
+        INY
+        DEC ZP_DST+1
+        BNE .flash
+        RTS
+@ %def PENNANT_SWAP SCORE_BEAT
+
+\section{The animation driver}
+
+[[ANIM_STEP]] selects a show step (key frame plus actor states) and
+runs it for a step-dependent number of frames --- [[$45]] when the
+sparkle is off, [[$95]] when it is running, [[$FF]] for the long
+final step. The two [[DC.B $2C]] bytes are the classic
+\emph{BIT-skip} trick giving the three [[LDA]]s a common exit.
+[[ANIM_RUN]] is the frame loop: each iteration calls every actor in
+fixed order, flips [[V_FLIP]], and counts down.
+
+<<animation step driver>>=
+        ORG $0D87
+ANIM_STEP
+        SUBROUTINE
+        ; Run show step A for its standard duration.
+        ;
+        ; Behavior:
+        ;   SET_STEP, then frames = $FF for step 4, else $45 if the
+        ;   sparkle actor is off ($60 = RTS patched in), else $95.
+        ;   Falls into ANIM_RUN.
+        JSR SET_STEP
+        LDA V_STEP
+        CMP #$04
+        BEQ .full
+        LDX SPARKLE
+        CPX #$60                        ; sparkle actor disabled?
+        BNE .long
+        LDA #$45
+        DC.B $2C                        ; BIT abs: skip next LDA
+.long   LDA #$95
+        DC.B $2C                        ; BIT abs: skip next LDA
+.full   LDA #$FF
+ANIM_RUN
+        SUBROUTINE
+        ; Run A frames of the actor list.
+        ;
+        ; Inputs:
+        ;   A - number of frames
+        ;
+        ; Behavior:
+        ;   Each frame: keyboard, delay, then every animation actor
+        ;   in fixed order; toggle V_FLIP; count down V_FRAME_CTR
+        ;   (actors may bump it to stretch a step).
+        STA V_FRAME_CTR
+.frame  JSR KEY_CHECK
+        JSR FRAME_DELAY
+        JSR SPARKLE                     ; (opcode toggled JSR/RTS)
+        JSR NULL_HOOK
+        JSR WIPE_STEP
+        JSR SCORE_BEAT
+        JSR STRIP_ON_BEAT
+        JSR BIRD_FLY
+        JSR GATE_GLINT
+        JSR BANNER_GATE
+        LDA V_FLIP
+        EOR #$FF
+        STA V_FLIP
+        DEC V_FRAME_CTR
+        BNE .frame
+        RTS
+@ %def ANIM_STEP ANIM_RUN
+
+\section{Selecting a step and drawing its key frame}
+
+<<set step and draw key frame>>=
+        ORG $0DCF
+SET_STEP
+        SUBROUTINE
+        ; Make A the current step and paint its key frame.
+        ;
+        ; Inputs:
+        ;   A - step number 0-4
+        ;
+        ; Behavior:
+        ;   Point .img at STEP_IMG_PTRS[A]; copy 43 rows (lines
+        ;   $28-$52) x 31 bytes (columns 9-39) into both the screen
+        ;   and HGR_SAVE.
+        ;
+        ; Modifies:
+        ;   V_STEP, .img, .scr, .sav
+        ; Clobbers: A, X, Y
+        STA V_STEP
+        ASL
+        TAY
+        LDA STEP_IMG_PTRS,Y
+        STA .img
+        LDA STEP_IMG_PTRS+1,Y
+        STA .img+1
+        LDX #$28
+        CLC
+.row    STX ZP_SRC
+        LDA HGR_LINE_LO,X
+        STA .scr
+        STA .sav
+        LDA HGR_LINE_HI,X
+        STA .scr+1
+        ADC #$70
+        STA .sav+1
+        LDX #$00
+        LDY #$09
+.img    = *+1
+.col    LDA ART_BASE,X                  ; (self-modified frame pointer)
+.scr    = *+1
+        STA HGR1,Y                      ; (self-modified line address)
+.sav    = *+1
+        STA HGR2,Y                      ; (self-modified: line + $7000)
+        INX
+        INY
+        CPY #$28
+        BNE .col
+        DEX
+        TXA
+        ADC .img                        ; advance one 31-byte row
+        STA .img
+        BCC .next
+        INC .img+1
+.next   LDX ZP_SRC
+        INX
+        CPX #$53
+        BNE .row
+        RTS
+@ %def SET_STEP
+
+\section{Frame delay and the null hook}
+
+<<frame delay>>=
+        ORG $0E21
+FRAME_DELAY
+        SUBROUTINE
+        ; Busy-wait that paces every frame.
+        ;
+        ; Behavior:
+        ;   Nested 8-bit countdown from A (#$C0; DELAY_A is a second
+        ;   entry with A preloaded -- the attract loop uses A = 0 for
+        ;   the longest delay).
+        LDA #$C0
+DELAY_A BIT DRIVE_OFF                   ; (harmless strobe)
+        SEC
+.outer  PHA
+.inner  SBC #$01
+        BNE .inner
+        PLA
+        SBC #$01
+        BNE .outer
+        RTS
+NULL_HOOK
+        ; empty actor slot
+        RTS
+@ %def FRAME_DELAY DELAY_A NULL_HOOK
+
+\section{The bird}
+
+Enabled only by the ctrl-@ mailbox value in step 4: every other
+half-phase, a [[$28]]-byte-stride wing frame from [[BIRD_PTRS]] is
+ORed across the sky at ([[V_BIRD_COL]], [[V_BIRD_LINE]]), with only
+columns 2--7 actually stored. The position creeps by one column every
+second call --- a bird flapping across the castle sky.
+
+<<bird flight>>=
+        ORG $0E33
+BIRD_FLY
+        SUBROUTINE
+        ; Step-4 actor: flap the bird one frame.
+        ;
+        ; Behavior:
+        ;   Gated on V_FLIP, INTRO_FLAG = $10, and step 4. Draws
+        ;   BIRD_PTRS[V_BIRD_PHASE] at the bird position (full wrap
+        ;   loops; only columns 2-7 stored), then alternates phase
+        ;   and advances the column every second call.
+        BIT V_FLIP
+        BMI .out
+        LDA INTRO_FLAG
+        CMP #$10
+        BNE .out
+        LDA V_STEP
+        EOR #$04
+        BNE .out
+        LDA V_BIRD_PHASE
+        ASL
+        TAY
+        LDA BIRD_PTRS,Y
+        STA .bird
+        LDA BIRD_PTRS+1,Y
+        STA .bird+1
+        LDA V_BIRD_LINE
+        TAX
+        CLC
+        ADC #$05
+        STA .lend
+        LDA V_BIRD_COL
+        CLC
+        ADC #$04
+        STA .cend
+.row    LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        STA ZP_DST
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        CLC
+        ADC #$70
+        STA ZP_DST+1
+        LDY V_BIRD_COL
+.bird   = *+1
+.col    LDA ART_BIRD                    ; (self-modified frame stream)
+        INC .bird
+        BNE .merge
+        INC .bird+1
+.merge  ORA (ZP_DST),Y
+        CPY #$08
+        BCS .skip
+        CPY #$02
+        BCC .skip
+        STA (ZP_LINE),Y
+.skip   INY
+.cend   = *+1
+        CPY #$00                        ; (patched: V_BIRD_COL + 4)
+        BNE .col
+        INX
+.lend   = *+1
+        CPX #$00                        ; (patched: V_BIRD_LINE + 5)
+        BNE .row
+        INC V_BIRD_PHASE
+        LDA V_BIRD_PHASE
+        EOR #$02
+        BNE .out
+        STA V_BIRD_PHASE
+        INC V_BIRD_COL
+.out    RTS
+@ %def BIRD_FLY
+
+\section{The gate glint}
+
+A small glimmer effect at column 8 of lines [[$7A]]--[[$82]], keyed
+off the bird's column: while the bird approaches, the glint walks down
+the lines, inverting one pixel bit and clicking the speaker; while the
+bird is over columns 9--11, it walks back up, and on reaching the top
+clears the mailbox flag, ending the special sequence.
+
+<<gate glint>>=
+        ORG $0EB0
+GATE_GLINT
+        SUBROUTINE
+        ; Per-frame glint actor, keyed to the bird's position.
+        ;
+        ; Behavior:
+        ;   Bird column 9-11: walk the glint back up toward $82 and
+        ;   clear INTRO_FLAG when it arrives. Bird column $FE-$FF
+        ;   (about to enter): walk the glint down to $7A, flipping a
+        ;   pixel and clicking the speaker each line.
+        LDX V_BIRD_COL
+        CPX #$0C
+        BCS .down
+        CPX #$09
+        BCS .up
+.down   INX
+        INX
+        CPX #$02
+        BCS .out
+        LDX V_GLINT_LINE
+        CPX #$7A
+        BCC .out
+        LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        LDY #$08
+        LDA (ZP_LINE),Y
+        EOR #$02                        ; flip one glint pixel
+        STA (ZP_LINE),Y
+        BIT SPEAKER
+        LDX #$00
+.click  DEX
+        BNE .click
+        BIT SPEAKER
+        DEC V_GLINT_LINE
+.out    RTS
+.up     LDA V_GLINT_LINE
+        CMP #$82
+        BCS FLAG_CLEAR
+        INC V_GLINT_LINE
+        LDX V_GLINT_LINE
+        LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        LDY #$08
+        LDA (ZP_LINE),Y
+        EOR #$02
+        STA (ZP_LINE),Y
+        LDA SPEAKER
+.click2 INY
+        BNE .click2
+        LDA SPEAKER
+        RTS
+FLAG_CLEAR
+        ; special sequence over: clear the mailbox flag
+        LDA #$00
+        STA INTRO_FLAG
+        RTS
+BIRD_RESET
+        ; park the bird off-screen right, on its start line
+        LDA #$CE
+        STA V_BIRD_COL
+        LDA #$7D
+        STA V_BIRD_LINE
+        RTS
+@ %def GATE_GLINT FLAG_CLEAR BIRD_RESET
+
+\section{Cold start and the show script}
+
+[[INTRO_COLD]] \textsc{brun}s \texttt{MAKE.INDATA} (retrying on disk
+errors --- the [[BCS]] lands back on the [[JSR]]), seeds the random
+state, and falls into the show proper. [[INTRO_REPLAY]] is the show
+script, run once per attract cycle: reset all actor state, save the
+screen to [[HGR_SAVE]], run a short lead-in burst, then steps 0, 1, 2
+and 4 in order (step 3's key frame is skipped; the step-4 actors
+--- wipe, curtain, bird, banner --- provide the finale), dissolve in
+the title image from page 2, restore the working screen behind the
+displayed page, and idle in the attract wait.
+
+<<cold start>>=
+        ORG $0F23
+INTRO_COLD
+        SUBROUTINE
+        ; Cold entry: build the art, seed randomness, run the show.
+        ;
+        ; Behavior:
+        ;   Clear INTRO_FLAG, BRUN MAKE.INDATA (retry on error),
+        ;   seed ZP_RAND, fall into INTRO_REPLAY.
+        LDA #$00
+        STA INTRO_FLAG
+.retry  JSR MLIB_BRUN
+        DC.B "MAKE.INDATA"
+        DC.B $00
+        BCS .retry                      ; disk error: try again
+        LDA #$C7                        ; seed the random pacing state
+        STA ZP_RAND
+        LDA #$55
+        STA ZP_RAND+1
+@ %def INTRO_COLD
+
+<<the show script>>=
+        ORG $0F41
+INTRO_REPLAY
+        SUBROUTINE
+        ; One full pass of the title animation.
+        ;
+        ; Behavior:
+        ;   Reset actor state; save the screen to HGR_SAVE; lead-in
+        ;   burst; steps 0,1,2 (sparkle enabled on the first pass),
+        ;   then the long step 4; DISSOLVE the title in; restore the
+        ;   work screen behind page 2; clear the patch areas; attract
+        ;   wait (any key launches, timeout replays).
+        LDA #<STEP_IMG_PTRS             ; score stream starts at the
+        STA ZP_STREAM                   ;   top of the page-9 tables
+        LDA #>STEP_IMG_PTRS
+        STA ZP_STREAM+1
+        SEC
+        ROR V_FIRST_PASS
+        LDA #>HGR1
+        STA ZP_SRC+1
+        CLC
+        ADC #$70
+        STA ZP_DST+1
+        JSR BIRD_RESET
+        LDY #$E8
+        STY V_BANNER_COL
+        LDY #$73
+        STY V_BANNER_LINE
+        LDY #$00
+        STY ZP_SRC
+        STY ZP_DST
+        STY V_STRIP_IDX
+        STY V_BANNER_DIV3
+        STY V_STEP
+        STY V_WIPE_PAUSE
+        LDA #$02
+        STA V_DIV3
+        LDA #$82
+        STA V_GLINT_LINE
+        LDA #$6A
+        STA V_CURTAIN_LINE
+        ; --- save the screen: HGR1 -> HGR_SAVE (32 pages) ---
+        LDX #$20
+.save   LDA (ZP_SRC),Y
+        STA (ZP_DST),Y
+        INY
+        BNE .save
+        INC ZP_SRC+1
+        INC ZP_DST+1
+        DEX
+        BNE .save
+        LDA #$2C
+        STA V_STRIP_X
+        LDA #$0B
+        STA V_STRIP_LINE
+        JSR STRIP_SRC_RESET
+        STY V_SPARK_PHASE               ; Y = 0 after the copy
+        STY V_FLIP
+        LDA #$60                        ; sparkle actor off
+        STA SPARKLE
+        LDA #$25                        ; lead-in burst
+        JSR ANIM_RUN
+        INC INTRO_FLAG
+        LDA #$00
+        STA V_BIRD_PHASE
+        JSR BIRD_RESET
+        ; --- the four show steps ---
+        LDA #$00
+        JSR ANIM_STEP
+        BIT V_FIRST_PASS
+        BPL .step1
+        LDA #$20                        ; sparkle actor on
+        STA SPARKLE
+.step1  LDA #$01
+        JSR ANIM_STEP
+        LDA #$02
+        JSR ANIM_STEP
+        LDA #$96
+        STA V_WIPE_LINE
+        LDA #$04                        ; (step 3's key frame unused)
+        JSR ANIM_STEP
+        JSR DISSOLVE
+        ; --- restore the work screen behind the displayed page ---
+        LDY #$00
+        STY ZP_SRC
+        STY ZP_DST
+        LDX #>HGR1
+        STX ZP_SRC+1
+        LDA #>HGR_SAVE
+        STA ZP_DST+1
+        BIT TXTPAGE2                    ; show the title on page 2
+.rest   LDA (ZP_DST),Y
+        STA (ZP_SRC),Y
+        INY
+        BNE .rest
+        INC ZP_DST+1
+        INC ZP_SRC+1
+        DEX
+        BNE .rest
+        ; --- clear the picture patch areas ---
+        LDX #$28
+.clr1   LDA HGR_LINE_LO,X
+        STA ZP_SRC
+        LDA HGR_LINE_HI,X
+        STA ZP_SRC+1
+        LDY #$09
+        LDA #$00
+.clr1b  STA (ZP_SRC),Y
+        INY
+        CPY #$28
+        BNE .clr1b
+        INX
+        CPX #$53
+        BNE .clr1
+        LDX #$6B
+.clr2   LDA HGR_LINE_LO,X
+        STA ZP_SRC
+        LDA HGR_LINE_HI,X
+        STA ZP_SRC+1
+        LDY #$1F
+        LDA #$00
+.clr2b  STA (ZP_SRC),Y
+        INY
+        CPY #$22
+        BNE .clr2b
+        INX
+        CPX #$76
+        BNE .clr2
+        ; --- attract wait: key launches, timeout replays ---
+        LDA #$00                        ; longest DELAY_A setting
+        LDX #$20
+.wait   BIT KBD
+        BMI .key
+        JSR DELAY_A
+        DEX
+        BNE .wait
+        JMP INTRO_REPLAY
+.key    LDA KBD
+        BIT KBDSTRB
+        JSR KEY_LAUNCH                  ; ESC returns; others launch
+        JMP .wait                       ; re-enter the wait loop
+@ %def INTRO_REPLAY
+
+(The re-entry [[JMP]] returns to the top of the wait loop without
+reloading X --- after an ESC pause the remaining timeout continues
+where it left off.)
+
+\section{Banner row lists}
+\label{sec:banner-rows}
+
+The two alternating row lists the banner draws from --- the only art
+data stored in this file rather than built by \texttt{MAKE.INDATA}.
+
+<<banner row lists>>=
+        ORG $1057
+BANNER_ROWS0
+        HEX 00 30 03 00 60 03 00 80
+        HEX 03 80 80 03 80 30 03 80
+        HEX 30 03 80 78 0d 00 38 1e
+        HEX 80 38 0b 80 2e 03 00 7d
+        HEX 07 00 0a 05 00 49 04
+BANNER_ROWS1
+        HEX 80 00 0c 00 80 0f 00 40
+        HEX 0d 00 80 0c 00 40 0d 00
+        HEX 40 0d 00 60 37 00 60 79
+        HEX 00 60 2d 00 38 0d 00 74
+        HEX 1f 00 48 24 00 28 14
+@ %def BANNER_ROWS0 BANNER_ROWS1
+
+\section{The banner}
+
+Every third banner frame, one of the two row lists is drawn at the
+banner position, alternating with [[V_FLIP]] --- the banner waves.
+Columns below 2, 8--13, and beyond 39 are skipped (the mast and the
+edge), and the column register drifts by the flip value each call,
+walking the banner across. [[BANNER_GATE]] runs the banner only
+during step 4 and only when the mailbox flag is 4, 8, or 12; it
+\emph{extends} the running step by bumping [[V_FRAME_CTR]] each
+frame, until the banner column reaches [[$2C]] and the step is
+allowed to end.
+
+<<banner scroll>>=
+        ORG $10A5
+BANNER_SCROLL
+        SUBROUTINE
+        ; Draw one banner frame (every 3rd call).
+        ;
+        ; Behavior:
+        ;   Alternate BANNER_ROWS1/BANNER_ROWS0 by V_FLIP; draw 13
+        ;   lines from V_BANNER_LINE, columns from V_BANNER_COL
+        ;   (stores gated to columns 2-7 and 14-39); then drift
+        ;   V_BANNER_COL by the flip value.
+        INC V_BANNER_DIV3
+        LDA V_BANNER_DIV3
+        EOR #$03
+        BNE .out
+        STA V_BANNER_DIV3
+        LDY V_FLIP
+        INY
+        TYA
+        ASL
+        TAY
+        LDA BANNER_PTRS,Y
+        STA .row
+        LDA BANNER_PTRS+1,Y
+        STA .row+1
+        LDA V_BANNER_LINE
+        TAX
+        CLC
+        ADC #$0D
+        STA .lend
+        LDA V_BANNER_COL
+        ADC #$03
+        STA .cend
+.line   LDA HGR_LINE_LO,X
+        STA ZP_LINE
+        STA ZP_SRC
+        LDA HGR_LINE_HI,X
+        STA ZP_LINE+1
+        CLC
+        ADC #$70
+        STA ZP_SRC+1
+        LDY V_BANNER_COL
+.row    = *+1
+.col    LDA $FFFF                       ; (self-modified row list)
+        INC .row
+        BNE .gate
+        INC .row+1
+.gate   CPY #$02
+        BCC .skip
+        CPY #$28
+        BCS .skip
+        CPY #$0E
+        BCS .store
+        CPY #$08
+        BCS .skip
+.store  AND #$7F
+        ORA (ZP_SRC),Y
+        STA (ZP_LINE),Y
+.skip   INY
+.cend   = *+1
+        CPY #$00                        ; (patched: V_BANNER_COL + 3)
+        BNE .col
+        INX
+.lend   = *+1
+        CPX #$00                        ; (patched: V_BANNER_LINE + $0D)
+        BNE .line
+        LDA V_BANNER_COL
+        SBC V_FLIP                      ; drift by the flip value
+        STA V_BANNER_COL
+.out    RTS
+@ %def BANNER_SCROLL
+
+<<banner gate>>=
+        ORG $1120
+BANNER_GATE
+        SUBROUTINE
+        ; Step-4 actor: run the banner and pace the finale.
+        ;
+        ; Behavior:
+        ;   Only in step 4. When V_BANNER_COL reaches $2C, force the
+        ;   frame counter to 1 (end the step). Otherwise, if
+        ;   INTRO_FLAG is 4, 8, or 12, scroll the banner and extend
+        ;   the step by one frame.
+        LDA V_STEP
+        CMP #$04
+        BNE .out
+        LDA V_BANNER_COL
+        BMI .check
+        CMP #$2C
+        BNE .check
+        LDA #$01
+        STA V_FRAME_CTR                 ; let the step end
+        RTS
+.check  LDA INTRO_FLAG
+        CMP #$04
+        BEQ .run
+        CMP #$08
+        BEQ .run
+        CMP #$0C
+        BEQ .run
+        RTS
+.run    JSR BANNER_SCROLL
+        INC V_FRAME_CTR                 ; hold the step open
+.out    RTS
+@ %def BANNER_GATE
+
+\section{The dissolve}
+
+The classic 16-bit LFSR ``fizzle'': 65{,}536 iterations, each copying
+\emph{one pseudo-randomly chosen pixel bit} from hi-res page 2 (the
+title image) to page 1. The LFSR low byte selects the byte within a
+page-pair, five high bits select the page, and the top three bits
+select the bit within the byte; the LFSR never visits state zero, so
+the final byte is patched up by hand at the end.
+
+<<the dissolve>>=
+        ORG $114D
+DISSOLVE
+        SUBROUTINE
+        ; Fizzle page 2 into page 1, one random bit at a time.
+        ;
+        ; Behavior:
+        ;   16-bit LFSR (taps via EOR #$B4 on the high byte). Each
+        ;   step: dst = HGR1 + (hi & $1F)*256 + lo, src = same +
+        ;   $2000, bit = top 3 bits of hi; copy that bit. 65536
+        ;   steps, then fix the one byte the LFSR misses.
+        ;
+        ; Modifies:
+        ;   ZP_LFSR, ZP_DIS_DST, ZP_DIS_SRC, ZP_DIS_CNT, ZP_DIS_TMP
+        ; Clobbers: A, X, Y
+        LDX #$FF
+        STX ZP_LFSR
+        STX ZP_LFSR+1
+        INX
+        STX ZP_DIS_CNT
+        STX ZP_DIS_CNT+1
+.step   LSR ZP_LFSR+1
+        ROR ZP_LFSR
+        BCC .nofb
+        LDA ZP_LFSR+1
+        EOR #$B4                        ; LFSR feedback taps
+        STA ZP_LFSR+1
+.nofb   LDA ZP_LFSR
+        STA ZP_DIS_DST
+        STA ZP_DIS_SRC
+        LDA ZP_LFSR+1
+        AND #$1F
+        CLC
+        ADC #>HGR1
+        STA ZP_DIS_DST+1
+        ADC #$20
+        STA ZP_DIS_SRC+1                ; same byte on page 2
+        LDA ZP_LFSR+1
+        AND #$E0
+        ROL
+        ROL
+        ROL
+        ROL
+        TAY                             ; Y <- bit number 0-7
+        SEC
+        LDA #$00
+.mkbit  ROR
+        DEY
+        BPL .mkbit
+        INY                             ; Y <- 0 for the indirects
+        TAX                             ; X <- single-bit mask
+        AND (ZP_DIS_SRC),Y
+        STA ZP_DIS_TMP
+        TXA
+        EOR #$FF
+        AND (ZP_DIS_DST),Y
+        ORA ZP_DIS_TMP
+        STA (ZP_DIS_DST),Y              ; one source bit copied in
+        INC ZP_DIS_CNT
+        BNE .step
+        INC ZP_DIS_CNT+1
+        BNE .step
+        LDA HGR2                        ; the byte the LFSR never picks
+        STA HGR1
+        RTS
+@ %def DISSOLVE
+
+\section{Collection}
+
+<<u1intro.asm>>=
+        PROCESSOR 6502
+<<u1intro defines>>
+<<u1intro entry vectors>>
+<<hires line tables>>
+<<intro animation tables>>
+<<intro variables>>
+<<draw one castle strip>>
+<<castle strip cascade>>
+<<gate sparkle>>
+<<keyboard and launch>>
+<<logo strips on random beat>>
+<<sky wipe>>
+<<wipe sequencer and curtain>>
+<<pennant and twinkle beat>>
+<<animation step driver>>
+<<set step and draw key frame>>
+<<frame delay>>
+<<bird flight>>
+<<gate glint>>
+<<cold start>>
+<<the show script>>
+<<banner row lists>>
+<<banner scroll>>
+<<banner gate>>
+<<the dissolve>>
+@
+
 
 \chapter{The resident engine: MI.U1}
 

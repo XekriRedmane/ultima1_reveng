@@ -9,6 +9,21 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 2 (2026-06-12): U1.INTRO byte-perfect
+
+- `u1intro` 2469/2469. The file is the attract-mode title animation:
+  castle drawn in self-modified strip blits, score-driven flashes,
+  pennant flutter, star twinkle, bird, banner, sky wipe + curtain,
+  then a 16-bit-LFSR fizzle dissolve of the page-2 title image. Any
+  key BRUNs MI.U1; 'K'/ctrl-@ set mailbox $03CE (INTRO_FLAG) to 4/$10
+  enabling banner/bird; ESC pauses.
+- Cold start BRUNs MAKE.INDATA, which **builds the intro artwork at
+  $6000-$8Fxx** (ART_* EQUs named per consumer; semantics + the one
+  TODO-SYM resolve when makeindata is RE'd). INTRO_FLAG is also read
+  with values 8/$0C — likely set elsewhere; watch for it in MI.U1 /
+  MAKE.INDATA.
+- RORG technique proven for relocated code (u1system $0100/$B700).
+
 ### Round 1 (2026-06-12): U1.SYSTEM byte-perfect
 
 - `u1system` 1682/1682, all hygiene metrics zero, PDF 70 pages.
@@ -49,9 +64,6 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [x] Round 1: u1system — DONE.
-      Contains "The First Age of Darkness" banner, startup error
-      handler, jump table at $2922+. Finds/loads U1.INTRO via MLI.
 - [ ] Round 2: `u1intro` (2469 B at $0800) — title/menu. Mostly hi-res
       data up front ($80-heavy), code near $0F23/$0F41 (two JMPs at
       file start). References MAKE.INDATA.
