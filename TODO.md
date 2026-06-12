@@ -9,6 +9,25 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 10 (2026-06-12): MI.U1 100% decomposed; world census in hand
+
+- The "mask tables" are exactly one picture: the 10x94 death SKULL
+  (DEATH_IMG, rendered: images/miu1_death.png).
+- MIU1_STRINGS carved into 15 labeled tables: races (lizard/human/
+  elf/dwarf/bobbit), weapons long+short (16 each, "hands" at 0),
+  stats (10, incl. Gold/Race/Type for chargen), spells (11,
+  "Prayer" at 0!), armour (6, "skin" at 0), classes (peasant/
+  fighter/cleric/wizard/thief), transport (11: foot..time machine),
+  the 26 commands (Pass=space, ctrl-A=Accelerator, HyperJump,
+  K-limb, X-it, Ztats...), 4 gems, 46 monsters (6 blank entries
+  then sea/land/dungeon sets), 4 CONTINENTS (Lord British/Feudal
+  Lords/Dark Unknown/Danger and Despair), and all 84 PLACE names.
+- Two unidentified embedded tables flagged: ENGINE_TBL_A ($76A8,
+  46 bytes, ascending runs -- costs/limits?) and ENGINE_TBL_B
+  ($786F, 168 bytes between continents and places -- per-place
+  data?). Expect the overlays to resolve both.
+- ORG stubs down to 9 (7 overlays + makeindata + tcmaps).
+
 ### Round 9 (2026-06-12): MI.U1 low region carved; EQU stubs = 0
 
 - MIU1_CODE_A is gone: DISK_PROMPT/$7DCC (dual entry, DC.B $2C
@@ -211,17 +230,6 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [ ] Round 9: carve the MIU1 low stub $7DCE-$8036: DISK_PROMPT
-      $7DCC-$7E04 (move the 2 code bytes out of MIU1_STRINGS),
-      PAGE1_LOCK $7E05-$7E15, LOC_NAME table $7E16-$7E31ish, then
-      the player state block through $8036 (defaults incl. name
-      "Glinda", stats, owned arrays -- turn the round-7/8 PLR_*/
-      OWNED_*/READY_* EQUs into labels).
-- [ ] Structure MIU1_STRINGS ($73AF-$7DCD): string tables at $73AF,
-      $74D4 (weapons), $75CB (command names)... X-indexed,
-      high-bit-terminated; map them via STR_NTH inline pointers.
-- [ ] MIU1_MASKS $7003-$73AE: contains the death-screen bitmap
-      ($7003, read by $8870 via row tables) — render it.
 - [ ] Decompose OUT (smallest overlay) as the template; expect
       heavy VEC_* ($15xx) and engine ($80xx-$84xx) calls.
 - [ ] makeindata (builds intro art at $6000+; resolves ART_*

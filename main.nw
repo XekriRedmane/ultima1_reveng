@@ -6590,19 +6590,10 @@ and assorted drawing helpers. Its first instruction simply jumps to
 the overlay entry point: running \texttt{MI.U1} \emph{is} running
 whichever overlay is currently loaded at [[OVERLAY_ENTRY]].
 
-The engine code ([[$8037]]--[[$89BC]]) is now fully decomposed; two
-data regions remain as classified stubs:
-
-\begin{itemize}
-\item [[MIU1_TABLES]] --- graphics data, including the 10-byte-wide
-  death image that [[DEATH]] blits (runs of [[$FF]], [[$E0]],
-  [[$83]] pixel patterns).
-\item [[MIU1_STRINGS]] --- roughly 2.6K of packed text: the race,
-  class, item, weapon, spell, and command name tables (their entry
-  points are EQU'd below, [[STR_RACES]] through [[STR_COMMANDS]]),
-  prompts, and place names. The player state block that follows it
-  is fully carved (see [[LOC_NAME]] onward).
-\end{itemize}
+The whole file is now decomposed: the death-skull image at
+[[DEATH_IMG]], the string region's name tables ([[STR_RACES]]
+through [[STR_PLACES]]), the player state block ([[LOC_NAME]]
+onward), and the engine code ([[$8037]]--[[$89BC]]).
 
 <<miu1 defines>>=
 RESET_VEC       EQU $03F2       ; ProDOS soft-reset vector (+2: check)
@@ -6617,10 +6608,27 @@ MIU1_ENTRY
         JMP OVERLAY_ENTRY
 @ %def MIU1_ENTRY
 
-<<miu1 mask tables>>=
+\section{The death image}
+
+The 940 bytes between the entry jump and the string region are not
+``mask tables'' at all --- they are exactly one picture: the 10-byte
+by 94-scanline skull that [[DEATH]] blits over the viewport when
+the player dies (bytes with the high bit set overwrite the screen;
+the rest are ORed in, which feathers the skull's edges into the
+scene behind it).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.35\textwidth]{images/miu1_death.png}
+\caption{The death skull at [[DEATH_IMG]], rendered 10 bytes wide
+by 94 scanlines.}
+\label{fig:miu1-death}
+\end{figure}
+
+<<miu1 death image>>=
         ORG $7003
-MIU1_TABLES
-        ; STUB — not yet disassembled (bitmask/graphics tables)
+DEATH_IMG
+        ; the death skull: 94 rows of 10 screen bytes (see DEATH)
         HEX 00 00 00 00 fe bf 00 00
         HEX 00 00 00 00 00 e0 ff ff
         HEX 83 00 00 00 00 00 00 f8
@@ -6739,164 +6747,211 @@ MIU1_TABLES
         HEX 00 00 00 e0 ff ff 8f 00
         HEX 00 00 00 00 00 00 ff ff
         HEX 83 00 00 00
-@ %def MIU1_TABLES
+@ %def DEATH_IMG
+
+
+\section{The string region}
+
+All of the game's nouns live in one 2.6\,KB region of packed string
+tables: each entry's final character has its high bit set, and the
+readers ([[STR_NTH]] and friends) count entries from a table's
+start, so the tables need no pointers or lengths. The contents are
+a complete census of the game world --- and they pin down meanings
+that the code alone left open: the four \emph{continent} names, the
+46 monsters, and all 84 named places (castles, towns, dungeons,
+pillars and signposts; index order will matter to the overlays'
+location tables).
+
+A few non-string stretches are embedded among the tables ---
+[[ENGINE_TBL_A]] (small ascending numbers, plausibly per-level
+costs or limits) and [[ENGINE_TBL_B]] (168 bytes between the
+continent and place names, plausibly per-place data) --- their
+meanings are expected to fall out of the overlays.
 
 <<miu1 string region>>=
         ORG $73AF
-MIU1_STRINGS
-        ; STUB — not yet disassembled (name tables and UI text)
-        HEX 6c 69 7a 61 72 e4 68 75
-        HEX 6d 61 ee 65 6c e6 64 77
-        HEX 61 72 e6 62 6f 62 62 69
-        HEX f4 68 61 6e 64 f3 64 61
-        HEX 67 67 65 f2 6d 61 63 e5
-        HEX 61 78 e5 72 6f 70 65 20
-        HEX 26 20 73 70 69 6b 65 f3
-        HEX 73 77 6f 72 e4 67 72 65
-        HEX 61 74 20 73 77 6f 72 e4
-        HEX 62 6f 77 20 26 20 61 72
-        HEX 72 6f 77 f3 61 6d 75 6c
-        HEX 65 f4 77 61 6e e4 73 74
-        HEX 61 66 e6 74 72 69 61 6e
-        HEX 67 6c e5 70 69 73 74 6f
-        HEX ec 6c 69 67 68 74 20 73
-        HEX 77 6f 72 e4 70 68 61 7a
-        HEX 6f f2 62 6c 61 73 74 65
-        HEX f2 68 61 6e 64 f3 64 61
-        HEX 67 67 65 f2 6d 61 63 e5
-        HEX 61 78 e5 72 6f 70 e5 73
-        HEX 77 6f 72 e4 67 20 73 77
-        HEX 6f 72 e4 62 6f f7 61 6d
-        HEX 75 6c 65 f4 77 61 6e e4
-        HEX 73 74 61 66 e6 74 72 69
-        HEX 61 6e 67 6c e5 70 69 73
-        HEX 74 6f ec 6c 20 73 77 6f
-        HEX 72 e4 70 68 61 7a 6f f2
-        HEX 62 6c 61 73 74 65 f2 48
-        HEX 69 74 20 70 6f 69 6e 74
-        HEX f3 53 74 72 65 6e 67 74
-        HEX e8 41 67 69 6c 69 74 f9
-        HEX 53 74 61 6d 69 6e e1 43
-        HEX 68 61 72 69 73 6d e1 57
-        HEX 69 73 64 6f ed 49 6e 74
-        HEX 65 6c 6c 69 67 65 6e 63
-        HEX e5 47 6f 6c e4 52 61 63
-        HEX e5 54 79 70 e5 50 72 61
-        HEX 79 65 f2 4f 70 65 ee 55
-        HEX 6e 6c 6f 63 eb 4d 61 67
-        HEX 69 63 20 4d 69 73 73 69
-        HEX 6c e5 53 74 65 61 ec 4c
-        HEX 61 64 64 65 72 20 44 6f
-        HEX 77 ee 4c 61 64 64 65 72
-        HEX 20 55 f0 42 6c 69 6e eb
-        HEX 43 72 65 61 74 e5 44 65
-        HEX 73 74 72 6f f9 4b 69 6c
-        HEX ec 73 6b 69 ee 6c 65 61
-        HEX 74 68 65 72 20 61 72 6d
-        HEX 6f 75 f2 63 68 61 69 6e
-        HEX 20 6d 61 69 ec 70 6c 61
-        HEX 74 65 20 6d 61 69 ec 76
-        HEX 61 63 75 75 6d 20 73 75
-        HEX 69 f4 72 65 66 6c 65 63
-        HEX 74 20 73 75 69 f4 70 65
-        HEX 61 73 61 6e f4 66 69 67
-        HEX 68 74 65 f2 63 6c 65 72
-        HEX 69 e3 77 69 7a 61 72 e4
-        HEX 74 68 69 65 e6 66 6f 6f
-        HEX f4 68 6f 72 73 e5 63 61
-        HEX 72 f4 72 61 66 f4 66 72
-        HEX 69 67 61 74 e5 61 69 72
-        HEX 63 61 f2 73 68 75 74 74
-        HEX 6c e5 70 68 61 6e 74 6f
-        HEX ed 73 74 61 72 20 63 72
-        HEX 75 69 73 65 f2 62 61 74
-        HEX 74 6c 65 20 62 61 73 e5
-        HEX 74 69 6d 65 20 6d 61 63
-        HEX 68 69 6e e5 4e 6f 72 74
-        HEX e8 53 6f 75 74 e8 45 61
-        HEX 73 f4 57 65 73 f4 50 61
-        HEX 73 f3 41 63 63 65 6c 65
-        HEX 72 61 74 6f f2 41 74 74
-        HEX 61 63 6b a0 42 6f 61 72
-        HEX 64 a0 43 61 73 74 a0 44
-        HEX 72 6f f0 45 6e 74 65 f2
-        HEX 46 69 72 65 a0 47 65 f4
-        HEX 48 79 70 65 72 4a 75 6d
-        HEX f0 49 6e 66 6f 72 6d 20
-        HEX 61 6e 64 20 73 65 61 72
-        HEX 63 e8 4b 2d 6c 69 6d e2
-        HEX 4e 6f 69 73 e5 4f 70 65
-        HEX ee 51 75 69 74 2d 20 73
-        HEX 61 76 69 6e 67 20 67 61
-        HEX 6d 65 2e 2e ae 52 65 61
-        HEX 64 79 20 57 65 61 70 6f
-        HEX 6e 2c 41 72 6d 6f 75 72
-        HEX 2c 53 70 65 6c 6c 3a a0
-        HEX 53 74 65 61 ec 54 72 61
-        HEX 6e 73 61 63 f4 55 6e 6c
-        HEX 6f 63 eb 56 69 65 f7 58
-        HEX 2d 69 f4 5a 74 61 74 f3
-        HEX 52 65 64 20 47 65 ed 47
-        HEX 72 65 65 6e 20 47 65 ed
-        HEX 42 6c 75 65 20 47 65 ed
-        HEX 57 68 69 74 65 20 47 65
-        HEX ed 0a 05 04 03 02 01 04
-        HEX 06 08 0a 01 02 04 06 08
-        HEX 02 04 06 08 09 0a 02 02
-        HEX 03 03 03 04 04 04 05 05
-        HEX 05 06 06 06 07 07 07 08
-        HEX 08 08 09 09 09 0a 0a a0
-        HEX a0 a0 a0 a0 a0 4e 65 73
-        HEX 73 20 63 72 65 61 74 75
-        HEX 72 e5 67 69 61 6e 74 20
-        HEX 73 71 75 69 e4 64 72 61
-        HEX 67 6f 6e 20 74 75 72 74
-        HEX 6c e5 70 69 72 61 74 65
-        HEX 20 73 68 69 f0 68 6f 6f
-        HEX e4 62 65 61 f2 68 69 64
-        HEX 64 65 6e 20 61 72 63 68
-        HEX 65 f2 64 61 72 6b 20 6b
-        HEX 6e 69 67 68 f4 65 76 69
-        HEX 6c 20 74 72 65 6e f4 74
-        HEX 68 69 65 e6 6f 72 e3 6b
-        HEX 6e 69 67 68 f4 6e 65 63
-        HEX 72 6f 6d 61 6e 63 65 f2
-        HEX 65 76 69 6c 20 72 61 6e
-        HEX 67 65 f2 77 61 6e 64 65
-        HEX 72 69 6e 67 20 77 61 72
-        HEX 6c 6f 63 eb 72 61 6e 67
-        HEX 65 f2 73 6b 65 6c 65 74
-        HEX 6f ee 74 68 69 65 e6 67
-        HEX 69 61 6e 74 20 72 61 f4
-        HEX 62 61 f4 67 69 61 6e 74
-        HEX 20 73 70 69 64 65 f2 76
-        HEX 69 70 65 f2 6f 72 e3 63
-        HEX 79 63 6c 6f 70 f3 67 65
-        HEX 6c 61 74 69 6e 6f 75 73
-        HEX 20 63 75 62 e5 65 74 74
-        HEX 69 ee 6d 69 6d 69 e3 6c
-        HEX 69 7a 61 72 64 20 6d 61
-        HEX ee 6d 69 6e 6f 74 61 75
-        HEX f2 63 61 72 72 69 6f 6e
-        HEX 20 63 72 65 65 70 65 f2
-        HEX 74 61 6e 67 6c 65 f2 67
-        HEX 72 65 6d 6c 69 ee 77 61
-        HEX 6e 64 65 72 69 6e 67 20
-        HEX 65 79 65 f3 77 72 61 69
-        HEX 74 e8 6c 69 63 e8 69 6e
-        HEX 76 69 73 69 62 6c 65 20
-        HEX 73 65 65 6b 65 f2 6d 69
-        HEX 6e 64 20 77 68 69 70 70
-        HEX 65 f2 7a 6f 72 ee 64 61
-        HEX 65 6d 6f ee 62 61 6c 72
-        HEX 6f ee 4c 6f 72 64 20 42
-        HEX 72 69 74 69 73 e8 74 68
-        HEX 65 20 46 65 75 64 61 6c
-        HEX 20 4c 6f 72 64 f3 74 68
-        HEX 65 20 44 61 72 6b 20 55
-        HEX 6e 6b 6e 6f 77 ee 44 61
-        HEX 6e 67 65 72 20 61 6e 64
-        HEX 20 44 65 73 70 61 69 f2
+STR_RACES
+        DC.B "lizar",$E4                ;  0: lizard
+        DC.B "huma",$EE                 ;  1: human
+        DC.B "el",$E6                   ;  2: elf
+        DC.B "dwar",$E6                 ;  3: dwarf
+        DC.B "bobbi",$F4                ;  4: bobbit
+STR_WEAPONS
+        DC.B "hand",$F3                 ;  0: hands
+        DC.B "dagge",$F2                ;  1: dagger
+        DC.B "mac",$E5                  ;  2: mace
+        DC.B "ax",$E5                   ;  3: axe
+        DC.B "rope & spike",$F3         ;  4: rope & spikes
+        DC.B "swor",$E4                 ;  5: sword
+        DC.B "great swor",$E4           ;  6: great sword
+        DC.B "bow & arrow",$F3          ;  7: bow & arrows
+        DC.B "amule",$F4                ;  8: amulet
+        DC.B "wan",$E4                  ;  9: wand
+        DC.B "staf",$E6                 ; 10: staff
+        DC.B "triangl",$E5              ; 11: triangle
+        DC.B "pisto",$EC                ; 12: pistol
+        DC.B "light swor",$E4           ; 13: light sword
+        DC.B "phazo",$F2                ; 14: phazor
+        DC.B "blaste",$F2               ; 15: blaster
+STR_WEAPONS_S ; short forms of the same list
+        DC.B "hand",$F3                 ;  0: hands
+        DC.B "dagge",$F2                ;  1: dagger
+        DC.B "mac",$E5                  ;  2: mace
+        DC.B "ax",$E5                   ;  3: axe
+        DC.B "rop",$E5                  ;  4: rope
+        DC.B "swor",$E4                 ;  5: sword
+        DC.B "g swor",$E4               ;  6: g sword
+        DC.B "bo",$F7                   ;  7: bow
+        DC.B "amule",$F4                ;  8: amulet
+        DC.B "wan",$E4                  ;  9: wand
+        DC.B "staf",$E6                 ; 10: staff
+        DC.B "triangl",$E5              ; 11: triangle
+        DC.B "pisto",$EC                ; 12: pistol
+        DC.B "l swor",$E4               ; 13: l sword
+        DC.B "phazo",$F2                ; 14: phazor
+        DC.B "blaste",$F2               ; 15: blaster
+STR_STATS
+        DC.B "Hit point",$F3            ;  0: Hit points
+        DC.B "Strengt",$E8              ;  1: Strength
+        DC.B "Agilit",$F9               ;  2: Agility
+        DC.B "Stamin",$E1               ;  3: Stamina
+        DC.B "Charism",$E1              ;  4: Charisma
+        DC.B "Wisdo",$ED                ;  5: Wisdom
+        DC.B "Intelligenc",$E5          ;  6: Intelligence
+        DC.B "Gol",$E4                  ;  7: Gold
+        DC.B "Rac",$E5                  ;  8: Race
+        DC.B "Typ",$E5                  ;  9: Type
+STR_SPELLS
+        DC.B "Praye",$F2                ;  0: Prayer
+        DC.B "Ope",$EE                  ;  1: Open
+        DC.B "Unloc",$EB                ;  2: Unlock
+        DC.B "Magic Missil",$E5         ;  3: Magic Missile
+        DC.B "Stea",$EC                 ;  4: Steal
+        DC.B "Ladder Dow",$EE           ;  5: Ladder Down
+        DC.B "Ladder U",$F0             ;  6: Ladder Up
+        DC.B "Blin",$EB                 ;  7: Blink
+        DC.B "Creat",$E5                ;  8: Create
+        DC.B "Destro",$F9               ;  9: Destroy
+        DC.B "Kil",$EC                  ; 10: Kill
+STR_ARMOUR
+        DC.B "ski",$EE                  ;  0: skin
+        DC.B "leather armou",$F2        ;  1: leather armour
+        DC.B "chain mai",$EC            ;  2: chain mail
+        DC.B "plate mai",$EC            ;  3: plate mail
+        DC.B "vacuum sui",$F4           ;  4: vacuum suit
+        DC.B "reflect sui",$F4          ;  5: reflect suit
+STR_CLASSES
+        DC.B "peasan",$F4               ;  0: peasant
+        DC.B "fighte",$F2               ;  1: fighter
+        DC.B "cleri",$E3                ;  2: cleric
+        DC.B "wizar",$E4                ;  3: wizard
+        DC.B "thie",$E6                 ;  4: thief
+STR_TRANSPORT
+        DC.B "foo",$F4                  ;  0: foot
+        DC.B "hors",$E5                 ;  1: horse
+        DC.B "car",$F4                  ;  2: cart
+        DC.B "raf",$F4                  ;  3: raft
+        DC.B "frigat",$E5               ;  4: frigate
+        DC.B "airca",$F2                ;  5: aircar
+        DC.B "shuttl",$E5               ;  6: shuttle
+        DC.B "phanto",$ED               ;  7: phantom
+        DC.B "star cruise",$F2          ;  8: star cruiser
+        DC.B "battle bas",$E5           ;  9: battle base
+        DC.B "time machin",$E5          ; 10: time machine
+STR_COMMANDS ; index = CMD_KEYS position
+        DC.B "Nort",$E8                 ;  0: North
+        DC.B "Sout",$E8                 ;  1: South
+        DC.B "Eas",$F4                  ;  2: East
+        DC.B "Wes",$F4                  ;  3: West
+        DC.B "Pas",$F3                  ;  4: Pass
+        DC.B "Accelerato",$F2           ;  5: Accelerator
+        DC.B "Attack",$A0               ;  6: Attack 
+        DC.B "Board",$A0                ;  7: Board 
+        DC.B "Cast",$A0                 ;  8: Cast 
+        DC.B "Dro",$F0                  ;  9: Drop
+        DC.B "Ente",$F2                 ; 10: Enter
+        DC.B "Fire",$A0                 ; 11: Fire 
+        DC.B "Ge",$F4                   ; 12: Get
+        DC.B "HyperJum",$F0             ; 13: HyperJump
+        DC.B "Inform and searc",$E8     ; 14: Inform and search
+        DC.B "K-lim",$E2                ; 15: K-limb
+        DC.B "Nois",$E5                 ; 16: Noise
+        DC.B "Ope",$EE                  ; 17: Open
+        DC.B "Quit- saving game..",$AE  ; 18: Quit- saving game...
+        DC.B "Ready Weapon,Armour,Spell:",$A0; 19: Ready Weapon,Armour,Spell: 
+        DC.B "Stea",$EC                 ; 20: Steal
+        DC.B "Transac",$F4              ; 21: Transact
+        DC.B "Unloc",$EB                ; 22: Unlock
+        DC.B "Vie",$F7                  ; 23: View
+        DC.B "X-i",$F4                  ; 24: X-it
+        DC.B "Ztat",$F3                 ; 25: Ztats
+STR_GEMS
+        DC.B "Red Ge",$ED               ;  0: Red Gem
+        DC.B "Green Ge",$ED             ;  1: Green Gem
+        DC.B "Blue Ge",$ED              ;  2: Blue Gem
+        DC.B "White Ge",$ED             ;  3: White Gem
+ENGINE_TBL_A ; 46 bytes, not yet identified (cost/limit
+             ; tables, by the look of the ascending runs)
+        HEX 0a 05 04 03 02 01 04 06
+        HEX 08 0a 01 02 04 06 08 02
+        HEX 04 06 08 09 0a 02 02 03
+        HEX 03 03 04 04 04 05 05 05
+        HEX 06 06 06 07 07 07 08 08
+        HEX 08 09 09 09 0a 0a
+STR_MONSTERS ; (entries 0-5 are blank)
+        DC.B $A0                        ;  0: ' '
+        DC.B $A0                        ;  1: ' '
+        DC.B $A0                        ;  2: ' '
+        DC.B $A0                        ;  3: ' '
+        DC.B $A0                        ;  4: ' '
+        DC.B $A0                        ;  5: ' '
+        DC.B "Ness creatur",$E5         ;  6: Ness creature
+        DC.B "giant squi",$E4           ;  7: giant squid
+        DC.B "dragon turtl",$E5         ;  8: dragon turtle
+        DC.B "pirate shi",$F0           ;  9: pirate ship
+        DC.B "hoo",$E4                  ; 10: hood
+        DC.B "bea",$F2                  ; 11: bear
+        DC.B "hidden arche",$F2         ; 12: hidden archer
+        DC.B "dark knigh",$F4           ; 13: dark knight
+        DC.B "evil tren",$F4            ; 14: evil trent
+        DC.B "thie",$E6                 ; 15: thief
+        DC.B "or",$E3                   ; 16: orc
+        DC.B "knigh",$F4                ; 17: knight
+        DC.B "necromance",$F2           ; 18: necromancer
+        DC.B "evil range",$F2           ; 19: evil ranger
+        DC.B "wandering warloc",$EB     ; 20: wandering warlock
+        DC.B "range",$F2                ; 21: ranger
+        DC.B "skeleto",$EE              ; 22: skeleton
+        DC.B "thie",$E6                 ; 23: thief
+        DC.B "giant ra",$F4             ; 24: giant rat
+        DC.B "ba",$F4                   ; 25: bat
+        DC.B "giant spide",$F2          ; 26: giant spider
+        DC.B "vipe",$F2                 ; 27: viper
+        DC.B "or",$E3                   ; 28: orc
+        DC.B "cyclop",$F3               ; 29: cyclops
+        DC.B "gelatinous cub",$E5       ; 30: gelatinous cube
+        DC.B "etti",$EE                 ; 31: ettin
+        DC.B "mimi",$E3                 ; 32: mimic
+        DC.B "lizard ma",$EE            ; 33: lizard man
+        DC.B "minotau",$F2              ; 34: minotaur
+        DC.B "carrion creepe",$F2       ; 35: carrion creeper
+        DC.B "tangle",$F2               ; 36: tangler
+        DC.B "gremli",$EE               ; 37: gremlin
+        DC.B "wandering eye",$F3        ; 38: wandering eyes
+        DC.B "wrait",$E8                ; 39: wraith
+        DC.B "lic",$E8                  ; 40: lich
+        DC.B "invisible seeke",$F2      ; 41: invisible seeker
+        DC.B "mind whippe",$F2          ; 42: mind whipper
+        DC.B "zor",$EE                  ; 43: zorn
+        DC.B "daemo",$EE                ; 44: daemon
+        DC.B "balro",$EE                ; 45: balron
+STR_CONTINENTS
+        DC.B "Lord Britis",$E8          ;  0: Lord British
+        DC.B "the Feudal Lord",$F3      ;  1: the Feudal Lords
+        DC.B "the Dark Unknow",$EE      ;  2: the Dark Unknown
+        DC.B "Danger and Despai",$F2    ;  3: Danger and Despair
+ENGINE_TBL_B ; 168 bytes, not yet identified (one byte
+             ; per place? resolved by the overlays)
         HEX 1f 14 03 02 06 24 16 35
         HEX 1e 04 2a 0f 3d 20 22 36
         HEX 15 38 1b 38 0f 5e 56 7b
@@ -6918,158 +6973,95 @@ MIU1_STRINGS
         HEX 1b 38 0f 21 29 04 25 37
         HEX 3c 0e 22 2c 19 0b 14 23
         HEX 22 07 30 1b 15 37 03 09
-        HEX 54 68 65 20 43 61 73 74
-        HEX 6c 65 20 6f 66 20 4c 6f
-        HEX 72 64 20 42 72 69 74 69
-        HEX 73 e8 54 68 65 20 43 61
-        HEX 73 74 6c 65 20 6f 66 20
-        HEX 74 68 65 20 4c 6f 73 74
-        HEX 20 4b 69 6e e7 54 68 65
-        HEX 20 54 6f 77 65 72 20 6f
-        HEX 66 20 4b 6e 6f 77 6c 65
-        HEX 64 67 e5 54 68 65 20 50
-        HEX 69 6c 6c 61 72 73 20 6f
-        HEX 66 20 50 72 6f 74 65 63
-        HEX 74 69 6f ee 54 68 65 20
-        HEX 44 75 6e 67 65 6f 6e 20
-        HEX 6f 66 20 50 65 72 69 6e
-        HEX 69 e1 54 68 65 20 4c 6f
-        HEX 73 74 20 43 61 76 65 72
-        HEX 6e f3 54 68 65 20 4d 69
-        HEX 6e 65 73 20 6f 66 20 4d
-        HEX 74 2e 20 44 72 61 73 e8
-        HEX 54 68 65 20 4d 69 6e 65
-        HEX 73 20 6f 66 20 4d 74 2e
-        HEX 20 44 72 61 73 68 20 49
-        HEX c9 4d 6f 6e 64 61 69 6e
-        HEX 27 73 20 47 61 74 65 20
-        HEX 74 6f 20 48 65 6c ec 54
-        HEX 68 65 20 55 6e 68 6f 6c
-        HEX 79 20 48 6f 6c e5 54 68
-        HEX 65 20 44 75 6e 67 65 6f
-        HEX 6e 20 6f 66 20 44 6f 75
-        HEX 62 f4 54 68 65 20 44 75
-        HEX 6e 67 65 6f 6e 20 6f 66
-        HEX 20 4d 6f 6e 74 6f f2 44
-        HEX 65 61 74 68 27 73 20 41
-        HEX 77 61 6b 65 6e 69 6e e7
-        HEX 42 72 69 74 61 69 ee 4d
-        HEX 6f 6f ee 46 61 77 ee 50
-        HEX 61 77 f3 4d 6f 6e 74 6f
-        HEX f2 59 65 f7 54 75 6e e5
-        HEX 47 72 65 f9 54 68 65 20
-        HEX 43 61 73 74 6c 65 20 42
-        HEX 61 72 61 74 61 72 69 e1
-        HEX 54 68 65 20 43 61 73 74
-        HEX 6c 65 20 52 6f 6e 64 6f
-        HEX 72 6c 69 ee 54 68 65 20
-        HEX 50 69 6c 6c 61 72 20 6f
-        HEX 66 20 4f 7a 79 6d 61 6e
-        HEX 64 69 61 f3 54 68 65 20
-        HEX 50 69 6c 6c 61 72 73 20
-        HEX 6f 66 20 74 68 65 20 41
-        HEX 72 67 6f 6e 61 75 74 f3
-        HEX 53 63 6f 72 70 69 6f 6e
-        HEX 20 48 6f 6c e5 54 68 65
-        HEX 20 53 61 76 61 67 65 20
-        HEX 50 6c 61 63 e5 54 68 65
-        HEX 20 48 6f 72 72 6f 72 20
-        HEX 6f 66 20 74 68 65 20 48
-        HEX 61 72 70 69 65 f3 54 68
-        HEX 65 20 48 6f 72 72 6f 72
-        HEX 20 6f 66 20 74 68 65 20
-        HEX 48 61 72 70 69 65 73 20
-        HEX 49 c9 41 64 76 61 72 69
-        HEX 27 73 20 48 6f 6c e5 54
-        HEX 68 65 20 4c 61 62 79 72
-        HEX 69 6e 74 e8 54 68 65 20
-        HEX 47 6f 72 67 6f 6e 27 73
-        HEX 20 48 6f 6c e5 57 68 65
-        HEX 72 65 20 48 65 72 63 75
-        HEX 6c 65 73 20 44 69 65 e4
-        HEX 54 68 65 20 44 65 61 64
-        HEX 20 57 61 72 72 69 6f 72
-        HEX 27 73 20 46 69 67 68 f4
-        HEX 41 72 6e 6f 6c e4 4c 69
-        HEX 6e 64 e1 48 65 6c 65 ee
-        HEX 4f 77 65 ee 4a 6f 68 ee
-        HEX 47 65 72 72 f9 57 6f 6c
-        HEX e6 54 68 65 20 53 6e 61
-        HEX 6b e5 54 68 65 20 43 61
-        HEX 73 74 6c 65 20 6f 66 20
-        HEX 4f 6c 79 6d 70 75 f3 54
-        HEX 68 65 20 42 6c 61 63 6b
-        HEX 20 44 72 61 67 6f 6e 27
-        HEX 73 20 43 61 73 74 6c e5
-        HEX 54 68 65 20 53 69 67 6e
-        HEX 20 50 6f 73 f4 54 68 65
-        HEX 20 53 6f 75 74 68 65 72
-        HEX 6e 20 53 69 67 6e 20 50
-        HEX 6f 73 f4 54 68 65 20 4d
-        HEX 65 74 61 6c 20 54 77 69
-        HEX 73 74 65 f2 54 68 65 20
-        HEX 54 72 6f 6c 6c 27 73 20
-        HEX 48 6f 6c e5 54 68 65 20
-        HEX 56 69 70 65 72 27 73 20
-        HEX 50 69 f4 54 68 65 20 56
-        HEX 69 70 65 72 27 73 20 50
-        HEX 69 74 20 49 c9 54 68 65
-        HEX 20 47 75 69 6c 64 20 6f
-        HEX 66 20 44 65 61 74 e8 54
-        HEX 68 65 20 45 6e 64 2e 2e
-        HEX ae 54 68 65 20 54 72 61
-        HEX 6d 70 20 6f 66 20 44 6f
-        HEX 6f ed 54 68 65 20 4c 6f
-        HEX 6e 67 20 44 65 61 74 e8
-        HEX 54 68 65 20 53 6c 6f 77
-        HEX 20 44 65 61 74 e8 4e 61
-        HEX 73 73 61 f5 43 6c 65 61
-        HEX 72 20 4c 61 67 6f 6f ee
-        HEX 53 74 6f 75 f4 47 61 75
-        HEX 6e 74 6c 65 f4 49 6d 61
-        HEX 67 69 6e 61 74 69 6f ee
-        HEX 50 6f 6e 64 65 f2 57 65
-        HEX 61 6c 74 e8 50 6f 6f f2
-        HEX 54 68 65 20 57 68 69 74
-        HEX 65 20 44 72 61 67 6f 6e
-        HEX 27 73 20 43 61 73 74 6c
-        HEX e5 54 68 65 20 43 61 73
-        HEX 74 6c 65 20 6f 66 20 53
-        HEX 68 61 6d 69 6e ef 54 68
-        HEX 65 20 47 72 61 76 65 20
-        HEX 6f 66 20 74 68 65 20 4c
-        HEX 6f 73 74 20 53 6f 75 ec
-        HEX 45 61 73 74 65 72 6e 20
-        HEX 53 69 67 6e 20 50 6f 73
-        HEX f4 53 70 69 6e 65 20 42
-        HEX 72 65 61 6b 65 f2 46 72
-        HEX 65 65 20 44 65 61 74 68
-        HEX 20 48 6f 6c e5 54 68 65
-        HEX 20 44 65 61 64 20 43 61
-        HEX 74 27 73 20 4c 69 66 e5
-        HEX 54 68 65 20 44 65 61 64
-        HEX 20 43 61 74 27 73 20 4c
-        HEX 69 66 65 20 49 c9 54 68
-        HEX 65 20 4d 6f 72 62 69 64
-        HEX 20 41 64 76 65 6e 74 75
-        HEX 72 e5 54 68 65 20 53 6b
-        HEX 75 6c 6c 20 53 6d 61 73
-        HEX 68 65 f2 44 65 61 64 20
-        HEX 4d 61 6e 27 73 20 57 61
-        HEX 6c eb 54 68 65 20 44 75
-        HEX 6e 67 65 6f 6e 20 6f 66
-        HEX 20 44 6f 6f ed 48 6f 6c
-        HEX 65 20 74 6f 20 48 61 64
-        HEX 65 f3 47 6f 72 6c 61 e2
-        HEX 44 65 78 74 72 6f ee 4d
-        HEX 61 67 69 e3 57 68 65 65
-        HEX 6c 65 f2 42 75 6c 6c 64
-        HEX 6f 7a 65 f2 54 68 65 20
-        HEX 42 72 6f 74 68 65 f2 54
-        HEX 68 65 20 54 75 72 74 6c
-        HEX e5 4c 6f 73 74 20 46 72
-        HEX 69 65 6e 64 f3
-@ %def MIU1_STRINGS
+STR_PLACES ; the 84 named places of the four continents
+        DC.B "The Castle of Lord Britis",$E8;  0: The Castle of Lord British
+        DC.B "The Castle of the Lost Kin",$E7;  1: The Castle of the Lost King
+        DC.B "The Tower of Knowledg",$E5;  2: The Tower of Knowledge
+        DC.B "The Pillars of Protectio",$EE;  3: The Pillars of Protection
+        DC.B "The Dungeon of Perini",$E1;  4: The Dungeon of Perinia
+        DC.B "The Lost Cavern",$F3      ;  5: The Lost Caverns
+        DC.B "The Mines of Mt. Dras",$E8;  6: The Mines of Mt. Drash
+        DC.B "The Mines of Mt. Drash I",$C9;  7: The Mines of Mt. Drash II
+        DC.B "Mondain's Gate to Hel",$EC;  8: Mondain's Gate to Hell
+        DC.B "The Unholy Hol",$E5       ;  9: The Unholy Hole
+        DC.B "The Dungeon of Doub",$F4  ; 10: The Dungeon of Doubt
+        DC.B "The Dungeon of Monto",$F2 ; 11: The Dungeon of Montor
+        DC.B "Death's Awakenin",$E7     ; 12: Death's Awakening
+        DC.B "Britai",$EE               ; 13: Britain
+        DC.B "Moo",$EE                  ; 14: Moon
+        DC.B "Faw",$EE                  ; 15: Fawn
+        DC.B "Paw",$F3                  ; 16: Paws
+        DC.B "Monto",$F2                ; 17: Montor
+        DC.B "Ye",$F7                   ; 18: Yew
+        DC.B "Tun",$E5                  ; 19: Tune
+        DC.B "Gre",$F9                  ; 20: Grey
+        DC.B "The Castle Baratari",$E1  ; 21: The Castle Barataria
+        DC.B "The Castle Rondorli",$EE  ; 22: The Castle Rondorlin
+        DC.B "The Pillar of Ozymandia",$F3; 23: The Pillar of Ozymandias
+        DC.B "The Pillars of the Argonaut",$F3; 24: The Pillars of the Argonauts
+        DC.B "Scorpion Hol",$E5         ; 25: Scorpion Hole
+        DC.B "The Savage Plac",$E5      ; 26: The Savage Place
+        DC.B "The Horror of the Harpie",$F3; 27: The Horror of the Harpies
+        DC.B "The Horror of the Harpies I",$C9; 28: The Horror of the Harpies II
+        DC.B "Advari's Hol",$E5         ; 29: Advari's Hole
+        DC.B "The Labyrint",$E8         ; 30: The Labyrinth
+        DC.B "The Gorgon's Hol",$E5     ; 31: The Gorgon's Hole
+        DC.B "Where Hercules Die",$E4   ; 32: Where Hercules Died
+        DC.B "The Dead Warrior's Figh",$F4; 33: The Dead Warrior's Fight
+        DC.B "Arnol",$E4                ; 34: Arnold
+        DC.B "Lind",$E1                 ; 35: Linda
+        DC.B "Hele",$EE                 ; 36: Helen
+        DC.B "Owe",$EE                  ; 37: Owen
+        DC.B "Joh",$EE                  ; 38: John
+        DC.B "Gerr",$F9                 ; 39: Gerry
+        DC.B "Wol",$E6                  ; 40: Wolf
+        DC.B "The Snak",$E5             ; 41: The Snake
+        DC.B "The Castle of Olympu",$F3 ; 42: The Castle of Olympus
+        DC.B "The Black Dragon's Castl",$E5; 43: The Black Dragon's Castle
+        DC.B "The Sign Pos",$F4         ; 44: The Sign Post
+        DC.B "The Southern Sign Pos",$F4; 45: The Southern Sign Post
+        DC.B "The Metal Twiste",$F2     ; 46: The Metal Twister
+        DC.B "The Troll's Hol",$E5      ; 47: The Troll's Hole
+        DC.B "The Viper's Pi",$F4       ; 48: The Viper's Pit
+        DC.B "The Viper's Pit I",$C9    ; 49: The Viper's Pit II
+        DC.B "The Guild of Deat",$E8    ; 50: The Guild of Death
+        DC.B "The End..",$AE            ; 51: The End...
+        DC.B "The Tramp of Doo",$ED     ; 52: The Tramp of Doom
+        DC.B "The Long Deat",$E8        ; 53: The Long Death
+        DC.B "The Slow Deat",$E8        ; 54: The Slow Death
+        DC.B "Nassa",$F5                ; 55: Nassau
+        DC.B "Clear Lagoo",$EE          ; 56: Clear Lagoon
+        DC.B "Stou",$F4                 ; 57: Stout
+        DC.B "Gauntle",$F4              ; 58: Gauntlet
+        DC.B "Imaginatio",$EE           ; 59: Imagination
+        DC.B "Ponde",$F2                ; 60: Ponder
+        DC.B "Wealt",$E8                ; 61: Wealth
+        DC.B "Poo",$F2                  ; 62: Poor
+        DC.B "The White Dragon's Castl",$E5; 63: The White Dragon's Castle
+        DC.B "The Castle of Shamin",$EF ; 64: The Castle of Shamino
+        DC.B "The Grave of the Lost Sou",$EC; 65: The Grave of the Lost Soul
+        DC.B "Eastern Sign Pos",$F4     ; 66: Eastern Sign Post
+        DC.B "Spine Breake",$F2         ; 67: Spine Breaker
+        DC.B "Free Death Hol",$E5       ; 68: Free Death Hole
+        DC.B "The Dead Cat's Lif",$E5   ; 69: The Dead Cat's Life
+        DC.B "The Dead Cat's Life I",$C9; 70: The Dead Cat's Life II
+        DC.B "The Morbid Adventur",$E5  ; 71: The Morbid Adventure
+        DC.B "The Skull Smashe",$F2     ; 72: The Skull Smasher
+        DC.B "Dead Man's Wal",$EB       ; 73: Dead Man's Walk
+        DC.B "The Dungeon of Doo",$ED   ; 74: The Dungeon of Doom
+        DC.B "Hole to Hade",$F3         ; 75: Hole to Hades
+        DC.B "Gorla",$E2                ; 76: Gorlab
+        DC.B "Dextro",$EE               ; 77: Dextron
+        DC.B "Magi",$E3                 ; 78: Magic
+        DC.B "Wheele",$F2               ; 79: Wheeler
+        DC.B "Bulldoze",$F2             ; 80: Bulldozer
+        DC.B "The Brothe",$F2           ; 81: The Brother
+        DC.B "The Turtl",$E5            ; 82: The Turtle
+        DC.B "Lost Friend",$F3          ; 83: Lost Friends
+@ %def STR_RACES STR_WEAPONS STR_WEAPONS_S STR_STATS STR_SPELLS
+@ %def STR_ARMOUR STR_CLASSES STR_TRANSPORT STR_COMMANDS STR_GEMS
+@ %def ENGINE_TBL_A STR_MONSTERS STR_CONTINENTS ENGINE_TBL_B
+@ %def STR_PLACES
 
 \section{The disk prompt}
 
@@ -7199,8 +7191,8 @@ PLR_SOUND
         DC.B $FF                        ; saved master-sound flag
 PLR_SFX DC.B $FF                        ; saved effects flag
         HEX 20 20                       ; fields not yet identified
-OWNED_ITEMS
-        HEX 00 00 00 00                 ; special items (4)
+OWNED_GEMS
+        HEX 00 00 00 00                 ; the four gems
 READY_SPELL
         DC.B $00                        ; readied spell index
 READY_WEAPON
@@ -7258,7 +7250,7 @@ PLR_BSS DS.B 325,$00                    ; zeroed working storage,
 @ %def LOC_NAME WIN_SAVE_BUF CAP_FLAG PATH_PLAYER PATH_VARS
 @ %def SAVE_PAGE_TGL HILITE_IDX
 @ %def TICK_FOOD TICK_MOVE DIR_STR_PTR CMD_KEYS PLR_SOUND PLR_SFX
-@ %def OWNED_ITEMS READY_SPELL READY_WEAPON READY_ARMOUR
+@ %def OWNED_GEMS READY_SPELL READY_WEAPON READY_ARMOUR
 @ %def READY_TRANSPORT OWNED_ARMOUR OWNED_WEAPONS OWNED_SPELLS
 @ %def OWNED_TRANSPORT PLR_VESSELS PLR_SEX PLR_NAME PLR_HITS
 @ %def PLR_COIN PLR_RACE PLR_CLASS MOVE_CNT FOOD_FRAC PLR_FOOD
@@ -7603,26 +7595,14 @@ ZP_INVERSE      EQU $7E         ; STUPH: video EOR mask ($7F = inverse)
 ZP_PAGE_XOR     EQU $7F         ; STUPH: draw page selector
 HGR_ROW_LO      EQU $1200       ; STUPH: scanline address table, low
 HGR_ROW_HI      EQU $12C0       ; STUPH: scanline address table, high
-; --- String tables inside MIU1_STRINGS (labeled when carved) ---
-STR_COMMANDS    EQU $75CB       ; command names, X-indexed
-STR_SPELLS      EQU $74D4       ; spell names, X-indexed
 ; --- More STUPH state and zero page ---
 SOUND_ON        EQU $1580       ; STUPH: master sound flag
 SFX_ON          EQU $1581       ; STUPH: sound-effects flag
 ZP_LIST         EQU $67         ; MENU_PICK: owned-array pointer
 ZP_ROWS         EQU $69         ; alias: MENU_PICK row count
 ZP_ITEM         EQU $6C         ; current item index (menus, lines)
-; --- String tables inside MIU1_STRINGS (labeled when carved) ---
-STR_RACES       EQU $73AF       ; race names, X-indexed
-STR_WEAPONS     EQU $73C8       ; weapon names, X-indexed (15)
-STR_STATS       EQU $748E       ; stat names (hits + 6 attributes)
-STR_ARMOUR      EQU $7520       ; armour names, X-indexed (5)
-STR_CLASSES     EQU $755D       ; class names, X-indexed
-STR_TRANSPORT   EQU $757C       ; transport names, X-indexed (10)
-STR_ITEMS       EQU $7687       ; special-item names (4)
-@ %def ZP_TXT_PTR ZP_BCD ZP_BIN ZP_RND_TMP STR_COMMANDS STR_SPELLS
-@ %def ZP_LIST ZP_ROWS ZP_ITEM STR_RACES STR_WEAPONS
-@ %def STR_STATS STR_ARMOUR STR_CLASSES STR_TRANSPORT STR_ITEMS
+@ %def ZP_TXT_PTR ZP_BCD ZP_BIN ZP_RND_TMP
+@ %def ZP_LIST ZP_ROWS ZP_ITEM
 
 <<miu1 char repeat>>=
         ORG $8144
@@ -8734,10 +8714,10 @@ INVENTORY
         LDX #$00
         STX HILITE_IDX
 .itm    STX ZP_ITEM
-        LDA OWNED_ITEMS,X
+        LDA OWNED_GEMS,X
         BEQ .itm1
         JSR ITEM_LINE_A
-        DC.W STR_ITEMS
+        DC.W STR_GEMS
 .itm1   LDX ZP_ITEM
         INX
         CPX #$04
@@ -8982,7 +8962,7 @@ SFX_TOGGLE
 
 \emph{<name>, thou art dead.} The stats are zeroed and repainted,
 the viewport cleared, and a 10-byte-wide, 94-scanline image ---
-stored at the very start of the file, in [[MIU1_TABLES]] --- is
+stored at the very start of the file, at [[DEATH_IMG]] --- is
 blitted to the middle of the screen, drawn on the visible page.
 Bytes with the high bit set overwrite; others merge with [[ORA]].
 The death knell (effect 2) plays twice.
@@ -8996,7 +8976,7 @@ DEATH   SUBROUTINE
         ;   Print "<name>, thou art dead."; PAGE_COPY; zero coin,
         ;   food and hits; repaint the stats panel on the visible
         ;   page; clear the viewport; blit the 10x94-byte image
-        ;   from MIU1_TABLES (bit 7 set: store; clear: ORA in);
+        ;   from DEATH_IMG (bit 7 set: store; clear: ORA in);
         ;   queue the death knell twice; flip and flush.
         ;
         ; Modifies:
@@ -9021,7 +9001,7 @@ DEATH   SUBROUTINE
         JSR STATS_VALUES
         JSR VIEW_CLEAR
         LDA #$02                        ; image source := one byte
-        STA .imgl                       ;   before MIU1_TABLES
+        STA .imgl                       ;   before DEATH_IMG
         LDA #$70                        ;   (pre-incremented below)
         STA .imgh
         LDX #$20                        ; scanlines $20..$7D
@@ -9036,7 +9016,7 @@ DEATH   SUBROUTINE
         INC .imgh
 .imgl = *+1
 .imgh = *+2
-.get    LDA MIU1_TABLES
+.get    LDA DEATH_IMG
         BPL .mix
         ORA (ZP_HGR_PTR),Y
 .mix    STA (ZP_HGR_PTR),Y
@@ -9220,7 +9200,7 @@ OVERLAY_ENTRY
 <<miu1 text defines>>
 <<miu1 engine defines>>
 <<miu1 entry>>
-<<miu1 mask tables>>
+<<miu1 death image>>
 <<miu1 string region>>
 <<miu1 disk prompt>>
 <<miu1 page1 lock>>
