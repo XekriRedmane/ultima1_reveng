@@ -7461,295 +7461,921 @@ MSG_PRINT
 @ %def PUTCH_RTS PUTCH NEWLINE_ALT NEWLINE CR WIN_SHRINK STR_NTH_CAP
 @ %def STR_FIRST STR_NTH MSG_AT MSG_PRINT
 
+\section{Screen layout: the frame}
+
+The game screen is built from the font's terrain-strip glyphs:
+a bordered viewport (text rows 0--18), a horizontal divider, and
+below it the message area and stats panel separated by a vertical
+divider at column 30. [[DRAW_SCREEN]] clears the screen first;
+[[DRAW_BORDERS]] redraws the frame alone (the engine calls it after
+tearing down popup windows). [[CHAR_REPEAT]] is the brush: print
+character A, X times, through the engine's [[CHAR_OUT]] (which
+advances the cursor).
+
+<<miu1 engine defines>>=
+KBDSTRB         EQU $C010       ; clear keyboard strobe
+; --- STUPH zero page and tables shared by the engine ---
+ZP_TXT_PTR      EQU $28         ; scanline pointer (CURSOR_TO_TEXT)
+ZP_BCD          EQU $62         ; BIN2BCD: 6-digit BCD result (3 bytes)
+ZP_BIN          EQU $65         ; BIN2BCD: 16-bit input (2 bytes)
+ZP_RND_TMP      EQU $69         ; RND_MOD: limit, then result
+ZP_SFX_CNT      EQU $7D         ; STUPH: pending effect count
+ZP_INVERSE      EQU $7E         ; STUPH: video EOR mask ($7F = inverse)
+ZP_PAGE_XOR     EQU $7F         ; STUPH: draw page selector
+HGR_ROW_LO      EQU $1200       ; STUPH: scanline address table, low
+HGR_ROW_HI      EQU $12C0       ; STUPH: scanline address table, high
+; --- String tables inside MIU1_STRINGS (labeled when carved) ---
+STR_COMMANDS    EQU $75CB       ; command names, X-indexed
+STR_WEAPONS     EQU $74D4       ; weapon names, X-indexed
+; --- Player and engine state (inside the $7Exx state block) ---
+WIN_SAVE_BUF    EQU $7E31       ; 6-byte window-variable save area
+TICK_FOOD       EQU $7E4F       ; TICK: food cost (BCD fraction)
+TICK_MOVE       EQU $7E50       ; TICK: move-counter increment
+DIR_STR_PTR     EQU $7E51       ; alternate direction-name table, or 0
+CMD_KEYS        EQU $7E53       ; the 26 command key codes
+READY_WEAPON    EQU $7E79       ; readied weapon index
+PLR_HITS        EQU $7EC6       ; hit points, 16-bit binary
+PLR_COIN        EQU $7ED4       ; coin, 16-bit binary
+MOVE_CNT        EQU $7EDA       ; move counter, multi-byte BCD
+FOOD_FRAC       EQU $7EE4       ; food, BCD hundredths
+PLR_FOOD        EQU $7EE5       ; food, 16-bit binary
+PLR_EXP         EQU $7EE7       ; experience, 16-bit binary
+@ %def ZP_TXT_PTR ZP_BCD ZP_BIN ZP_RND_TMP STR_COMMANDS STR_WEAPONS
+@ %def WIN_SAVE_BUF TICK_FOOD TICK_MOVE DIR_STR_PTR CMD_KEYS
+@ %def READY_WEAPON PLR_HITS PLR_COIN MOVE_CNT FOOD_FRAC PLR_FOOD
+@ %def PLR_EXP
+
+<<miu1 char repeat>>=
+        ORG $8144
+CHAR_REPEAT
+        SUBROUTINE
+        ; Print character A, X times.
+        ;
+        ; Behavior:
+        ;   X (>= 1) copies of character A through CHAR_OUT, which
+        ;   advances the cursor and handles the layout codes.
+.rep    JSR CHAR_OUT
+        DEX
+        BNE .rep
+        RTS
+@ %def CHAR_REPEAT
+
+<<miu1 screen frame>>=
+        ORG $814B
+DRAW_SCREEN
+        SUBROUTINE
+        ; Draw the standard game screen.
+        ;
+        ; Behavior:
+        ;   DRAW_SCREEN clears the whole screen first; DRAW_BORDERS
+        ;   only redraws the frame. Top border (glyphs $10/$04/$12),
+        ;   side strips ($0A left, $08 right) down to row $12, the
+        ;   horizontal divider ($04/$06), and the vertical divider
+        ;   (glyphs $02/$0C) at column 30 between the message area
+        ;   and the stats panel.
+        ;
+        ; Clobbers: A, X
+        JSR WIN_FULL
+        JSR CLR_WINDOW
+DRAW_BORDERS
+        JSR WIN_FULL
+        LDA #$10                        ; top-left corner strip
+        JSR CHAR_OUT
+        LDX #$26
+        LDA #$04                        ; horizontal border strip
+        JSR CHAR_REPEAT
+        LDA #$12                        ; top-right corner strip
+        JSR FONT_DRAW
+.side   INC MON_CV
+        JSR CR
+        LDA #$0A                        ; left edge
+        JSR FONT_DRAW
+        LDA #$27
+        STA MON_CH
+        LDA #$08                        ; right edge
+        JSR FONT_DRAW
+        JSR KEY_POLL                    ; keep type-ahead fresh
+        LDA MON_CV
+        EOR #$12                        ; down to row 18
+        BNE .side
+        STA MON_CH                      ; column 0
+        INC MON_CV
+        LDA #$04
+        JSR CHAR_OUT
+        LDX #$26
+        LDA #$06                        ; the viewport/text divider
+        JSR CHAR_REPEAT
+        LDA #$04
+        JSR FONT_DRAW
+        LDA #$1E
+        STA MON_CH                      ; column 30:
+        LDA #$02                        ;   divider top piece
+        JSR FONT_DRAW
+        LDA #$0C                        ;   divider body
+.vert   INC MON_CV
+        JSR FONT_DRAW
+        LDX MON_CV
+        CPX #$17
+        BCC .vert
+        RTS
+@ %def DRAW_SCREEN DRAW_BORDERS
+
+\section{Numbers: binary to BCD, decimal printing}
+
+The player's stats are kept in 16-bit \emph{binary}; only the
+display converts. [[BIN2BCD]] is the classical double-dabble:
+shift the binary value right a bit at a time and, for each 1 bit,
+add the corresponding power of two --- maintained in BCD in
+[[BCD_POW]] by doubling it in decimal mode each round --- into the
+6-digit accumulator at [[ZP_BCD]].
+
+[[PRINT_NUM16]] prints X/A (lo/hi) in decimal --- up to six digits
+--- and [[PRINT_NUM8]] prints A (up to four digits, of which at
+most three can be nonzero). Leading zeros are suppressed through
+[[NUM_ZSTATE]]; if [[NUM_PAD]] is nonzero they are instead replaced
+by that pad character (the status panel sets a pad to keep its
+columns aligned, see below). The ones digit always prints, even
+for the value zero.
+
+<<miu1 bin2bcd>>=
+        ORG $81AD
+BIN2BCD SUBROUTINE
+        ; Convert the 16-bit binary value X/A (lo/hi) to six BCD
+        ; digits in ZP_BCD.
+        ;
+        ; Inputs:
+        ;   X, A    -- value low/high byte
+        ;
+        ; Behavior:
+        ;   Double-dabble: for each set bit of the value (tested
+        ;   low to high), add BCD_POW (the bit's power of two, kept
+        ;   in BCD) into ZP_BCD in decimal mode; double BCD_POW
+        ;   each round.
+        ;
+        ; Outputs:
+        ;   ZP_BCD..+2 = BCD digits, least significant byte first.
+        ;
+        ; Modifies:
+        ;   ZP_BIN, BCD_POW
+        ; Clobbers: A (X = 1 on return)
+        STX ZP_BIN
+        STA ZP_BIN+1
+        LDX #$00
+        STX ZP_BCD
+        STX ZP_BCD+1
+        STX ZP_BCD+2
+        STX BCD_POW+2
+        STX BCD_POW+1
+        INX
+        STX BCD_POW                     ; BCD_POW <- #$000001
+        SED
+.bit    LSR ZP_BIN+1
+        ROR ZP_BIN
+        BCC .dbl
+        CLC
+        LDA ZP_BCD
+        ADC BCD_POW
+        STA ZP_BCD
+        LDA ZP_BCD+1
+        ADC BCD_POW+1
+        STA ZP_BCD+1
+        LDA ZP_BCD+2
+        ADC BCD_POW+2
+        STA ZP_BCD+2
+.dbl    CLC
+        LDA BCD_POW
+        ADC BCD_POW
+        STA BCD_POW
+        LDA BCD_POW+1
+        ADC BCD_POW+1
+        STA BCD_POW+1
+        LDA BCD_POW+2
+        ADC BCD_POW+2
+        STA BCD_POW+2
+        LDA ZP_BIN
+        ORA ZP_BIN+1
+        BNE .bit
+        CLD
+        RTS
+BCD_POW HEX 01 00 00                    ; the running power, in BCD
+@ %def BIN2BCD BCD_POW
+
+<<miu1 print numbers>>=
+        ORG $8207
+PRINT_NUM16
+        SUBROUTINE
+        ; Print X/A (lo/hi) in decimal; PRINT_NUM8 prints just A.
+        ;
+        ; Inputs:
+        ;   X, A    -- the value (PRINT_NUM8: A only)
+        ;   NUM_PAD -- 0 to suppress leading zeros, else the pad
+        ;              character to print in their place
+        ;
+        ; Behavior:
+        ;   BIN2BCD, then emit digits high to low through DIGIT_OUT
+        ;   (6 digits for NUM16, 4 for NUM8). NUM_ZSTATE tracks
+        ;   whether a significant digit has appeared; the final
+        ;   ones digit is forced significant.
+        ;
+        ; Modifies:
+        ;   ZP_BCD, ZP_BIN, BCD_POW, NUM_ZSTATE
+        ; Clobbers: A, X
+        JSR BIN2BCD
+        INX                             ; X <- #$02: 3 BCD bytes
+        BNE .start                      ; (always)
+PRINT_NUM8
+        TAX
+        LDA #$00
+        JSR BIN2BCD                     ; X = 1 after: 2 BCD bytes
+.start  STA NUM_ZSTATE                  ; NUM_ZSTATE <- #$00
+        JMP .lowq
+.hi     LDA ZP_BCD,X                    ; high nibble first
+        LSR
+        LSR
+        LSR
+        LSR
+        JSR DIGIT_OUT
+.lowq   TXA
+        BNE .lo
+        INC NUM_ZSTATE                  ; the ones digit always shows
+.lo     LDA ZP_BCD,X
+        JSR DIGIT_OUT
+        DEX
+        BPL .hi
+.rts    RTS
+DIGIT_OUT
+        ; Print BCD digit (low nibble of A), with leading-zero
+        ; suppression or padding.
+        AND #$0F
+        BNE .sig
+        CMP NUM_ZSTATE                  ; still in leading zeros?
+        BNE .show
+        LDA NUM_PAD
+        BEQ .rts
+        JMP CHAR_OUT                    ; print the pad character
+.sig    STA NUM_ZSTATE                  ; significant from here on
+.show   JMP PRINT_DIGIT
+NUM_ZSTATE
+        DC.B $00                        ; nonzero once a digit shown
+NUM_PAD DC.B $00                        ; leading-zero pad character
+@ %def PRINT_NUM16 PRINT_NUM8 DIGIT_OUT NUM_ZSTATE NUM_PAD
+
+<<miu1 div10>>=
+        ORG $824A
+DIV10   SUBROUTINE
+        ; A := A / 10.
+        ;
+        ; Behavior:
+        ;   Repeated subtraction; Y counts the quotient. The
+        ;   remainder is discarded.
+        LDY #$FF
+        SEC
+.sub    INY
+        SBC #$0A
+        BCS .sub
+        TYA
+        RTS
+@ %def DIV10
+
+\section{Random numbers and pacing}
+
+[[RND_MOD]] is the game's dice: a random number 0..A-1, reduced
+from the library's [[RND]] stream by repeated subtraction.
+[[KEY_PENDING]] samples the keyboard and returns the type-ahead
+count; [[PAUSE_ABORTABLE]] is the ``dramatic pause'' --- about 61
+delay units, abandoned the moment the player presses a key.
+
+<<miu1 rnd mod>>=
+        ORG $8254
+RND_MOD SUBROUTINE
+        ; A := random number in 0..A-1 (flags reflect the result).
+        ;
+        ; Inputs:
+        ;   A       -- the limit
+        ;
+        ; Behavior:
+        ;   Draw a byte from RND and reduce it modulo the limit by
+        ;   repeated subtraction.
+        ;
+        ; Outputs:
+        ;   A and ZP_RND_TMP = the result; Z/N set per the value.
+        STA ZP_RND_TMP
+        JSR RND
+.mod    CMP ZP_RND_TMP
+        BCC .done
+        SBC ZP_RND_TMP
+        BCS .mod
+.done   CMP #$00                        ; result flags for the caller
+        STA ZP_RND_TMP
+        RTS
+@ %def RND_MOD
+
+<<miu1 key pending>>=
+        ORG $8266
+KEY_PENDING
+        SUBROUTINE
+        ; Sample the keyboard; A := type-ahead count (Z = no key).
+        ;
+        ; Behavior:
+        ;   KEY_POLL once, then return ZP_KEY_CNT so callers can
+        ;   loop on BNE/BEQ.
+        JSR KEY_POLL
+        LDA ZP_KEY_CNT
+        RTS
+PAUSE_ABORTABLE
+        ; Pause for effect: ~61 delay units, cut short by any key.
+        JSR KBD_CLEAR
+        LDY #$3D
+.wait   JSR KEY_PENDING
+        BNE .rts
+        JSR VDELAY
+        DEY
+        BNE .wait
+.rts    RTS
+@ %def KEY_PENDING PAUSE_ABORTABLE
+
+\section{Command input}
+
+Movement uses the Apple's arrow keys --- left [[$08]], right
+[[$15]], up [[$0B]], down [[$0A]] --- but a ][+ has only left and
+right, so [[KEY_ALIAS]] folds nearby keys onto the missing arrows:
+\emph{Return} and \texttt{[} act as up, \texttt{/} as down, and
+\texttt{'} and \texttt{;}/\emph{Delete} as right and left
+(the right-hand home-row cluster).
+
+[[GET_COMMAND]] turns a keypress into a command number: the aliased
+key is looked up in the 26-entry [[CMD_KEYS]] table; a miss prints
+\emph{Huh?} with the error blat and returns carry set. A hit echoes
+the command's name from the [[STR_COMMANDS]] table --- with a twist
+for the four movement commands (indexes 0--3): when [[DIR_STR_PTR]]
+is nonzero the overlay has installed its own direction-name table
+(``Head West'' outdoors, but space flight needs other words), and
+the echo reads from it instead. Returns carry clear and X = twice
+the command index, ready for an overlay's address-table dispatch.
+
+<<miu1 key alias>>=
+        ORG $827D
+KEY_ALIAS
+        SUBROUTINE
+        ; Fold the movement-key aliases onto the arrow codes.
+        ;
+        ; Inputs:
+        ;   A       -- key from KEY_GET
+        ;
+        ; Behavior:
+        ;   Compare against the six alias keys; matches return the
+        ;   corresponding arrow code, anything else passes through.
+        ;
+        ; Outputs:
+        ;   A -- arrow code if aliased (CR,[ -> $0B up; / -> $0A
+        ;   down; ' -> $15 right; ;,DEL -> $08 left), else as given.
+        CMP #$0D
+        BEQ .up
+        CMP #$5B
+        BEQ .up
+        CMP #$2F
+        BEQ .down
+        CMP #$27
+        BEQ .right
+        CMP #$3B
+        BEQ .left
+        CMP #$7F
+        BEQ .left
+        RTS
+.up     LDA #$0B
+        RTS
+.down   LDA #$0A
+        RTS
+.right  LDA #$15
+        RTS
+.left   LDA #$08
+        RTS
+@ %def KEY_ALIAS
+
+<<miu1 get command>>=
+        ORG $82A2
+GET_COMMAND
+        SUBROUTINE
+        ; Translate key A into a command number and echo its name.
+        ;
+        ; Inputs:
+        ;   A           -- key; CMD_KEYS -- the 26 command keys
+        ;   DIR_STR_PTR -- overlay's direction-name table, or 0
+        ;
+        ; Behavior:
+        ;   Alias arrows, then search CMD_KEYS. On a miss: print
+        ;   "Huh?", blat, return C set. On a hit: print the name
+        ;   (movement commands 0-3 use the overlay's table when
+        ;   installed), return C clear, X = 2 * index.
+        ;
+        ; Outputs:
+        ;   C set = unknown key; else X = command index * 2.
+        JSR KEY_ALIAS
+        LDX #$19
+.find   CMP CMD_KEYS,X
+        BEQ .hit
+        DEX
+        BPL .find
+        JSR MSG_PRINT
+        DC.B "Huh?",$00
+        JSR BEEP_HUH
+        SEC
+        RTS
+.hit    TXA
+        PHA
+        CMP #$04                        ; a movement command?
+        BCS .name
+        LDA DIR_STR_PTR+1
+        BEQ .name                       ; no overlay table installed
+        STA .dir+1
+        LDA DIR_STR_PTR
+        STA .dir
+        JSR STR_NTH
+.dir    DC.W STR_COMMANDS               ; (patched: overlay's table)
+        JMP .done
+.name   JSR STR_NTH
+        DC.W STR_COMMANDS
+.done   PLA
+        ASL
+        TAX
+        CLC
+        RTS
+@ %def GET_COMMAND
+
+\section{The cost of a turn}
+
+Every turn costs food and advances the move counter, and that
+arithmetic lives in one dual-entry routine. [[TICK]] is the silent
+entry; [[TICK_HURT]] additionally queues the damage thud (effect 0)
+--- the engine's convention for ``this turn hurt you''. Y is the
+food cost in BCD \emph{hundredths} (the visible food number only
+drops when [[FOOD_FRAC]] borrows), and A is added to the
+multi-byte BCD [[MOVE_CNT]]. Food clamps at zero --- starvation's
+consequences are the overlays' business.
+
+<<miu1 tick>>=
+        ORG $82E2
+TICK    SUBROUTINE
+        ; Charge a turn: food -= Y/100, moves += A.
+        ;
+        ; Inputs:
+        ;   Y       -- food cost, BCD hundredths
+        ;   A       -- move-counter increment (BCD)
+        ;
+        ; Behavior:
+        ;   TICK_HURT also queues sound effect 0 (the damage thud).
+        ;   Subtract from FOOD_FRAC; on borrow, decrement the
+        ;   16-bit binary PLR_FOOD, clamping at zero. Add A into
+        ;   the multi-byte BCD MOVE_CNT with carry propagation.
+        ;
+        ; Modifies:
+        ;   TICK_FOOD, TICK_MOVE, FOOD_FRAC, PLR_FOOD, MOVE_CNT
+        ; Clobbers: A, X
+        CLC                             ; silent entry
+        DC.B $B0                        ; BCS: never taken; its
+                                        ;   operand is the SEC below
+TICK_HURT
+        SEC                             ; sound entry ($38 doubles
+                                        ;   as the BCS operand)
+        STY TICK_FOOD
+        STA TICK_MOVE
+        BCC .food
+        LDA #$00                        ; queue the damage thud
+        JSR SFX_QUEUE
+.food   SED
+        SEC
+        LDA FOOD_FRAC
+        SBC TICK_FOOD
+        STA FOOD_FRAC
+        BCS .moves
+        LDA PLR_FOOD                    ; borrow: food -= 1
+        ORA PLR_FOOD+1
+        BEQ .moves                      ; already starving: clamp
+        LDA PLR_FOOD
+        BNE .declo
+        DEC PLR_FOOD+1
+.declo  DEC PLR_FOOD
+.moves  CLC
+        LDA MOVE_CNT
+        ADC TICK_MOVE
+        STA MOVE_CNT
+        BCS .carry
+        CLD
+        RTS
+.carry  SED
+        SEC                             ; +1 into the higher bytes
+        LDX #$00
+.prop   LDA MOVE_CNT+1,X
+        ADC #$00
+        STA MOVE_CNT+1,X
+        INX
+        BCS .prop
+        CLD
+        RTS
+@ %def TICK TICK_HURT
+
+\section{The stats panel}
+
+The right-hand panel shows Hits, Food, Exp.\ and Coin.
+[[STATS_DRAW]] paints labels and values; [[STATS_VALUES]] repaints
+just the numbers (called after every change). Both work inside a
+window save/restore pair --- [[WIN_SAVE]] and [[WIN_RESTORE]] copy
+the six monitor window variables to [[WIN_SAVE_BUF]] and back, the
+engine's standard idiom for drawing somewhere else and returning
+(every popup in the game uses it). The values are right-aligned at
+column 36, and Hits and Food below 100 print in \emph{inverse
+video} ([[PRINT_STAT16]] sets [[ZP_INVERSE]]) --- the low-vitals
+warning flash.
+
+<<miu1 stats panel>>=
+        ORG $8331
+STATS_DRAW
+        SUBROUTINE
+        ; Repaint the stats panel, labels and values.
+        ;
+        ; Behavior:
+        ;   Save the window; select the stats window; print the
+        ;   four labels stacked (| = newline); join STATS_VALUES.
+        ;
+        ; Modifies:
+        ;   WIN_SAVE_BUF, the monitor window variables
+        ; Clobbers: A, X
+        JSR WIN_SAVE
+        JSR WIN_STATS
+        JSR MSG_PRINT
+        DC.B "Hits |Food |Exp. |Coin ",$00
+        JMP STATS_JOIN
+PRINT_STAT16
+        ; Print X/A (lo/hi); values below 100 print in inverse
+        ; video (the low-Hits/Food warning), then end the line.
+        CMP #$01
+        BCS .show
+        CPX #$64
+        BCS .show
+        PHA
+        LDA #$7F
+        STA ZP_INVERSE                  ; inverse video on
+        PLA
+.show   JSR PRINT_NUM16
+        JSR NEWLINE_ALT
+        LDA #$00
+        STA ZP_INVERSE
+        RTS
+STATS_VALUES
+        ; Repaint only the four numbers, right-aligned at col 36.
+        JSR WIN_SAVE
+STATS_JOIN
+        JSR WIN_STATS
+        STA NUM_PAD                     ; NUM_PAD <- #$00 (A from
+                                        ;   WIN_STATS): no padding
+        LDA #$24
+        STA MON_WNDLFT                  ; numbers column (36)
+        LDA #$04
+        STA MON_WNDWDTH
+        LDA PLR_HITS+1
+        LDX PLR_HITS
+        JSR PRINT_STAT16
+        LDA PLR_FOOD+1
+        LDX PLR_FOOD
+        JSR PRINT_STAT16
+        LDA PLR_EXP+1
+        LDX PLR_EXP
+        JSR PRINT_NUM16
+        JSR NEWLINE_ALT
+        LDA PLR_COIN+1
+        LDX PLR_COIN
+        JSR PRINT_NUM16
+        JSR CLR_EOL
+        ; falls into WIN_RESTORE
+WIN_RESTORE
+        SUBROUTINE
+        ; Restore the six window variables from WIN_SAVE_BUF.
+        ;
+        ; Behavior:
+        ;   Copy WIN_SAVE_BUF back over MON_WNDLFT..MON_CV --
+        ;   the closing half of the engine's draw-elsewhere idiom.
+        LDX #$05
+.cp     LDA WIN_SAVE_BUF,X
+        STA MON_WNDLFT,X
+        DEX
+        BPL .cp
+        RTS
+WIN_SAVE
+        SUBROUTINE
+        ; Save the six window variables to WIN_SAVE_BUF.
+        ;
+        ; Behavior:
+        ;   Copy MON_WNDLFT..MON_CV into WIN_SAVE_BUF before
+        ;   drawing somewhere else; WIN_RESTORE undoes it.
+        LDX #$05
+.cp     LDA MON_WNDLFT,X
+        STA WIN_SAVE_BUF,X
+        DEX
+        BPL .cp
+        RTS
+@ %def STATS_DRAW PRINT_STAT16 STATS_VALUES STATS_JOIN WIN_RESTORE
+@ %def WIN_SAVE
+
+\section{Feedback}
+
+Small replies to the player. [[PRINT_WEAPON]] names the readied
+weapon (the \emph{Attack with what?} echo). [[CURSOR_TO_TEXT]]
+backs the cursor up to just past the last drawn character ---
+it walks a row's bottom scanline leftward through the hi-res
+pointer until it finds ink --- so [[QUERY_MARK]] can append a
+\texttt{?} right after whatever prompt is on screen.
+[[NO_EFFECT_MSG]] is the spell-fizzle message; [[BEEP_HUH]] the
+error blat. All of them end in [[KBD_CLEAR]], which flushes
+\emph{both} queues --- a rejected or completed command should
+neither replay buffered keys nor play stale sounds.
+
+<<miu1 feedback>>=
+        ORG $83BF
+PRINT_WEAPON
+        SUBROUTINE
+        ; Print the readied weapon's name.
+        ;
+        ; Behavior:
+        ;   STR_NTH from the weapon-name table, indexed by
+        ;   READY_WEAPON.
+        LDX READY_WEAPON
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        RTS
+CURSOR_TO_TEXT
+        SUBROUTINE
+        ; Back MON_CH up to just past the last drawn character.
+        ;
+        ; Behavior:
+        ;   Point ZP_TXT_PTR at the cursor row's bottom scanline
+        ;   (the glyph baseline) on the draw page, then decrement
+        ;   MON_CH past columns whose pixels are all clear.
+        ;
+        ; Modifies:
+        ;   ZP_TXT_PTR, MON_CH
+        LDA MON_CV
+        ASL
+        ASL
+        ASL
+        TAX
+        LDA HGR_ROW_LO+7,X              ; the row's last scanline
+        ADC MON_WNDLFT
+        STA ZP_TXT_PTR
+        LDA HGR_ROW_HI+7,X
+        EOR ZP_PAGE_XOR
+        STA ZP_TXT_PTR+1
+        LDY MON_CH
+        BEQ .rts
+.scan   DEY
+        LDA (ZP_TXT_PTR),Y
+        ASL                             ; ignore the palette bit
+        BNE .rts                        ; ink: stop here
+        DEC MON_CH
+        BNE .scan
+.rts    RTS
+NO_EFFECT_MSG
+        SUBROUTINE
+        ; The spell-fizzle reply, and the engine's beep cluster.
+        ;
+        ; Behavior:
+        ;   Four entries: NO_EFFECT_MSG prints the fizzle message
+        ;   then beeps; BEEP_CMD plays the command beep; QUERY_MARK
+        ;   appends '?' after the last text and blats; BEEP_HUH
+        ;   just blats. All fall into KBD_CLEAR.
+        JSR MSG_PRINT
+        DC.B "}Hmmmm... no effect?",$00
+BEEP_CMD
+        LDA #$08                        ; the command beep
+        BNE .play                       ; (always)
+QUERY_MARK
+        ; Append a ? right after the last text, with the blat.
+        JSR CURSOR_TO_TEXT
+        LDA #$3F                        ; '?'
+        JSR FONT_DRAW
+BEEP_HUH
+        LDA #$10                        ; the error blat
+.play   JSR SFX_PLAY
+        ; falls into KBD_CLEAR
+KBD_CLEAR
+        ; Flush the type-ahead and sound queues and the strobe.
+        BIT KBDSTRB
+        LDA #$00
+        STA ZP_SFX_CNT
+        STA ZP_KEY_CNT
+        RTS
+@ %def PRINT_WEAPON CURSOR_TO_TEXT NO_EFFECT_MSG BEEP_CMD QUERY_MARK
+@ %def BEEP_HUH KBD_CLEAR
+
 \section{Engine code: high stub}
 
 <<miu1 code high stub>>=
-        ORG $8144
+        ORG $841E
 MIU1_CODE_B
-        ; STUB — not yet disassembled (engine code, second part)
-        HEX 20 62 80 ca d0 fa 60 20
-        HEX 9e 15 20 9b 15 20 9e 15
-        HEX a9 10 20 62 80 a2 26 a9
-        HEX 04 20 44 81 a9 12 20 b0
-        HEX 15 e6 25 20 9c 80 a9 0a
-        HEX 20 b0 15 a9 27 85 24 a9
-        HEX 08 20 b0 15 20 bc 15 a5
-        HEX 25 49 12 d0 e4 85 24 e6
-        HEX 25 a9 04 20 62 80 a2 26
-        HEX a9 06 20 44 81 a9 04 20
-        HEX b0 15 a9 1e 85 24 a9 02
-        HEX 20 b0 15 a9 0c e6 25 20
-        HEX b0 15 a6 25 e0 17 90 f5
-        HEX 60 86 65 85 66 a2 00 86
-        HEX 62 86 63 86 64 8e 06 82
-        HEX 8e 05 82 e8 8e 04 82 f8
-        HEX 46 66 66 65 90 16 18 a5
-        HEX 62 6d 04 82 85 62 a5 63
-        HEX 6d 05 82 85 63 a5 64 6d
-        HEX 06 82 85 64 18 ad 04 82
-        HEX 6d 04 82 8d 04 82 ad 05
-        HEX 82 6d 05 82 8d 05 82 ad
-        HEX 06 82 6d 06 82 8d 06 82
-        HEX a5 65 05 66 d0 c2 d8 60
-        HEX 01 00 00 20 ad 81 e8 d0
-        HEX 06 aa a9 00 20 ad 81 8d
-        HEX 48 82 4c 22 82 b5 62 4a
-        HEX 4a 4a 4a 20 31 82 8a d0
-        HEX 03 ee 48 82 b5 62 20 31
-        HEX 82 ca 10 e9 60 29 0f d0
-        HEX 0d cd 48 82 d0 0b ad 49
-        HEX 82 f0 f1 4c 62 80 8d 48
-        HEX 82 4c 58 80 00 00 a0 ff
-        HEX 38 c8 e9 0a b0 fb 98 60
-        HEX 85 69 20 b9 15 c5 69 90
-        HEX 04 e5 69 b0 f8 c9 00 85
-        HEX 69 60 20 bc 15 a5 78 60
-        HEX 20 14 84 a0 3d 20 66 82
-        HEX d0 06 20 e9 15 88 d0 f5
-        HEX 60 c9 0d f0 15 c9 5b f0
-        HEX 11 c9 2f f0 10 c9 27 f0
-        HEX 0f c9 3b f0 0e c9 7f f0
-        HEX 0a 60 a9 0b 60 a9 0a 60
-        HEX a9 15 60 a9 08 60 20 7d
-        HEX 82 a2 19 dd 53 7e f0 10
-        HEX ca 10 f8 20 19 81 48 75
-        HEX 68 3f 00 20 0f 84 38 60
-        HEX 8a 48 c9 04 b0 16 ad 52
-        HEX 7e f0 11 8d d4 82 ad 51
-        HEX 7e 8d d3 82 20 b8 80 cb
-        HEX 75 4c dd 82 20 b8 80 cb
-        HEX 75 68 0a aa 18 60 18 b0
-        HEX 38 8c 4f 7e 8d 50 7e 90
-        HEX 05 a9 00 20 ce 15 f8 38
-        HEX ad e4 7e ed 4f 7e 8d e4
-        HEX 7e b0 13 ad e5 7e 0d e6
-        HEX 7e f0 0b ad e5 7e d0 03
-        HEX ce e6 7e ce e5 7e 18 ad
-        HEX da 7e 6d 50 7e 8d da 7e
-        HEX b0 02 d8 60 f8 38 a2 00
-        HEX bd db 7e 69 00 9d db 7e
-        HEX e8 b0 f5 d8 60 20 b4 83
-        HEX 20 a1 15 20 19 81 48 69
-        HEX 74 73 20 7c 46 6f 6f 64
-        HEX 20 7c 45 78 70 2e 20 7c
-        HEX 43 6f 69 6e 20 00 4c 71
-        HEX 83 c9 01 b0 0a e0 64 b0
-        HEX 06 48 a9 7f 85 7e 68 20
-        HEX 07 82 20 86 80 a9 00 85
-        HEX 7e 60 20 b4 83 20 a1 15
-        HEX 8d 49 82 a9 24 85 20 a9
-        HEX 04 85 21 ad c7 7e ae c6
-        HEX 7e 20 55 83 ad e6 7e ae
-        HEX e5 7e 20 55 83 ad e8 7e
-        HEX ae e7 7e 20 07 82 20 86
-        HEX 80 ad d5 7e ae d4 7e 20
-        HEX 07 82 20 98 15 a2 05 bd
-        HEX 31 7e 95 20 ca 10 f8 60
-        HEX a2 05 b5 20 9d 31 7e ca
-        HEX 10 f8 60 ae 79 7e 20 b8
-        HEX 80 d4 74 60 a5 25 0a 0a
-        HEX 0a aa bd 07 12 65 20 85
-        HEX 28 bd c7 12 45 7f 85 29
-        HEX a4 24 f0 0a 88 b1 28 0a
-        HEX d0 04 c6 24 d0 f6 60 20
-        HEX 19 81 7d 48 6d 6d 6d 6d
-        HEX 2e 2e 2e 20 6e 6f 20 65
-        HEX 66 66 65 63 74 3f 00 a9
-        HEX 08 d0 0a 20 c8 83 a9 3f
-        HEX 20 b0 15 a9 10 20 cb 15
-        HEX 2c 10 c0 a9 00 85 7d 85
-        HEX 78 60 20 b4 83 a9 04 85
-        HEX 22 85 20 a9 10 85 23 a9
-        HEX 20 85 21 20 9b 15 20 7e
-        HEX 80 a9 06 20 d4 15 20 5f
-        HEX 84 a2 12 a0 12 86 06 84
-        HEX 07 a2 eb 20 da 15 a6 06
-        HEX a0 6d 20 da 15 a2 12 a4
-        HEX 07 20 da 15 a6 06 a0 12
-        HEX 20 da 15 a5 7f 45 80 85
-        HEX 7f 60 48 a9 07 85 24 68
-        HEX a2 03 dd 8b 84 f0 03 ca
-        HEX d0 f8 8a 0a a8 b9 90 84
-        HEX 48 b9 8f 84 48 20 b8 80
-        HEX c4 84 20 98 15 e6 24 60
-        HEX 53 57 41 8a 84 96 84 a5
-        HEX 84 b4 84 ad 79 7e 20 df
-        HEX 84 0a 93 7e d4 74 8d 79
-        HEX 7e 60 ad 7a 7e 20 df 84
-        HEX 0f 83 7e c8 73 8d 7a 7e
-        HEX 60 ad 7b 7e 20 df 84 05
-        HEX 7d 7e 20 75 8d 7b 7e 60
-        HEX 6e 6f 74 68 69 6e e7 73
-        HEX 70 65 6c 6c ba 77 65 61
-        HEX 70 6f 6e ba 61 72 6d 6f
-        HEX 75 72 ba 85 6c 68 8d 40
-        HEX 80 68 8d 41 80 20 37 80
-        HEX 8d a1 85 20 37 80 85 67
-        HEX 20 37 80 85 68 20 37 80
-        HEX 8d 9d 85 20 37 80 8d 9e
-        HEX 85 ad 41 80 48 ad 40 80
-        HEX 48 20 b4 83 20 a7 15 a2
-        HEX 0e a0 00 a5 80 8d 4d 7e
-        HEX 84 80 20 15 81 0e 20 52
-        HEX 65 61 64 79 20 18 00 20
-        HEX 9b 15 ac a1 85 a2 01 b1
-        HEX 67 f0 01 e8 88 d0 f8 86
-        HEX 69 38 a9 14 e5 69 4a 85
-        HEX 25 a9 61 8d 55 85 a0 00
-        HEX 98 48 a9 0d 85 24 20 19
-        HEX 81 61 29 20 00 68 20 98
-        HEX 85 a8 e6 25 cc a1 85 b0
-        HEX 0a ee 55 85 c8 b1 67 d0
-        HEX df f0 f1 20 a9 83 ad 4d
-        HEX 7e 85 80 20 ad 15 20 bf
-        HEX 15 48 20 6c 87 38 68 e9
-        HEX 41 f0 11 30 0c cd a1 85
-        HEX 90 02 d0 05 a8 b1 67 d0
-        HEX 02 a4 6c 98 aa 48 20 b1
-        HEX 80 00 00 68 60 0a 20 aa
-        HEX 15 20 b4 83 20 a7 15 20
-        HEX a1 80 a2 0c a0 00 8c 49
-        HEX 82 a5 80 8d 4d 7e 84 80
-        HEX 20 15 81 0e 20 49 6e 76
-        HEX 65 6e 74 6f 72 79 20 18
-        HEX 7c 7c 50 6c 61 79 65 72
-        HEX 3a 20 00 20 37 88 20 19
-        HEX 81 7c 41 20 6c 65 76 65
-        HEX 6c 20 00 ae e7 7e ad e8
-        HEX 7e 20 ad 81 a5 63 4a 4a
-        HEX 4a 4a 18 69 01 20 0d 82
-        HEX e6 24 ad b7 7e f0 06 20
-        HEX 19 81 66 65 00 20 19 81
-        HEX 6d 61 6c 65 20 00 ae d6
-        HEX 7e 20 b8 80 af 73 e6 24
-        HEX ae d8 7e 20 b8 80 5d 75
-        HEX 20 a6 87 c6 25 a2 00 8e
-        HEX 4e 7e 86 6c 8a 0a a8 be
-        HEX c6 7e b9 c7 7e d0 04 e0
-        HEX 00 f0 05 20 bb 87 8e 74
-        HEX a6 6c e8 e0 07 90 e3 ae
-        HEX d4 7e ad d5 7e 20 ad 81
-        HEX a5 62 29 0f f0 1c 20 72
-        HEX 87 20 19 81 43 6f 70 70
-        HEX 65 72 20 70 65 6e 63 65
-        HEX 2e 2e 2e 2e 00 a5 62 20
-        HEX 58 80 a5 62 4a 4a 4a 4a
-        HEX f0 1c 48 20 72 87 20 19
-        HEX 81 53 69 6c 76 65 72 20
-        HEX 70 69 65 63 65 73 2e 2e
-        HEX 2e 00 68 20 58 80 a5 63
-        HEX f0 39 20 72 87 20 19 81
-        HEX 47 6f 6c 64 20 43 72 6f
-        HEX 77 6e 73 2e 2e 2e 2e 00
-        HEX a5 63 c9 10 b0 1a a9 2e
-        HEX 20 62 80 a5 63 20 58 80
-        HEX 4c d7 86 45 6e 65 6d 79
-        HEX 20 76 65 73 73 65 6c f3
-        HEX 20 4f 80 ad b6 7e f0 09
-        HEX a2 00 86 6c 20 b8 87 c7
-        HEX 86 ad 7b 7e 8d 4e 7e a2
-        HEX 01 86 6c bd 7d 7e f0 05
-        HEX 20 b8 87 20 75 a6 6c e8
-        HEX e0 06 90 ed ad 7c 7e 8d
-        HEX 4e 7e a2 01 86 6c bd 9e
-        HEX 7e f0 05 20 b8 87 7c 75
-        HEX a6 6c e8 e0 0b 90 ed a2
-        HEX 00 8e 4e 7e 86 6c bd 75
-        HEX 7e f0 05 20 b8 87 87 76
-        HEX a6 6c e8 e0 04 90 ed ad
-        HEX 7a 7e 8d 4e 7e a2 01 86
-        HEX 6c bd 83 7e f0 05 20 b8
-        HEX 87 c8 73 a6 6c e8 e0 10
-        HEX 90 ed ad 79 7e 8d 4e 7e
-        HEX a2 01 86 6c bd 93 7e f0
-        HEX 05 20 b8 87 d4 74 a6 6c
-        HEX e8 e0 0b 90 ed 20 ec 87
-        HEX 20 51 81 4c a9 83 a2 00
-        HEX 86 24 a4 25 c8 c0 12 90
-        HEX 0e a4 22 a9 12 85 21 65
-        HEX 20 c9 26 b0 05 85 20 84
-        HEX 25 60 a2 0d a0 12 20 15
-        HEX 81 6d 6f 72 65 00 20 ec
-        HEX 87 a9 00 85 80 e6 24 20
-        HEX b4 83 a9 05 85 22 4a 85
-        HEX 20 a9 24 85 21 a9 13 85
-        HEX 23 4c 9b 15 aa a9 00 48
-        HEX 8a 48 20 72 87 a9 03 85
-        HEX 24 a2 09 a9 2e 8d 49 82
-        HEX 20 44 81 68 aa 68 20 07
-        HEX 82 20 9c 80 a6 6c ad 4e
-        HEX 7e f0 0a ec 4e 7e d0 05
-        HEX a9 1b 20 62 80 4c b1 80
-        HEX ad 4d 7e 85 80 20 ad 15
-        HEX 20 8f 15 20 a9 83 20 19
-        HEX 81 7d 50 72 65 73 73 20
-        HEX 53 70 61 63 65 20 74 6f
-        HEX 20 63 6f 6e 74 69 6e 75
-        HEX 65 3a 20 00 20 14 84 20
-        HEX bf 15 c9 0d f0 08 c9 1b
-        HEX f0 04 c9 20 d0 f1 20 95
-        HEX 15 e6 24 c6 25 20 14 84
-        HEX 4c b4 83 a2 00 bd b8 7e
-        HEX f0 06 20 62 80 e8 d0 f5
-        HEX 60 ad 80 15 49 ff 20 e0
-        HEX 15 8d 71 7e d0 16 20 19
-        HEX 81 20 6f 66 66 00 60 ad
-        HEX 81 15 49 ff 8d 81 15 8d
-        HEX 72 7e f0 ea 20 19 81 20
-        HEX 6f 6e 00 60 20 78 80 20
-        HEX 37 88 20 19 81 2c 20 74
-        HEX 68 6f 75 20 61 72 74 20
-        HEX 64 65 61 64 2e 00 20 8f
-        HEX 15 a9 00 8d d4 7e 8d d5
-        HEX 7e 8d e5 7e 8d e6 7e 8d
-        HEX c6 7e 8d c7 7e a4 80 8c
-        HEX 4d 7e 85 80 20 6e 83 20
-        HEX aa 15 a9 02 8d d1 88 a9
-        HEX 70 8d d2 88 a2 20 bd 00
-        HEX 12 85 26 bd c0 12 45 7f
-        HEX 85 27 a0 0f ee d1 88 d0
-        HEX 03 ee d2 88 ad 03 70 10
-        HEX 02 11 26 91 26 c8 c0 19
-        HEX 90 ea e8 e0 7e 90 d7 a9
-        HEX 02 20 ce 15 a9 02 20 ce
-        HEX 15 ad 4d 7e 85 80 20 ad
-        HEX 15 4c 14 84 20 70 88 a9
-        HEX 04 a2 ff 9a c9 19 b0 03
-        HEX aa d0 0c 20 03 b7 47 45
-        HEX 4e 00 b0 f7 4c 56 89 a0
-        HEX 00 bd 16 7e 99 16 7e e8
-        HEX c8 0a d0 f5 20 14 84 20
-        HEX 36 b7 16 7e 20 89 15 20
-        HEX cc 7d b0 f0 20 05 7e 20
-        HEX 31 83 20 51 81 20 a9 83
-        HEX 4c 56 89 20 86 15 ad 54
-        HEX 89 8d f2 03 ad 55 89 8d
-        HEX f3 03 49 a5 8d f4 03 4c
-        HEX 59 ff 78 a2 ff 9a ad f2
-        HEX 03 8d 54 89 ad f3 03 8d
-        HEX 55 89 a9 3f 8d f2 03 a9
-        HEX 89 8d f3 03 49 a5 8d f4
-        HEX 03 20 03 b7 53 54 55 50
-        HEX 48 00 b0 f5 a9 00 a2 40
-        HEX 8e 8e 89 8e 91 89 a0 78
-        HEX 99 00 40 99 80 40 c8 10
-        HEX f7 e8 e0 60 90 ea 20 9e
-        HEX 15 20 58 fc 20 83 15 a9
-        HEX 60 85 7f 85 80 20 ad 15
-        HEX 20 05 7e 2c 55 c0 ad 80
-        HEX 15 20 e0 15 a9 00 4c fd
-        HEX 88
+        ; STUB -- not yet disassembled (engine code, second part)
+        HEX 20 b4 83 a9 04 85 22 85
+        HEX 20 a9 10 85 23 a9 20 85
+        HEX 21 20 9b 15 20 7e 80 a9
+        HEX 06 20 d4 15 20 5f 84 a2
+        HEX 12 a0 12 86 06 84 07 a2
+        HEX eb 20 da 15 a6 06 a0 6d
+        HEX 20 da 15 a2 12 a4 07 20
+        HEX da 15 a6 06 a0 12 20 da
+        HEX 15 a5 7f 45 80 85 7f 60
+        HEX 48 a9 07 85 24 68 a2 03
+        HEX dd 8b 84 f0 03 ca d0 f8
+        HEX 8a 0a a8 b9 90 84 48 b9
+        HEX 8f 84 48 20 b8 80 c4 84
+        HEX 20 98 15 e6 24 60 53 57
+        HEX 41 8a 84 96 84 a5 84 b4
+        HEX 84 ad 79 7e 20 df 84 0a
+        HEX 93 7e d4 74 8d 79 7e 60
+        HEX ad 7a 7e 20 df 84 0f 83
+        HEX 7e c8 73 8d 7a 7e 60 ad
+        HEX 7b 7e 20 df 84 05 7d 7e
+        HEX 20 75 8d 7b 7e 60 6e 6f
+        HEX 74 68 69 6e e7 73 70 65
+        HEX 6c 6c ba 77 65 61 70 6f
+        HEX 6e ba 61 72 6d 6f 75 72
+        HEX ba 85 6c 68 8d 40 80 68
+        HEX 8d 41 80 20 37 80 8d a1
+        HEX 85 20 37 80 85 67 20 37
+        HEX 80 85 68 20 37 80 8d 9d
+        HEX 85 20 37 80 8d 9e 85 ad
+        HEX 41 80 48 ad 40 80 48 20
+        HEX b4 83 20 a7 15 a2 0e a0
+        HEX 00 a5 80 8d 4d 7e 84 80
+        HEX 20 15 81 0e 20 52 65 61
+        HEX 64 79 20 18 00 20 9b 15
+        HEX ac a1 85 a2 01 b1 67 f0
+        HEX 01 e8 88 d0 f8 86 69 38
+        HEX a9 14 e5 69 4a 85 25 a9
+        HEX 61 8d 55 85 a0 00 98 48
+        HEX a9 0d 85 24 20 19 81 61
+        HEX 29 20 00 68 20 98 85 a8
+        HEX e6 25 cc a1 85 b0 0a ee
+        HEX 55 85 c8 b1 67 d0 df f0
+        HEX f1 20 a9 83 ad 4d 7e 85
+        HEX 80 20 ad 15 20 bf 15 48
+        HEX 20 6c 87 38 68 e9 41 f0
+        HEX 11 30 0c cd a1 85 90 02
+        HEX d0 05 a8 b1 67 d0 02 a4
+        HEX 6c 98 aa 48 20 b1 80 00
+        HEX 00 68 60 0a 20 aa 15 20
+        HEX b4 83 20 a7 15 20 a1 80
+        HEX a2 0c a0 00 8c 49 82 a5
+        HEX 80 8d 4d 7e 84 80 20 15
+        HEX 81 0e 20 49 6e 76 65 6e
+        HEX 74 6f 72 79 20 18 7c 7c
+        HEX 50 6c 61 79 65 72 3a 20
+        HEX 00 20 37 88 20 19 81 7c
+        HEX 41 20 6c 65 76 65 6c 20
+        HEX 00 ae e7 7e ad e8 7e 20
+        HEX ad 81 a5 63 4a 4a 4a 4a
+        HEX 18 69 01 20 0d 82 e6 24
+        HEX ad b7 7e f0 06 20 19 81
+        HEX 66 65 00 20 19 81 6d 61
+        HEX 6c 65 20 00 ae d6 7e 20
+        HEX b8 80 af 73 e6 24 ae d8
+        HEX 7e 20 b8 80 5d 75 20 a6
+        HEX 87 c6 25 a2 00 8e 4e 7e
+        HEX 86 6c 8a 0a a8 be c6 7e
+        HEX b9 c7 7e d0 04 e0 00 f0
+        HEX 05 20 bb 87 8e 74 a6 6c
+        HEX e8 e0 07 90 e3 ae d4 7e
+        HEX ad d5 7e 20 ad 81 a5 62
+        HEX 29 0f f0 1c 20 72 87 20
+        HEX 19 81 43 6f 70 70 65 72
+        HEX 20 70 65 6e 63 65 2e 2e
+        HEX 2e 2e 00 a5 62 20 58 80
+        HEX a5 62 4a 4a 4a 4a f0 1c
+        HEX 48 20 72 87 20 19 81 53
+        HEX 69 6c 76 65 72 20 70 69
+        HEX 65 63 65 73 2e 2e 2e 00
+        HEX 68 20 58 80 a5 63 f0 39
+        HEX 20 72 87 20 19 81 47 6f
+        HEX 6c 64 20 43 72 6f 77 6e
+        HEX 73 2e 2e 2e 2e 00 a5 63
+        HEX c9 10 b0 1a a9 2e 20 62
+        HEX 80 a5 63 20 58 80 4c d7
+        HEX 86 45 6e 65 6d 79 20 76
+        HEX 65 73 73 65 6c f3 20 4f
+        HEX 80 ad b6 7e f0 09 a2 00
+        HEX 86 6c 20 b8 87 c7 86 ad
+        HEX 7b 7e 8d 4e 7e a2 01 86
+        HEX 6c bd 7d 7e f0 05 20 b8
+        HEX 87 20 75 a6 6c e8 e0 06
+        HEX 90 ed ad 7c 7e 8d 4e 7e
+        HEX a2 01 86 6c bd 9e 7e f0
+        HEX 05 20 b8 87 7c 75 a6 6c
+        HEX e8 e0 0b 90 ed a2 00 8e
+        HEX 4e 7e 86 6c bd 75 7e f0
+        HEX 05 20 b8 87 87 76 a6 6c
+        HEX e8 e0 04 90 ed ad 7a 7e
+        HEX 8d 4e 7e a2 01 86 6c bd
+        HEX 83 7e f0 05 20 b8 87 c8
+        HEX 73 a6 6c e8 e0 10 90 ed
+        HEX ad 79 7e 8d 4e 7e a2 01
+        HEX 86 6c bd 93 7e f0 05 20
+        HEX b8 87 d4 74 a6 6c e8 e0
+        HEX 0b 90 ed 20 ec 87 20 51
+        HEX 81 4c a9 83 a2 00 86 24
+        HEX a4 25 c8 c0 12 90 0e a4
+        HEX 22 a9 12 85 21 65 20 c9
+        HEX 26 b0 05 85 20 84 25 60
+        HEX a2 0d a0 12 20 15 81 6d
+        HEX 6f 72 65 00 20 ec 87 a9
+        HEX 00 85 80 e6 24 20 b4 83
+        HEX a9 05 85 22 4a 85 20 a9
+        HEX 24 85 21 a9 13 85 23 4c
+        HEX 9b 15 aa a9 00 48 8a 48
+        HEX 20 72 87 a9 03 85 24 a2
+        HEX 09 a9 2e 8d 49 82 20 44
+        HEX 81 68 aa 68 20 07 82 20
+        HEX 9c 80 a6 6c ad 4e 7e f0
+        HEX 0a ec 4e 7e d0 05 a9 1b
+        HEX 20 62 80 4c b1 80 ad 4d
+        HEX 7e 85 80 20 ad 15 20 8f
+        HEX 15 20 a9 83 20 19 81 7d
+        HEX 50 72 65 73 73 20 53 70
+        HEX 61 63 65 20 74 6f 20 63
+        HEX 6f 6e 74 69 6e 75 65 3a
+        HEX 20 00 20 14 84 20 bf 15
+        HEX c9 0d f0 08 c9 1b f0 04
+        HEX c9 20 d0 f1 20 95 15 e6
+        HEX 24 c6 25 20 14 84 4c b4
+        HEX 83 a2 00 bd b8 7e f0 06
+        HEX 20 62 80 e8 d0 f5 60 ad
+        HEX 80 15 49 ff 20 e0 15 8d
+        HEX 71 7e d0 16 20 19 81 20
+        HEX 6f 66 66 00 60 ad 81 15
+        HEX 49 ff 8d 81 15 8d 72 7e
+        HEX f0 ea 20 19 81 20 6f 6e
+        HEX 00 60 20 78 80 20 37 88
+        HEX 20 19 81 2c 20 74 68 6f
+        HEX 75 20 61 72 74 20 64 65
+        HEX 61 64 2e 00 20 8f 15 a9
+        HEX 00 8d d4 7e 8d d5 7e 8d
+        HEX e5 7e 8d e6 7e 8d c6 7e
+        HEX 8d c7 7e a4 80 8c 4d 7e
+        HEX 85 80 20 6e 83 20 aa 15
+        HEX a9 02 8d d1 88 a9 70 8d
+        HEX d2 88 a2 20 bd 00 12 85
+        HEX 26 bd c0 12 45 7f 85 27
+        HEX a0 0f ee d1 88 d0 03 ee
+        HEX d2 88 ad 03 70 10 02 11
+        HEX 26 91 26 c8 c0 19 90 ea
+        HEX e8 e0 7e 90 d7 a9 02 20
+        HEX ce 15 a9 02 20 ce 15 ad
+        HEX 4d 7e 85 80 20 ad 15 4c
+        HEX 14 84 20 70 88 a9 04 a2
+        HEX ff 9a c9 19 b0 03 aa d0
+        HEX 0c 20 03 b7 47 45 4e 00
+        HEX b0 f7 4c 56 89 a0 00 bd
+        HEX 16 7e 99 16 7e e8 c8 0a
+        HEX d0 f5 20 14 84 20 36 b7
+        HEX 16 7e 20 89 15 20 cc 7d
+        HEX b0 f0 20 05 7e 20 31 83
+        HEX 20 51 81 20 a9 83 4c 56
+        HEX 89 20 86 15 ad 54 89 8d
+        HEX f2 03 ad 55 89 8d f3 03
+        HEX 49 a5 8d f4 03 4c 59 ff
+        HEX 78 a2 ff 9a ad f2 03 8d
+        HEX 54 89 ad f3 03 8d 55 89
+        HEX a9 3f 8d f2 03 a9 89 8d
+        HEX f3 03 49 a5 8d f4 03 20
+        HEX 03 b7 53 54 55 50 48 00
+        HEX b0 f5 a9 00 a2 40 8e 8e
+        HEX 89 8e 91 89 a0 78 99 00
+        HEX 40 99 80 40 c8 10 f7 e8
+        HEX e0 60 90 ea 20 9e 15 20
+        HEX 58 fc 20 83 15 a9 60 85
+        HEX 7f 85 80 20 ad 15 20 05
+        HEX 7e 2c 55 c0 ad 80 15 20
+        HEX e0 15 a9 00 4c fd 88
 @ %def MIU1_CODE_B
 
 <<miu1.asm>>=
         PROCESSOR 6502
 <<miu1 defines>>
 <<miu1 text defines>>
+<<miu1 engine defines>>
 <<miu1 entry>>
 <<miu1 mask tables>>
 <<miu1 string region>>
 <<miu1 code low stub>>
 <<miu1 inline text readers>>
+<<miu1 char repeat>>
+<<miu1 screen frame>>
+<<miu1 bin2bcd>>
+<<miu1 print numbers>>
+<<miu1 div10>>
+<<miu1 rnd mod>>
+<<miu1 key pending>>
+<<miu1 key alias>>
+<<miu1 get command>>
+<<miu1 tick>>
+<<miu1 stats panel>>
+<<miu1 feedback>>
 <<miu1 code high stub>>
 @
 

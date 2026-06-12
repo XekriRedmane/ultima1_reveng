@@ -9,6 +9,29 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 7 (2026-06-12): MI.U1 engine core services ($8144-$841D)
+
+- High stub front carved into 12 annotated chunks, byte-perfect on
+  first assembly: CHAR_REPEAT, DRAW_SCREEN/DRAW_BORDERS (frame from
+  terrain-strip glyphs; divider col 30), BIN2BCD (double-dabble,
+  BCD_POW at $8204), PRINT_NUM16/8 + DIGIT_OUT (NUM_ZSTATE/$8248,
+  NUM_PAD/$8249 leading-zero padding), DIV10, RND_MOD, KEY_PENDING,
+  PAUSE_ABORTABLE, KEY_ALIAS (CR,[ up; / down; ' right; ;,DEL left
+  -- ][+ has no up/down arrows), GET_COMMAND (CMD_KEYS table $7E53,
+  echo from STR_COMMANDS $75CB, movement names overridable via
+  DIR_STR_PTR $7E51, returns X=2*index/C-set on "Huh?"), TICK/
+  TICK_HURT (food -= Y BCD hundredths via FOOD_FRAC, 16-bit binary
+  PLR_FOOD clamps at 0; moves += A into multi-byte BCD MOVE_CNT;
+  hurt entry queues sfx 0; CLC/DC.B $B0/SEC dual-entry trick),
+  STATS_DRAW/STATS_VALUES/PRINT_STAT16 (<100 -> inverse video),
+  WIN_SAVE/WIN_RESTORE ($7E31), PRINT_WEAPON, CURSOR_TO_TEXT
+  (baseline-scanline ink scan), NO_EFFECT_MSG/BEEP_CMD/QUERY_MARK/
+  BEEP_HUH, KBD_CLEAR (flushes BOTH queues).
+- Player state EQU'd (PLR_HITS/FOOD/EXP/COIN all 16-bit binary;
+  display-only BCD conversion). Stats live in the $7Exx block
+  inside the low stub -- labels arrive when round 8 carves it.
+- High stub now starts at $841E. PDF 453 pages.
+
 ### Round 6 (2026-06-12): STUPH = the resident library, fully RE'd
 
 - STUPH is NOT shape data: it is the resident low-memory library at
@@ -138,26 +161,20 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [ ] Decompose MIU1_CODE high stub ($8144-$89BC) — already scouted
-      in round 6's disassembly pass: CHAR_REPEAT/DRAW_BORDERS $8144,
-      BIN2BCD $81AD (+BCD pow table $8204), PRINT_NUM16/8 $8207/
-      $820D (pad state $8248/9), DIV10 $824A, RND_MOD $8254, key
-      helpers $8266/$826C, KEY_ALIAS $827D (CR/[//';/DEL -> arrow
-      codes), GET_COMMAND $82A2 (26-key table at $7E53, names from
-      string table $75CB, returns X=2*index), TICK/damage $82E2/4
-      (BCD food frac $7EE4, food $7EE5/6, move counter $7EDA+),
-      status panel $8331/$836E (Hits $7EC6/7, Food $7EE5/6, Exp
-      $7EE7/8, Coin $7ED4/5; <100 -> inverse flash via $7E),
-      WIN_SAVE/RESTORE $83B4/$83A9 (6 bytes <-> $7E31), cursor/'?'
-      feedback $83C8/$8407/$840F, KBD_CLEAR $8414, popup window +
-      lines $841E, R-eady cmd $8466 (S/W/A -> $7E79/7A/7B),
-      generic menu picker $84DF (inline args), inventory display
-      $85A2-$87F9 (item lists at $7E75/7D/83/93/9E, name tables
-      $73AF/$74D4/$75CB...), press-space $87FA, player name $7EB8,
-      sound toggles $8845/$885B, death $8870 (death image is in
-      MIU1_MASKS at $7003!), respawn $88F8 (loads GEN), QUIT $893F,
-      OVERLAY_ENTRY $8956 (BLOADs STUPH at $8978 + overlay by name
-      from table $8016).
+- [ ] Continue MIU1 high stub ($841E-$89BC): popup window + line
+      drawing $841E-$8465, R-eady command $8466 (S/W/A dispatch ->
+      $7E79/7A/7B setters), generic menu picker $84DF (5 inline
+      args; SMC into $8040/$85A1/$859D), inventory display $85A2-
+      $87F9 (two-column layout $8772, item-line printer $87B8/BB
+      with dot leaders + $1B marker on readied index $7E4E, item
+      arrays $7E75/7D/83/93/9E, gems/counters, name+level+race/
+      class header), press-space $87FA, name printer $8837 ($7EB8),
+      sound toggles $8845/$885B ($1580/$1581 -> $7E71/72), death
+      $8870 (zeroes stats, draws the $7003 bitmap via row tables,
+      sfx 2 twice), respawn $88F8 (MLIB_BLOAD "GEN", copies string
+      at $7E16+X, JSR $B736/$1589/$7DCC retry loop), QUIT $893F
+      (reset vector from $8954), OVERLAY_ENTRY $8956 (clears $4000
+      page, LIB_INIT, BLOADs "STUPH", single-page mode, JSR $7E05).
 - [ ] Decompose MIU1 low stub $7DCE-$8036: disk-prompt routine
       $7DCC (!! the last 2 bytes of MIU1_STRINGS chunk are code --
       move the boundary), page-show $8005, overlay name table
