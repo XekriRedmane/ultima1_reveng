@@ -32,3 +32,12 @@ Toolchain facts proven byte-perfect in rounds 0-2.
   phantom-modified since round 0 — leave them uncommitted.
 - `git diff` (Myers) on main.nw wildly overstates HEX-chunk churn;
   use `--diff-algorithm=histogram` to see the real edit.
+- Generate data-heavy chunks (string tables, glyph banks, images)
+  programmatically from the reference binary into the noweb source
+  -- rounds 6 and 10 were byte-perfect on first assembly that way,
+  whereas hand-typed packed strings (round 8 READY_CLASSES) caused
+  the only byte mismatches. dasm DC.B "text",$XX with the high-bit
+  last char is the proven emission form.
+- This codebase's "never-taken branch" idiom: CLC / DC.B $B0 /
+  SEC -- the BCS consumes the SEC as its operand, giving dual
+  entries that differ only in carry (TICK/TICK_SND, DISK_PROMPT).
