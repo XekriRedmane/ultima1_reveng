@@ -9,6 +9,22 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 5 (2026-06-12): MI.U1 text-output cluster decomposed
+
+- Overlay->engine call census (all 7 overlays): 147 distinct targets;
+  top: $8119 (349 calls), $8062 (50), $80B8 (45), $8115 (33), $8254
+  (27), $83A9/$83B4/$8407/$820D/$826C/$8207... ($73xx/$74xx hits are
+  false positives — '$20'=space inside text). The $80xx-$84xx band is
+  the engine API.
+- Decomposed $8037-$8143: MSG_PRINT/MSG_AT (inline zero-terminated
+  text, $7F=tab), STR_NTH/STR_FIRST/STR_NTH_CAP (packed string tables,
+  last char high-bit-set, X = index, inline table pointer), PRINT_HEX,
+  PUTCH (layout codes: |=newline, ~=NL+col1, }=conditional NL+col1),
+  NEWLINE/CR/WIN_SHRINK. Text renders via low-RAM helpers $1592/$1598/
+  $15B0 (FONT_DRAW etc., installed by MAKE.INDATA — EQU stubs).
+- Next decomposition targets, by call count: $8062 group done; next
+  $8254, $83A9, $83B4, $8407, $820D, $8207, $826C, $840F, $836E.
+
 ### Round 4 (2026-06-12): all 16 targets byte-perfect (stub bootstrap)
 
 - miu1 bootstrapped: MIU1_ENTRY (JMP OVERLAY_ENTRY at $8956) + three

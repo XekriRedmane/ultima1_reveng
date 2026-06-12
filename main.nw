@@ -4028,7 +4028,9 @@ routine in subsequent rounds.
 \item [[MIU1_STRINGS]] --- roughly 2.6K of high-ASCII text: item,
   monster, and place names (``The Castle of Lord British'', \dots),
   shop and status vocabulary, prompts, and the save-file pathnames.
-\item [[MIU1_CODE]] --- the engine code proper.
+\item [[MIU1_CODE_A]], [[MIU1_CODE_B]] --- the engine code proper,
+  being decomposed routine by routine (the text-output cluster is
+  done; see below).
 \end{itemize}
 
 <<miu1 defines>>=
@@ -4496,10 +4498,10 @@ MIU1_STRINGS
         HEX 69 65 6e 64 f3 a2 00
 @ %def MIU1_STRINGS
 
-<<miu1 engine code>>=
+<<miu1 code low stub>>=
         ORG $7DCE
-MIU1_CODE
-        ; STUB — not yet disassembled (engine code)
+MIU1_CODE_A
+        ; STUB — not yet disassembled (engine code, first part)
         HEX 2c a2 01 90 25 20 19 81
         HEX 7d 50 75 74 20 69 6e 20
         HEX 74 68 65 20 00 20 b8 80
@@ -4577,320 +4579,571 @@ MIU1_CODE
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 ee 40 80 d0 03 ee 41
-        HEX 80 ad 00 02 60 ad 00 02
-        HEX ee 44 80 d0 03 ee 45 80
-        HEX 60 48 4a 4a 4a 4a 20 58
-        HEX 80 68 29 0f 09 30 c9 3a
-        HEX 90 02 69 06 20 b0 15 e6
-        HEX 24 60 29 7f c9 7c 90 f4
-        HEX f0 19 c9 7e f0 0a c9 7d
-        HEX d0 ef a5 24 c9 02 90 03
-        HEX 20 89 80 a9 01 85 24 60
-        HEX 20 98 15 e6 25 a5 25 c5
-        HEX 23 90 0b 98 48 8a 48 20
-        HEX 92 15 68 aa 68 a8 a9 00
-        HEX 85 24 60 e6 22 c6 23 e6
-        HEX 20 c6 21 c6 21 a5 22 85
-        HEX 25 d0 eb 38 6e 37 7e 2c
-        HEX a2 00 68 8d 40 80 68 8d
-        HEX 41 80 20 37 80 8d 44 80
-        HEX 20 37 80 8d 45 80 ad 41
-        HEX 80 48 ad 40 80 48 8a f0
-        HEX 09 20 43 80 0a 90 fa ca
-        HEX d0 f7 20 43 80 c9 7f f0
-        HEX 23 48 2c 37 7e 10 13 29
-        HEX 7f c9 7c b0 0d c9 61 90
-        HEX 06 c9 7b b0 02 49 20 8d
-        HEX 37 7e 20 68 80 68 10 da
-        HEX 4e 37 7e 60 20 43 80 18
-        HEX 65 24 85 24 4c e0 80 86
-        HEX 24 84 25 68 8d 40 80 68
-        HEX 8d 41 80 20 37 80 f0 15
-        HEX c9 7f f0 06 20 68 80 4c
-        HEX 21 81 20 37 80 18 65 24
-        HEX 85 24 4c 21 81 ad 41 80
-        HEX 48 ad 40 80 48 60 20 62
-        HEX 80 ca d0 fa 60 20 9e 15
-        HEX 20 9b 15 20 9e 15 a9 10
-        HEX 20 62 80 a2 26 a9 04 20
-        HEX 44 81 a9 12 20 b0 15 e6
-        HEX 25 20 9c 80 a9 0a 20 b0
-        HEX 15 a9 27 85 24 a9 08 20
-        HEX b0 15 20 bc 15 a5 25 49
-        HEX 12 d0 e4 85 24 e6 25 a9
-        HEX 04 20 62 80 a2 26 a9 06
-        HEX 20 44 81 a9 04 20 b0 15
-        HEX a9 1e 85 24 a9 02 20 b0
-        HEX 15 a9 0c e6 25 20 b0 15
-        HEX a6 25 e0 17 90 f5 60 86
-        HEX 65 85 66 a2 00 86 62 86
-        HEX 63 86 64 8e 06 82 8e 05
-        HEX 82 e8 8e 04 82 f8 46 66
-        HEX 66 65 90 16 18 a5 62 6d
-        HEX 04 82 85 62 a5 63 6d 05
-        HEX 82 85 63 a5 64 6d 06 82
-        HEX 85 64 18 ad 04 82 6d 04
-        HEX 82 8d 04 82 ad 05 82 6d
-        HEX 05 82 8d 05 82 ad 06 82
-        HEX 6d 06 82 8d 06 82 a5 65
-        HEX 05 66 d0 c2 d8 60 01 00
-        HEX 00 20 ad 81 e8 d0 06 aa
-        HEX a9 00 20 ad 81 8d 48 82
-        HEX 4c 22 82 b5 62 4a 4a 4a
-        HEX 4a 20 31 82 8a d0 03 ee
-        HEX 48 82 b5 62 20 31 82 ca
-        HEX 10 e9 60 29 0f d0 0d cd
-        HEX 48 82 d0 0b ad 49 82 f0
-        HEX f1 4c 62 80 8d 48 82 4c
-        HEX 58 80 00 00 a0 ff 38 c8
-        HEX e9 0a b0 fb 98 60 85 69
-        HEX 20 b9 15 c5 69 90 04 e5
-        HEX 69 b0 f8 c9 00 85 69 60
-        HEX 20 bc 15 a5 78 60 20 14
-        HEX 84 a0 3d 20 66 82 d0 06
-        HEX 20 e9 15 88 d0 f5 60 c9
-        HEX 0d f0 15 c9 5b f0 11 c9
-        HEX 2f f0 10 c9 27 f0 0f c9
-        HEX 3b f0 0e c9 7f f0 0a 60
-        HEX a9 0b 60 a9 0a 60 a9 15
-        HEX 60 a9 08 60 20 7d 82 a2
-        HEX 19 dd 53 7e f0 10 ca 10
-        HEX f8 20 19 81 48 75 68 3f
-        HEX 00 20 0f 84 38 60 8a 48
-        HEX c9 04 b0 16 ad 52 7e f0
-        HEX 11 8d d4 82 ad 51 7e 8d
-        HEX d3 82 20 b8 80 cb 75 4c
-        HEX dd 82 20 b8 80 cb 75 68
-        HEX 0a aa 18 60 18 b0 38 8c
-        HEX 4f 7e 8d 50 7e 90 05 a9
-        HEX 00 20 ce 15 f8 38 ad e4
-        HEX 7e ed 4f 7e 8d e4 7e b0
-        HEX 13 ad e5 7e 0d e6 7e f0
-        HEX 0b ad e5 7e d0 03 ce e6
-        HEX 7e ce e5 7e 18 ad da 7e
-        HEX 6d 50 7e 8d da 7e b0 02
-        HEX d8 60 f8 38 a2 00 bd db
-        HEX 7e 69 00 9d db 7e e8 b0
-        HEX f5 d8 60 20 b4 83 20 a1
-        HEX 15 20 19 81 48 69 74 73
-        HEX 20 7c 46 6f 6f 64 20 7c
-        HEX 45 78 70 2e 20 7c 43 6f
-        HEX 69 6e 20 00 4c 71 83 c9
-        HEX 01 b0 0a e0 64 b0 06 48
-        HEX a9 7f 85 7e 68 20 07 82
-        HEX 20 86 80 a9 00 85 7e 60
-        HEX 20 b4 83 20 a1 15 8d 49
-        HEX 82 a9 24 85 20 a9 04 85
-        HEX 21 ad c7 7e ae c6 7e 20
-        HEX 55 83 ad e6 7e ae e5 7e
-        HEX 20 55 83 ad e8 7e ae e7
-        HEX 7e 20 07 82 20 86 80 ad
-        HEX d5 7e ae d4 7e 20 07 82
-        HEX 20 98 15 a2 05 bd 31 7e
-        HEX 95 20 ca 10 f8 60 a2 05
-        HEX b5 20 9d 31 7e ca 10 f8
-        HEX 60 ae 79 7e 20 b8 80 d4
-        HEX 74 60 a5 25 0a 0a 0a aa
-        HEX bd 07 12 65 20 85 28 bd
-        HEX c7 12 45 7f 85 29 a4 24
-        HEX f0 0a 88 b1 28 0a d0 04
-        HEX c6 24 d0 f6 60 20 19 81
-        HEX 7d 48 6d 6d 6d 6d 2e 2e
-        HEX 2e 20 6e 6f 20 65 66 66
-        HEX 65 63 74 3f 00 a9 08 d0
-        HEX 0a 20 c8 83 a9 3f 20 b0
-        HEX 15 a9 10 20 cb 15 2c 10
-        HEX c0 a9 00 85 7d 85 78 60
-        HEX 20 b4 83 a9 04 85 22 85
-        HEX 20 a9 10 85 23 a9 20 85
-        HEX 21 20 9b 15 20 7e 80 a9
-        HEX 06 20 d4 15 20 5f 84 a2
-        HEX 12 a0 12 86 06 84 07 a2
-        HEX eb 20 da 15 a6 06 a0 6d
-        HEX 20 da 15 a2 12 a4 07 20
-        HEX da 15 a6 06 a0 12 20 da
-        HEX 15 a5 7f 45 80 85 7f 60
-        HEX 48 a9 07 85 24 68 a2 03
-        HEX dd 8b 84 f0 03 ca d0 f8
-        HEX 8a 0a a8 b9 90 84 48 b9
-        HEX 8f 84 48 20 b8 80 c4 84
-        HEX 20 98 15 e6 24 60 53 57
-        HEX 41 8a 84 96 84 a5 84 b4
-        HEX 84 ad 79 7e 20 df 84 0a
-        HEX 93 7e d4 74 8d 79 7e 60
-        HEX ad 7a 7e 20 df 84 0f 83
-        HEX 7e c8 73 8d 7a 7e 60 ad
-        HEX 7b 7e 20 df 84 05 7d 7e
-        HEX 20 75 8d 7b 7e 60 6e 6f
-        HEX 74 68 69 6e e7 73 70 65
-        HEX 6c 6c ba 77 65 61 70 6f
-        HEX 6e ba 61 72 6d 6f 75 72
-        HEX ba 85 6c 68 8d 40 80 68
-        HEX 8d 41 80 20 37 80 8d a1
-        HEX 85 20 37 80 85 67 20 37
-        HEX 80 85 68 20 37 80 8d 9d
-        HEX 85 20 37 80 8d 9e 85 ad
-        HEX 41 80 48 ad 40 80 48 20
-        HEX b4 83 20 a7 15 a2 0e a0
-        HEX 00 a5 80 8d 4d 7e 84 80
-        HEX 20 15 81 0e 20 52 65 61
-        HEX 64 79 20 18 00 20 9b 15
-        HEX ac a1 85 a2 01 b1 67 f0
-        HEX 01 e8 88 d0 f8 86 69 38
-        HEX a9 14 e5 69 4a 85 25 a9
-        HEX 61 8d 55 85 a0 00 98 48
-        HEX a9 0d 85 24 20 19 81 61
-        HEX 29 20 00 68 20 98 85 a8
-        HEX e6 25 cc a1 85 b0 0a ee
-        HEX 55 85 c8 b1 67 d0 df f0
-        HEX f1 20 a9 83 ad 4d 7e 85
-        HEX 80 20 ad 15 20 bf 15 48
-        HEX 20 6c 87 38 68 e9 41 f0
-        HEX 11 30 0c cd a1 85 90 02
-        HEX d0 05 a8 b1 67 d0 02 a4
-        HEX 6c 98 aa 48 20 b1 80 00
-        HEX 00 68 60 0a 20 aa 15 20
-        HEX b4 83 20 a7 15 20 a1 80
-        HEX a2 0c a0 00 8c 49 82 a5
-        HEX 80 8d 4d 7e 84 80 20 15
-        HEX 81 0e 20 49 6e 76 65 6e
-        HEX 74 6f 72 79 20 18 7c 7c
-        HEX 50 6c 61 79 65 72 3a 20
-        HEX 00 20 37 88 20 19 81 7c
-        HEX 41 20 6c 65 76 65 6c 20
-        HEX 00 ae e7 7e ad e8 7e 20
-        HEX ad 81 a5 63 4a 4a 4a 4a
-        HEX 18 69 01 20 0d 82 e6 24
-        HEX ad b7 7e f0 06 20 19 81
-        HEX 66 65 00 20 19 81 6d 61
-        HEX 6c 65 20 00 ae d6 7e 20
-        HEX b8 80 af 73 e6 24 ae d8
-        HEX 7e 20 b8 80 5d 75 20 a6
-        HEX 87 c6 25 a2 00 8e 4e 7e
-        HEX 86 6c 8a 0a a8 be c6 7e
-        HEX b9 c7 7e d0 04 e0 00 f0
-        HEX 05 20 bb 87 8e 74 a6 6c
-        HEX e8 e0 07 90 e3 ae d4 7e
-        HEX ad d5 7e 20 ad 81 a5 62
-        HEX 29 0f f0 1c 20 72 87 20
-        HEX 19 81 43 6f 70 70 65 72
-        HEX 20 70 65 6e 63 65 2e 2e
-        HEX 2e 2e 00 a5 62 20 58 80
-        HEX a5 62 4a 4a 4a 4a f0 1c
-        HEX 48 20 72 87 20 19 81 53
-        HEX 69 6c 76 65 72 20 70 69
-        HEX 65 63 65 73 2e 2e 2e 00
-        HEX 68 20 58 80 a5 63 f0 39
-        HEX 20 72 87 20 19 81 47 6f
-        HEX 6c 64 20 43 72 6f 77 6e
-        HEX 73 2e 2e 2e 2e 00 a5 63
-        HEX c9 10 b0 1a a9 2e 20 62
-        HEX 80 a5 63 20 58 80 4c d7
-        HEX 86 45 6e 65 6d 79 20 76
-        HEX 65 73 73 65 6c f3 20 4f
-        HEX 80 ad b6 7e f0 09 a2 00
-        HEX 86 6c 20 b8 87 c7 86 ad
-        HEX 7b 7e 8d 4e 7e a2 01 86
-        HEX 6c bd 7d 7e f0 05 20 b8
-        HEX 87 20 75 a6 6c e8 e0 06
-        HEX 90 ed ad 7c 7e 8d 4e 7e
-        HEX a2 01 86 6c bd 9e 7e f0
-        HEX 05 20 b8 87 7c 75 a6 6c
-        HEX e8 e0 0b 90 ed a2 00 8e
-        HEX 4e 7e 86 6c bd 75 7e f0
-        HEX 05 20 b8 87 87 76 a6 6c
-        HEX e8 e0 04 90 ed ad 7a 7e
-        HEX 8d 4e 7e a2 01 86 6c bd
-        HEX 83 7e f0 05 20 b8 87 c8
-        HEX 73 a6 6c e8 e0 10 90 ed
-        HEX ad 79 7e 8d 4e 7e a2 01
-        HEX 86 6c bd 93 7e f0 05 20
-        HEX b8 87 d4 74 a6 6c e8 e0
-        HEX 0b 90 ed 20 ec 87 20 51
-        HEX 81 4c a9 83 a2 00 86 24
-        HEX a4 25 c8 c0 12 90 0e a4
-        HEX 22 a9 12 85 21 65 20 c9
-        HEX 26 b0 05 85 20 84 25 60
-        HEX a2 0d a0 12 20 15 81 6d
-        HEX 6f 72 65 00 20 ec 87 a9
-        HEX 00 85 80 e6 24 20 b4 83
-        HEX a9 05 85 22 4a 85 20 a9
-        HEX 24 85 21 a9 13 85 23 4c
-        HEX 9b 15 aa a9 00 48 8a 48
-        HEX 20 72 87 a9 03 85 24 a2
-        HEX 09 a9 2e 8d 49 82 20 44
-        HEX 81 68 aa 68 20 07 82 20
-        HEX 9c 80 a6 6c ad 4e 7e f0
-        HEX 0a ec 4e 7e d0 05 a9 1b
-        HEX 20 62 80 4c b1 80 ad 4d
-        HEX 7e 85 80 20 ad 15 20 8f
-        HEX 15 20 a9 83 20 19 81 7d
-        HEX 50 72 65 73 73 20 53 70
-        HEX 61 63 65 20 74 6f 20 63
-        HEX 6f 6e 74 69 6e 75 65 3a
-        HEX 20 00 20 14 84 20 bf 15
-        HEX c9 0d f0 08 c9 1b f0 04
-        HEX c9 20 d0 f1 20 95 15 e6
-        HEX 24 c6 25 20 14 84 4c b4
-        HEX 83 a2 00 bd b8 7e f0 06
-        HEX 20 62 80 e8 d0 f5 60 ad
-        HEX 80 15 49 ff 20 e0 15 8d
-        HEX 71 7e d0 16 20 19 81 20
-        HEX 6f 66 66 00 60 ad 81 15
-        HEX 49 ff 8d 81 15 8d 72 7e
-        HEX f0 ea 20 19 81 20 6f 6e
-        HEX 00 60 20 78 80 20 37 88
-        HEX 20 19 81 2c 20 74 68 6f
-        HEX 75 20 61 72 74 20 64 65
-        HEX 61 64 2e 00 20 8f 15 a9
-        HEX 00 8d d4 7e 8d d5 7e 8d
-        HEX e5 7e 8d e6 7e 8d c6 7e
-        HEX 8d c7 7e a4 80 8c 4d 7e
-        HEX 85 80 20 6e 83 20 aa 15
-        HEX a9 02 8d d1 88 a9 70 8d
-        HEX d2 88 a2 20 bd 00 12 85
-        HEX 26 bd c0 12 45 7f 85 27
-        HEX a0 0f ee d1 88 d0 03 ee
-        HEX d2 88 ad 03 70 10 02 11
-        HEX 26 91 26 c8 c0 19 90 ea
-        HEX e8 e0 7e 90 d7 a9 02 20
-        HEX ce 15 a9 02 20 ce 15 ad
-        HEX 4d 7e 85 80 20 ad 15 4c
-        HEX 14 84 20 70 88 a9 04 a2
-        HEX ff 9a c9 19 b0 03 aa d0
-        HEX 0c 20 03 b7 47 45 4e 00
-        HEX b0 f7 4c 56 89 a0 00 bd
-        HEX 16 7e 99 16 7e e8 c8 0a
-        HEX d0 f5 20 14 84 20 36 b7
-        HEX 16 7e 20 89 15 20 cc 7d
-        HEX b0 f0 20 05 7e 20 31 83
-        HEX 20 51 81 20 a9 83 4c 56
-        HEX 89 20 86 15 ad 54 89 8d
-        HEX f2 03 ad 55 89 8d f3 03
-        HEX 49 a5 8d f4 03 4c 59 ff
-        HEX 78 a2 ff 9a ad f2 03 8d
-        HEX 54 89 ad f3 03 8d 55 89
-        HEX a9 3f 8d f2 03 a9 89 8d
-        HEX f3 03 49 a5 8d f4 03 20
-        HEX 03 b7 53 54 55 50 48 00
-        HEX b0 f5 a9 00 a2 40 8e 8e
-        HEX 89 8e 91 89 a0 78 99 00
-        HEX 40 99 80 40 c8 10 f7 e8
-        HEX e0 60 90 ea 20 9e 15 20
-        HEX 58 fc 20 83 15 a9 60 85
-        HEX 7f 85 80 20 ad 15 20 05
-        HEX 7e 2c 55 c0 ad 80 15 20
-        HEX e0 15 a9 00 4c fd 88
-@ %def MIU1_CODE
+        HEX 00
+@ %def MIU1_CODE_A
+
+\section{Text output}
+
+The engine's text system, the most-called code in the game (the
+overlays invoke [[MSG_PRINT]] alone some 349 times). Text renders on
+the hi-res screen through a font blitter in low RAM (at
+[[FONT_DRAW]]; installed by \texttt{MAKE.INDATA} and not yet reverse
+engineered), with the monitor's window and cursor zero-page variables
+([[MON_WNDLFT]]\dots[[MON_CV]]) defining the text region.
+
+Three printing interfaces, all using the same inline-argument
+convention as the file library:
+
+\begin{itemize}
+\item [[MSG_PRINT]] --- zero-terminated text follows the [[JSR]];
+  [[MSG_AT]] first sets the cursor from X/Y.
+\item [[STR_NTH]] --- an inline \emph{pointer} to a string table
+  follows the [[JSR]]; X picks the string. Table strings are packed
+  with no separators: the last character of each has its high bit
+  set. [[STR_FIRST]] prints entry 0; [[STR_NTH_CAP]] capitalizes the
+  first letter (for sentence-initial item names --- the flag byte
+  [[CAP_FLAG]] doubles as ``seen the first letter'' state).
+\item [[PRINT_HEX]] --- A as two hex digits.
+\end{itemize}
+
+Characters pass through [[PUTCH]], which treats the four codes from
+[[$7C]] up specially: [[$7C]] (\texttt{|}) is a newline, [[$7E]]
+(\texttt{\~{}}) newline-then-column-1, [[$7D]] (\texttt{\}})
+newline-only-if-needed-then-column-1, and [[$7F]] (in the string
+readers) adds the following byte to the column --- a tab. This is why
+the game's strings are full of \texttt{|}, \texttt{\}}, and
+\texttt{\~{}} characters. The newline path scrolls the text window
+via the low-RAM helper when the cursor passes [[MON_WNDBTM]].
+
+<<miu1 text defines>>=
+; --- Monitor text window and cursor (shared with the engine) ---
+MON_WNDLFT      EQU $20         ; text window: left column
+MON_WNDWDTH     EQU $21         ; text window: width
+MON_WNDTOP      EQU $22         ; text window: top row
+MON_WNDBTM      EQU $23         ; text window: bottom row + 1
+MON_CH          EQU $24         ; cursor column
+MON_CV          EQU $25         ; cursor row
+; --- Low-RAM text helpers (installed by MAKE.INDATA) ---
+TEXT_SCROLL     EQU $1592       ; STUB - scroll the text window
+LOW_1598        EQU $1598       ; STUB - low-RAM text helper
+FONT_DRAW       EQU $15B0       ; STUB - draw char A at the cursor
+; --- Engine state still inside stub regions ---
+CAP_FLAG        EQU $7E37       ; STUB - bit 7: capitalize next letter
+@ %def MON_WNDLFT MON_WNDWDTH MON_WNDTOP MON_WNDBTM MON_CV
+@ %def TEXT_SCROLL LOW_1598 FONT_DRAW CAP_FLAG
+
+<<miu1 inline text readers>>=
+        ORG $8037
+MSG_GETC
+        SUBROUTINE
+        ; Fetch the next message byte.
+        ;
+        ; Behavior:
+        ;   Pre-increment MSG_PTR (the captured caller return
+        ;   address) and load the byte it points at.
+        INC MSG_PTR
+        BNE .go
+        INC MSG_PTR+1
+MSG_PTR = *+1
+.go     LDA $0200                       ; stale operand (inline cursor)
+        RTS
+STR_GETC
+        SUBROUTINE
+        ; Fetch the next string-table byte.
+        ;
+        ; Behavior:
+        ;   Load through STR_PTR, then post-increment it.
+STR_PTR = *+1
+        LDA $0200                       ; stale operand (table cursor)
+        INC STR_PTR
+        BNE .rts
+        INC STR_PTR+1
+.rts    RTS
+PRINT_HEX
+        SUBROUTINE
+        ; Print A as two hex digits.
+        ;
+        ; Behavior:
+        ;   High nibble through PRINT_DIGIT, then the low nibble
+        ;   falls through into it; both exit via CHAR_OUT.
+        PHA
+        LSR
+        LSR
+        LSR
+        LSR
+        JSR PRINT_DIGIT
+        PLA
+PRINT_DIGIT
+        AND #$0F
+        ORA #$30                        ; '0'-'9'
+        CMP #$3A
+        BCC CHAR_OUT
+        ADC #$06                        ; carry set: fold into 'A'-'F'
+CHAR_OUT
+        ; draw one character and advance the cursor
+        JSR FONT_DRAW
+        INC MON_CH
+PUTCH_RTS
+        RTS
+PUTCH
+        SUBROUTINE
+        ; Print one character, interpreting layout control codes.
+        ;
+        ; Inputs:
+        ;   A - character; codes $7C-$7E control layout
+        ;
+        ; Behavior:
+        ;   Below $7C: draw it. $7C '|': newline. $7E '~': newline
+        ;   then column 1. $7D '}': newline only if past column 1,
+        ;   then column 1.
+        AND #$7F
+        CMP #$7C
+        BCC CHAR_OUT
+        BEQ NEWLINE
+        CMP #$7E
+        BEQ .nl_col1
+        CMP #$7D
+        BNE PUTCH_RTS
+        LDA MON_CH
+        CMP #$02
+        BCC .col1
+.nl_col1
+        JSR NEWLINE
+.col1   LDA #$01
+        STA MON_CH
+        RTS
+NEWLINE_ALT
+        ; newline preceded by a low-RAM helper (not yet RE'd)
+        JSR LOW_1598
+NEWLINE
+        SUBROUTINE
+        ; Advance to the next line, scrolling the window if needed.
+        ;
+        ; Behavior:
+        ;   INC MON_CV; past MON_WNDBTM, TEXT_SCROLL (X/Y saved).
+        ;   Falls into CR.
+        INC MON_CV
+        LDA MON_CV
+        CMP MON_WNDBTM
+        BCC CR
+        TYA
+        PHA
+        TXA
+        PHA
+        JSR TEXT_SCROLL
+        PLA
+        TAX
+        PLA
+        TAY
+CR
+        ; return the cursor to the left edge
+        LDA #$00
+        STA MON_CH
+        RTS
+WIN_SHRINK
+        SUBROUTINE
+        ; Shrink the text window by one on every side and home the
+        ; cursor.
+        ;
+        ; Behavior:
+        ;   top+1, bottom-1, left+1, width-2; MON_CV <- new top;
+        ;   exits through CR (branch always taken).
+        INC MON_WNDTOP
+        DEC MON_WNDBTM
+        INC MON_WNDLFT
+        DEC MON_WNDWDTH
+        DEC MON_WNDWDTH
+        LDA MON_WNDTOP
+        STA MON_CV
+        BNE CR                          ; always (top is nonzero)
+STR_NTH_CAP
+        SUBROUTINE
+        ; Print the Xth string from a packed table, capitalized.
+        ;
+        ; Inputs (inline): pointer to a packed string table (the
+        ;   last character of each string has its high bit set).
+        ;   X - string index (STR_FIRST prints entry 0)
+        ;
+        ; Behavior:
+        ;   Set CAP_FLAG so the first lowercase letter is upcased,
+        ;   then join STR_NTH: capture the table pointer, skip X
+        ;   strings, print until a high-bit character.
+        SEC
+        ROR CAP_FLAG
+        DC.B $2C                        ; BIT abs: skip the LDX
+STR_FIRST
+        LDX #$00
+STR_NTH
+        PLA
+        STA MSG_PTR
+        PLA
+        STA MSG_PTR+1
+        JSR MSG_GETC                    ; inline word -> table pointer
+        STA STR_PTR
+        JSR MSG_GETC
+        STA STR_PTR+1
+        LDA MSG_PTR+1                   ; return past the inline word
+        PHA
+        LDA MSG_PTR
+        PHA
+        TXA
+        BEQ .print
+.skip   JSR STR_GETC                    ; skip X strings
+        ASL                             ; high bit ends a string
+        BCC .skip
+        DEX
+        BNE .skip
+.print  JSR STR_GETC
+        CMP #$7F
+        BEQ .tab
+        PHA
+        BIT CAP_FLAG
+        BPL .emit
+        AND #$7F
+        CMP #$7C                        ; never fold control codes
+        BCS .emit
+        CMP #$61
+        BCC .mark
+        CMP #$7B
+        BCS .mark
+        EOR #$20                        ; capitalize the first letter
+.mark   STA CAP_FLAG                    ; flag drops to a plain char
+.emit   JSR PUTCH
+        PLA
+        BPL .print                      ; high bit set = last char
+        LSR CAP_FLAG
+        RTS
+.tab    JSR STR_GETC                    ; tab: add operand to column
+        CLC
+        ADC MON_CH
+        STA MON_CH
+        JMP .print
+MSG_AT
+        ; position the cursor, then print the inline message
+        STX MON_CH
+        STY MON_CV
+MSG_PRINT
+        SUBROUTINE
+        ; Print the zero-terminated text that follows the JSR.
+        ;
+        ; Behavior:
+        ;   Pop the return address into MSG_PTR; PUTCH each byte
+        ;   ($7F = tab: next byte adds to the column) until $00;
+        ;   return past the terminator.
+        PLA
+        STA MSG_PTR
+        PLA
+        STA MSG_PTR+1
+.next   JSR MSG_GETC
+        BEQ .done
+        CMP #$7F
+        BEQ .tab
+        JSR PUTCH
+        JMP .next
+.tab    JSR MSG_GETC
+        CLC
+        ADC MON_CH
+        STA MON_CH
+        JMP .next
+.done   LDA MSG_PTR+1                   ; return past the terminator
+        PHA
+        LDA MSG_PTR
+        PHA
+        RTS
+@ %def MSG_GETC STR_GETC MSG_PTR STR_PTR PRINT_HEX PRINT_DIGIT CHAR_OUT
+@ %def PUTCH_RTS PUTCH NEWLINE_ALT NEWLINE CR WIN_SHRINK STR_NTH_CAP
+@ %def STR_FIRST STR_NTH MSG_AT MSG_PRINT
+
+\section{Engine code: high stub}
+
+<<miu1 code high stub>>=
+        ORG $8144
+MIU1_CODE_B
+        ; STUB — not yet disassembled (engine code, second part)
+        HEX 20 62 80 ca d0 fa 60 20
+        HEX 9e 15 20 9b 15 20 9e 15
+        HEX a9 10 20 62 80 a2 26 a9
+        HEX 04 20 44 81 a9 12 20 b0
+        HEX 15 e6 25 20 9c 80 a9 0a
+        HEX 20 b0 15 a9 27 85 24 a9
+        HEX 08 20 b0 15 20 bc 15 a5
+        HEX 25 49 12 d0 e4 85 24 e6
+        HEX 25 a9 04 20 62 80 a2 26
+        HEX a9 06 20 44 81 a9 04 20
+        HEX b0 15 a9 1e 85 24 a9 02
+        HEX 20 b0 15 a9 0c e6 25 20
+        HEX b0 15 a6 25 e0 17 90 f5
+        HEX 60 86 65 85 66 a2 00 86
+        HEX 62 86 63 86 64 8e 06 82
+        HEX 8e 05 82 e8 8e 04 82 f8
+        HEX 46 66 66 65 90 16 18 a5
+        HEX 62 6d 04 82 85 62 a5 63
+        HEX 6d 05 82 85 63 a5 64 6d
+        HEX 06 82 85 64 18 ad 04 82
+        HEX 6d 04 82 8d 04 82 ad 05
+        HEX 82 6d 05 82 8d 05 82 ad
+        HEX 06 82 6d 06 82 8d 06 82
+        HEX a5 65 05 66 d0 c2 d8 60
+        HEX 01 00 00 20 ad 81 e8 d0
+        HEX 06 aa a9 00 20 ad 81 8d
+        HEX 48 82 4c 22 82 b5 62 4a
+        HEX 4a 4a 4a 20 31 82 8a d0
+        HEX 03 ee 48 82 b5 62 20 31
+        HEX 82 ca 10 e9 60 29 0f d0
+        HEX 0d cd 48 82 d0 0b ad 49
+        HEX 82 f0 f1 4c 62 80 8d 48
+        HEX 82 4c 58 80 00 00 a0 ff
+        HEX 38 c8 e9 0a b0 fb 98 60
+        HEX 85 69 20 b9 15 c5 69 90
+        HEX 04 e5 69 b0 f8 c9 00 85
+        HEX 69 60 20 bc 15 a5 78 60
+        HEX 20 14 84 a0 3d 20 66 82
+        HEX d0 06 20 e9 15 88 d0 f5
+        HEX 60 c9 0d f0 15 c9 5b f0
+        HEX 11 c9 2f f0 10 c9 27 f0
+        HEX 0f c9 3b f0 0e c9 7f f0
+        HEX 0a 60 a9 0b 60 a9 0a 60
+        HEX a9 15 60 a9 08 60 20 7d
+        HEX 82 a2 19 dd 53 7e f0 10
+        HEX ca 10 f8 20 19 81 48 75
+        HEX 68 3f 00 20 0f 84 38 60
+        HEX 8a 48 c9 04 b0 16 ad 52
+        HEX 7e f0 11 8d d4 82 ad 51
+        HEX 7e 8d d3 82 20 b8 80 cb
+        HEX 75 4c dd 82 20 b8 80 cb
+        HEX 75 68 0a aa 18 60 18 b0
+        HEX 38 8c 4f 7e 8d 50 7e 90
+        HEX 05 a9 00 20 ce 15 f8 38
+        HEX ad e4 7e ed 4f 7e 8d e4
+        HEX 7e b0 13 ad e5 7e 0d e6
+        HEX 7e f0 0b ad e5 7e d0 03
+        HEX ce e6 7e ce e5 7e 18 ad
+        HEX da 7e 6d 50 7e 8d da 7e
+        HEX b0 02 d8 60 f8 38 a2 00
+        HEX bd db 7e 69 00 9d db 7e
+        HEX e8 b0 f5 d8 60 20 b4 83
+        HEX 20 a1 15 20 19 81 48 69
+        HEX 74 73 20 7c 46 6f 6f 64
+        HEX 20 7c 45 78 70 2e 20 7c
+        HEX 43 6f 69 6e 20 00 4c 71
+        HEX 83 c9 01 b0 0a e0 64 b0
+        HEX 06 48 a9 7f 85 7e 68 20
+        HEX 07 82 20 86 80 a9 00 85
+        HEX 7e 60 20 b4 83 20 a1 15
+        HEX 8d 49 82 a9 24 85 20 a9
+        HEX 04 85 21 ad c7 7e ae c6
+        HEX 7e 20 55 83 ad e6 7e ae
+        HEX e5 7e 20 55 83 ad e8 7e
+        HEX ae e7 7e 20 07 82 20 86
+        HEX 80 ad d5 7e ae d4 7e 20
+        HEX 07 82 20 98 15 a2 05 bd
+        HEX 31 7e 95 20 ca 10 f8 60
+        HEX a2 05 b5 20 9d 31 7e ca
+        HEX 10 f8 60 ae 79 7e 20 b8
+        HEX 80 d4 74 60 a5 25 0a 0a
+        HEX 0a aa bd 07 12 65 20 85
+        HEX 28 bd c7 12 45 7f 85 29
+        HEX a4 24 f0 0a 88 b1 28 0a
+        HEX d0 04 c6 24 d0 f6 60 20
+        HEX 19 81 7d 48 6d 6d 6d 6d
+        HEX 2e 2e 2e 20 6e 6f 20 65
+        HEX 66 66 65 63 74 3f 00 a9
+        HEX 08 d0 0a 20 c8 83 a9 3f
+        HEX 20 b0 15 a9 10 20 cb 15
+        HEX 2c 10 c0 a9 00 85 7d 85
+        HEX 78 60 20 b4 83 a9 04 85
+        HEX 22 85 20 a9 10 85 23 a9
+        HEX 20 85 21 20 9b 15 20 7e
+        HEX 80 a9 06 20 d4 15 20 5f
+        HEX 84 a2 12 a0 12 86 06 84
+        HEX 07 a2 eb 20 da 15 a6 06
+        HEX a0 6d 20 da 15 a2 12 a4
+        HEX 07 20 da 15 a6 06 a0 12
+        HEX 20 da 15 a5 7f 45 80 85
+        HEX 7f 60 48 a9 07 85 24 68
+        HEX a2 03 dd 8b 84 f0 03 ca
+        HEX d0 f8 8a 0a a8 b9 90 84
+        HEX 48 b9 8f 84 48 20 b8 80
+        HEX c4 84 20 98 15 e6 24 60
+        HEX 53 57 41 8a 84 96 84 a5
+        HEX 84 b4 84 ad 79 7e 20 df
+        HEX 84 0a 93 7e d4 74 8d 79
+        HEX 7e 60 ad 7a 7e 20 df 84
+        HEX 0f 83 7e c8 73 8d 7a 7e
+        HEX 60 ad 7b 7e 20 df 84 05
+        HEX 7d 7e 20 75 8d 7b 7e 60
+        HEX 6e 6f 74 68 69 6e e7 73
+        HEX 70 65 6c 6c ba 77 65 61
+        HEX 70 6f 6e ba 61 72 6d 6f
+        HEX 75 72 ba 85 6c 68 8d 40
+        HEX 80 68 8d 41 80 20 37 80
+        HEX 8d a1 85 20 37 80 85 67
+        HEX 20 37 80 85 68 20 37 80
+        HEX 8d 9d 85 20 37 80 8d 9e
+        HEX 85 ad 41 80 48 ad 40 80
+        HEX 48 20 b4 83 20 a7 15 a2
+        HEX 0e a0 00 a5 80 8d 4d 7e
+        HEX 84 80 20 15 81 0e 20 52
+        HEX 65 61 64 79 20 18 00 20
+        HEX 9b 15 ac a1 85 a2 01 b1
+        HEX 67 f0 01 e8 88 d0 f8 86
+        HEX 69 38 a9 14 e5 69 4a 85
+        HEX 25 a9 61 8d 55 85 a0 00
+        HEX 98 48 a9 0d 85 24 20 19
+        HEX 81 61 29 20 00 68 20 98
+        HEX 85 a8 e6 25 cc a1 85 b0
+        HEX 0a ee 55 85 c8 b1 67 d0
+        HEX df f0 f1 20 a9 83 ad 4d
+        HEX 7e 85 80 20 ad 15 20 bf
+        HEX 15 48 20 6c 87 38 68 e9
+        HEX 41 f0 11 30 0c cd a1 85
+        HEX 90 02 d0 05 a8 b1 67 d0
+        HEX 02 a4 6c 98 aa 48 20 b1
+        HEX 80 00 00 68 60 0a 20 aa
+        HEX 15 20 b4 83 20 a7 15 20
+        HEX a1 80 a2 0c a0 00 8c 49
+        HEX 82 a5 80 8d 4d 7e 84 80
+        HEX 20 15 81 0e 20 49 6e 76
+        HEX 65 6e 74 6f 72 79 20 18
+        HEX 7c 7c 50 6c 61 79 65 72
+        HEX 3a 20 00 20 37 88 20 19
+        HEX 81 7c 41 20 6c 65 76 65
+        HEX 6c 20 00 ae e7 7e ad e8
+        HEX 7e 20 ad 81 a5 63 4a 4a
+        HEX 4a 4a 18 69 01 20 0d 82
+        HEX e6 24 ad b7 7e f0 06 20
+        HEX 19 81 66 65 00 20 19 81
+        HEX 6d 61 6c 65 20 00 ae d6
+        HEX 7e 20 b8 80 af 73 e6 24
+        HEX ae d8 7e 20 b8 80 5d 75
+        HEX 20 a6 87 c6 25 a2 00 8e
+        HEX 4e 7e 86 6c 8a 0a a8 be
+        HEX c6 7e b9 c7 7e d0 04 e0
+        HEX 00 f0 05 20 bb 87 8e 74
+        HEX a6 6c e8 e0 07 90 e3 ae
+        HEX d4 7e ad d5 7e 20 ad 81
+        HEX a5 62 29 0f f0 1c 20 72
+        HEX 87 20 19 81 43 6f 70 70
+        HEX 65 72 20 70 65 6e 63 65
+        HEX 2e 2e 2e 2e 00 a5 62 20
+        HEX 58 80 a5 62 4a 4a 4a 4a
+        HEX f0 1c 48 20 72 87 20 19
+        HEX 81 53 69 6c 76 65 72 20
+        HEX 70 69 65 63 65 73 2e 2e
+        HEX 2e 00 68 20 58 80 a5 63
+        HEX f0 39 20 72 87 20 19 81
+        HEX 47 6f 6c 64 20 43 72 6f
+        HEX 77 6e 73 2e 2e 2e 2e 00
+        HEX a5 63 c9 10 b0 1a a9 2e
+        HEX 20 62 80 a5 63 20 58 80
+        HEX 4c d7 86 45 6e 65 6d 79
+        HEX 20 76 65 73 73 65 6c f3
+        HEX 20 4f 80 ad b6 7e f0 09
+        HEX a2 00 86 6c 20 b8 87 c7
+        HEX 86 ad 7b 7e 8d 4e 7e a2
+        HEX 01 86 6c bd 7d 7e f0 05
+        HEX 20 b8 87 20 75 a6 6c e8
+        HEX e0 06 90 ed ad 7c 7e 8d
+        HEX 4e 7e a2 01 86 6c bd 9e
+        HEX 7e f0 05 20 b8 87 7c 75
+        HEX a6 6c e8 e0 0b 90 ed a2
+        HEX 00 8e 4e 7e 86 6c bd 75
+        HEX 7e f0 05 20 b8 87 87 76
+        HEX a6 6c e8 e0 04 90 ed ad
+        HEX 7a 7e 8d 4e 7e a2 01 86
+        HEX 6c bd 83 7e f0 05 20 b8
+        HEX 87 c8 73 a6 6c e8 e0 10
+        HEX 90 ed ad 79 7e 8d 4e 7e
+        HEX a2 01 86 6c bd 93 7e f0
+        HEX 05 20 b8 87 d4 74 a6 6c
+        HEX e8 e0 0b 90 ed 20 ec 87
+        HEX 20 51 81 4c a9 83 a2 00
+        HEX 86 24 a4 25 c8 c0 12 90
+        HEX 0e a4 22 a9 12 85 21 65
+        HEX 20 c9 26 b0 05 85 20 84
+        HEX 25 60 a2 0d a0 12 20 15
+        HEX 81 6d 6f 72 65 00 20 ec
+        HEX 87 a9 00 85 80 e6 24 20
+        HEX b4 83 a9 05 85 22 4a 85
+        HEX 20 a9 24 85 21 a9 13 85
+        HEX 23 4c 9b 15 aa a9 00 48
+        HEX 8a 48 20 72 87 a9 03 85
+        HEX 24 a2 09 a9 2e 8d 49 82
+        HEX 20 44 81 68 aa 68 20 07
+        HEX 82 20 9c 80 a6 6c ad 4e
+        HEX 7e f0 0a ec 4e 7e d0 05
+        HEX a9 1b 20 62 80 4c b1 80
+        HEX ad 4d 7e 85 80 20 ad 15
+        HEX 20 8f 15 20 a9 83 20 19
+        HEX 81 7d 50 72 65 73 73 20
+        HEX 53 70 61 63 65 20 74 6f
+        HEX 20 63 6f 6e 74 69 6e 75
+        HEX 65 3a 20 00 20 14 84 20
+        HEX bf 15 c9 0d f0 08 c9 1b
+        HEX f0 04 c9 20 d0 f1 20 95
+        HEX 15 e6 24 c6 25 20 14 84
+        HEX 4c b4 83 a2 00 bd b8 7e
+        HEX f0 06 20 62 80 e8 d0 f5
+        HEX 60 ad 80 15 49 ff 20 e0
+        HEX 15 8d 71 7e d0 16 20 19
+        HEX 81 20 6f 66 66 00 60 ad
+        HEX 81 15 49 ff 8d 81 15 8d
+        HEX 72 7e f0 ea 20 19 81 20
+        HEX 6f 6e 00 60 20 78 80 20
+        HEX 37 88 20 19 81 2c 20 74
+        HEX 68 6f 75 20 61 72 74 20
+        HEX 64 65 61 64 2e 00 20 8f
+        HEX 15 a9 00 8d d4 7e 8d d5
+        HEX 7e 8d e5 7e 8d e6 7e 8d
+        HEX c6 7e 8d c7 7e a4 80 8c
+        HEX 4d 7e 85 80 20 6e 83 20
+        HEX aa 15 a9 02 8d d1 88 a9
+        HEX 70 8d d2 88 a2 20 bd 00
+        HEX 12 85 26 bd c0 12 45 7f
+        HEX 85 27 a0 0f ee d1 88 d0
+        HEX 03 ee d2 88 ad 03 70 10
+        HEX 02 11 26 91 26 c8 c0 19
+        HEX 90 ea e8 e0 7e 90 d7 a9
+        HEX 02 20 ce 15 a9 02 20 ce
+        HEX 15 ad 4d 7e 85 80 20 ad
+        HEX 15 4c 14 84 20 70 88 a9
+        HEX 04 a2 ff 9a c9 19 b0 03
+        HEX aa d0 0c 20 03 b7 47 45
+        HEX 4e 00 b0 f7 4c 56 89 a0
+        HEX 00 bd 16 7e 99 16 7e e8
+        HEX c8 0a d0 f5 20 14 84 20
+        HEX 36 b7 16 7e 20 89 15 20
+        HEX cc 7d b0 f0 20 05 7e 20
+        HEX 31 83 20 51 81 20 a9 83
+        HEX 4c 56 89 20 86 15 ad 54
+        HEX 89 8d f2 03 ad 55 89 8d
+        HEX f3 03 49 a5 8d f4 03 4c
+        HEX 59 ff 78 a2 ff 9a ad f2
+        HEX 03 8d 54 89 ad f3 03 8d
+        HEX 55 89 a9 3f 8d f2 03 a9
+        HEX 89 8d f3 03 49 a5 8d f4
+        HEX 03 20 03 b7 53 54 55 50
+        HEX 48 00 b0 f5 a9 00 a2 40
+        HEX 8e 8e 89 8e 91 89 a0 78
+        HEX 99 00 40 99 80 40 c8 10
+        HEX f7 e8 e0 60 90 ea 20 9e
+        HEX 15 20 58 fc 20 83 15 a9
+        HEX 60 85 7f 85 80 20 ad 15
+        HEX 20 05 7e 2c 55 c0 ad 80
+        HEX 15 20 e0 15 a9 00 4c fd
+        HEX 88
+@ %def MIU1_CODE_B
 
 <<miu1.asm>>=
         PROCESSOR 6502
 <<miu1 defines>>
+<<miu1 text defines>>
 <<miu1 entry>>
 <<miu1 mask tables>>
 <<miu1 string region>>
-<<miu1 engine code>>
+<<miu1 code low stub>>
+<<miu1 inline text readers>>
+<<miu1 code high stub>>
 @
 
 
