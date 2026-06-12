@@ -24,3 +24,11 @@ Toolchain facts proven byte-perfect in rounds 0-2.
   "stale operand; patched to X". Use `.label = *+1` before the insn.
 - This game's code patches CPY/CPX immediates as loop limits and
   whole opcode bytes (JSR $20 <-> RTS $60) to toggle actors.
+- NEVER `git stash` in this repo: the untracked .gitattributes
+  (*.py eol=lf) keeps weave.py & co. phantom-dirty (CRLF working
+  copies), so `stash pop` aborts with "would be overwritten".
+  Recovery: `git add weave.py` (normalizes the index) then pop,
+  then `git reset weave.py`. The ~20 template files have been
+  phantom-modified since round 0 — leave them uncommitted.
+- `git diff` (Myers) on main.nw wildly overstates HEX-chunk churn;
+  use `--diff-algorithm=histogram` to see the real edit.

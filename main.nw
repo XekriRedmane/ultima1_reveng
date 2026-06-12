@@ -197,10 +197,10 @@ field.
 \texttt{GEN}         & BIN &  8932 & [[$8956]] & [[gen.asm]] & character generation overlay \\
 \texttt{TM}          & BIN &  8123 & [[$8956]] & [[tm.asm]] & time machine (endgame) overlay \\
 \texttt{MAKE.INDATA} & BIN & 13877 & [[$1E00]] & [[makeindata.asm]] & initial game state builder \\
-\texttt{MAPCHARS}    & BIN &  1024 & [[$0800]] & [[mapchars.asm]] & tile graphics \\
+\texttt{MAPCHARS}    & BIN &  1024 & [[$0800]] & [[mapchars.asm]] & town/castle glyph bank \\
 \texttt{TCMAPS}      & BIN &  7660 & [[$4000]] & [[tcmaps.asm]] & town/castle maps \\
 \texttt{NIF}         & BIN &  7680 & [[$4000]] & [[nif.asm]] & hi-res image \\
-\texttt{STUPH}       & BIN &  6144 & [[$0800]] & [[stuph.asm]] & graphics/shape data \\
+\texttt{STUPH}       & BIN &  6144 & [[$0800]] & [[stuph.asm]] & resident low-memory library \\
 \bottomrule
 \end{tabular}
 \caption{Files on the ProDOS volume \texttt{/U1} and the assembly
@@ -4006,6 +4006,2578 @@ DISSOLVE
 @
 
 
+\chapter{The resident library: STUPH}
+
+\texttt{STUPH} is not ``graphics/shape data'' --- it is the game's
+\textbf{resident low-memory library}: 6144 bytes loaded at
+[[$0800]]--[[$1FFF]] and never unloaded. Everything machine-specific
+lives here: the glyph banks and the font blitter, the hi-res address
+tables, double-buffered page flipping, the tile-map renderer, the
+keyboard type-ahead queue, sound effects and their queue, a lagged
+additive random-number generator, line drawing for the dungeon view,
+and the machine-detection code that turns an AppleMouse card into a
+vertical-blank interrupt source and tames a IIgs down to 1\,MHz when
+timing matters. The engine (\texttt{MI.U1}) and every overlay reach
+all of it through a \textbf{jump-vector table at [[$1583]]}, three
+bytes per entry, so the library's internals can move without
+re-assembling its callers. \texttt{MI.U1}'s overlay dispatcher
+\textsc{bload}s \texttt{STUPH} by name, which is how it gets here.
+
+For a porter, this chapter is the platform layer: every routine in it
+corresponds to a primitive you must supply on a new platform ---
+blit-glyph, draw-map-row, get-key, play-effect, random ---
+and everything above it in \texttt{MI.U1} and the overlays is
+platform-independent game logic calling these vectors.
+
+\textbf{The memory map of the module:}
+
+\begin{center}
+\begin{tabular}{llp{7.5cm}}
+[[$0800]]--[[$0BFF]] & [[FONT_BANK]] & 128 glyphs $\times$ 8 scanlines
+  (text font; chars [[$00]]--[[$19]] are terrain-strip pairs) \\
+[[$0C00]]--[[$11FF]] & [[TILE_BANK]] & 96 glyphs $\times$ 16 scanlines
+  (the map tile set: 48 two-glyph tiles) \\
+[[$1200]]--[[$137F]] & [[HGR_ROW_LO]]/[[HGR_ROW_HI]] & hi-res address
+  of each of the 192 screen scanlines \\
+[[$1380]]--[[$157F]] & [[XCOL_TBL]]/[[XMASK_TBL]] & pixel
+  column $\to$ screen byte / bit mask, for [[PLOT]] \\
+[[$1580]]--[[$15E8]] & flags + vectors & three flag bytes, then 34
+  three-byte [[JMP]] vectors \\
+[[$15E9]]--[[$1E39]] & code & the routines themselves \\
+[[$1E3A]]--[[$1FFF]] & --- & zero fill \\
+\end{tabular}
+\end{center}
+
+\textbf{Double buffering.} The library draws hi-res graphics on one
+page while displaying the other. Zero page [[ZP_PAGE_XOR]] holds the
+value XORed into every screen-address high byte before writing:
+[[$00]] draws on page 1 ([[$2000]]), [[$60]] on page 2 ([[$4000]]).
+[[ZP_PAGE_TGL]] holds the XOR distance to the \emph{other} page ---
+[[$60]] when double-buffering, [[$00]] to pin everything on one page.
+[[PAGE_FLIP]] displays the page just drawn and toggles
+[[ZP_PAGE_XOR]]. The text routines ([[FONT_DRAW]], the scrolls and
+clears) deliberately write \emph{both} pages, so the text windows
+survive page flips without redrawing; only the map viewport and
+pixel graphics are truly double-buffered.
+
+\textbf{Inverse video.} [[ZP_INVERSE]] is EORed into every byte the
+text routines emit: [[$00]] for white-on-black, [[$7F]] for inverse.
+The engine flips it to flash low hit points and food.
+
+<<stuph defines>>=
+; --- Zero page: the library's working storage ---
+ZP_PLR_X        EQU $00         ; player's map column (0-63)
+ZP_PLR_Y        EQU $01         ; player's map row (0-63)
+ZP_DX           EQU $04         ; LINE_TO: |dx|
+ZP_DY           EQU $05         ; LINE_TO: |dy|
+ZP_PX           EQU $06         ; current pixel column (PLOT/LINE)
+ZP_PY           EQU $07         ; current pixel row (PLOT/LINE)
+ZP_LX2          EQU $08         ; LINE_TO: destination column
+ZP_LY2          EQU $09         ; LINE_TO: destination row
+ZP_XSTEP        EQU $0A         ; LINE_TO: column step (+1/-1)
+ZP_YSTEP        EQU $0B         ; LINE_TO: row step (+1/-1)
+ZP_SFX_P1       EQU $0A         ; alias: SFX_SIREN voice-1 period
+ZP_SFX_P2       EQU $0B         ; alias: SFX_SIREN voice-2 period
+; --- Monitor-compatible text window and cursor ---
+MON_WNDLFT      EQU $20         ; text window: left column
+MON_WNDWDTH     EQU $21         ; text window: width
+MON_WNDTOP      EQU $22         ; text window: top row
+MON_WNDBTM      EQU $23         ; text window: bottom row + 1
+MON_CH          EQU $24         ; cursor column
+MON_CV          EQU $25         ; cursor row
+; --- more zero page ---
+ZP_HGR_PTR      EQU $26         ; screen pointer (PLOT, LINE_TO)
+ZP_FW_PTR       EQU $2A         ; slot firmware pointer (mouse scan)
+ZP_CNT          EQU $60         ; step counter (LINE_TO, effects)
+ZP_ERR          EQU $61         ; LINE_TO: Bresenham error term
+ZP_SFX_PER      EQU $61         ; alias: effect period/limit
+ZP_ROWLIM       EQU $69         ; scanline counter (text, map bands)
+ZP_XSAV         EQU $69         ; alias: X save in SFX_PLAY
+ZP_SCANROW      EQU $6B         ; DRAW_MAP: current screen scanline row
+ZP_MAP_X0       EQU $6C         ; DRAW_MAP: leftmost visible map column
+ZP_MAP_Y0       EQU $6D         ; DRAW_MAP: current visible map row
+ZP_CELLX        EQU $6E         ; DRAW_MAP: X save in the cell loop
+ZP_CELLA        EQU $6F         ; DRAW_MAP: cell code save
+ZP_MAP_PTR      EQU $72         ; DRAW_MAP: map row pointer
+ZP_TILE_PTR     EQU $72         ; alias: TILE_ROLL plane pointer
+ZP_KEY_BUF      EQU $74         ; 4-byte keyboard type-ahead queue
+ZP_KEY_CNT      EQU $78         ; type-ahead count (0-4)
+ZP_SFX_Q        EQU $79         ; 4-byte pending sound-effect queue
+ZP_SFX_CNT      EQU $7D         ; pending effect count (0-4)
+ZP_INVERSE      EQU $7E         ; video EOR mask: $00 normal, $7F inverse
+ZP_PAGE_XOR     EQU $7F         ; draw page: $00 = page 1, $60 = page 2
+ZP_PAGE_TGL     EQU $80         ; XOR to the other page ($60), 0 = single
+MAPROW_BUF      EQU $81         ; 38 glyph codes for one map tile row
+; --- The game's map ---
+MAP_BASE        EQU $6000       ; 64x64 tile map, one byte per cell
+; --- ProDOS and the file library ---
+MLI             EQU $BF00       ; ProDOS MLI entry
+MOUSE_FW_DEF    EQU $C400       ; SERVEMOUSE placeholder (patched)
+GP_MACHID       EQU $BF98       ; ProDOS machine id ($30 bits = 128K)
+MLIB_CODE       EQU $B700       ; the file library's code (noise source)
+MLIB_BLOAD_P    EQU $B71E       ; file library: BLOAD, path pointer
+MLIB_BLOAD_AT_P EQU $B721       ; file library: BLOAD at address
+MLIB_BSAVE_P    EQU $B724       ; file library: BSAVE, path pointer
+MLIB_DESTROY_P  EQU $B730       ; file library: delete a file
+MLIB_QUIET      EQU $B73C       ; bit 7 set: suppress the error buzz
+MLIB_PATH       EQU $BA79       ; the library's parsed pathname buffer
+PARM_RW         EQU $BAF0       ; MLI READ/WRITE parameter block
+; --- Hardware ---
+KBD             EQU $C000       ; keyboard data
+KBDSTRB         EQU $C010       ; clear keyboard strobe
+RDVBL           EQU $C019       ; vertical blanking state (IIe and up)
+SPKR            EQU $C030       ; speaker toggle
+CYAREG          EQU $C036       ; IIgs speed register (bit 7 = fast)
+TXTCLR          EQU $C050       ; graphics on
+MIXCLR          EQU $C052       ; full-screen graphics
+TXTPAGE1        EQU $C054       ; display page 1
+TXTPAGE2        EQU $C055       ; display page 2
+HIRES           EQU $C057       ; hi-res mode
+DRIVE_OFF       EQU $C0E8       ; slot-6 motor off (accelerator nudge)
+ROMIN           EQU $C082       ; read ROM, write-protect language card
+HGR1            EQU $2000       ; hi-res page 1
+HGR2            EQU $4000       ; hi-res page 2
+; --- ROM entry points and id bytes ---
+MON_INIT        EQU $FB2F       ; monitor: text mode, full window
+ROM_MACHID      EQU $FBB3       ; ROM id byte ($06 = IIe or later)
+ROM_SUBID       EQU $FBC0       ; ROM sub-id ($E0-$EF = enhanced class)
+MON_HOME        EQU $FC58       ; monitor: clear text screen
+MON_IDROUTINE   EQU $FE1F       ; IIgs id: returns carry clear on a IIgs
+@ %def ZP_PLR_X ZP_PLR_Y ZP_DX ZP_DY ZP_PX ZP_PY ZP_LX2 ZP_LY2
+@ %def ZP_XSTEP ZP_YSTEP ZP_SFX_P1 ZP_SFX_P2 MON_WNDLFT MON_WNDWDTH
+@ %def MON_WNDTOP MON_WNDBTM MON_CH MON_CV ZP_HGR_PTR ZP_FW_PTR
+@ %def ZP_CNT ZP_ERR ZP_SFX_PER ZP_ROWLIM ZP_XSAV ZP_SCANROW
+@ %def ZP_MAP_X0 ZP_MAP_Y0 ZP_CELLX ZP_CELLA ZP_MAP_PTR ZP_TILE_PTR
+@ %def ZP_KEY_BUF ZP_KEY_CNT ZP_SFX_Q ZP_SFX_CNT ZP_INVERSE
+@ %def ZP_PAGE_XOR ZP_PAGE_TGL MAPROW_BUF MAP_BASE MLIB_CODE
+@ %def MOUSE_FW_DEF RDVBL CYAREG SPKR ROMIN MON_INIT ROM_SUBID MON_HOME
+@ %def MON_IDROUTINE
+
+\section{The glyph banks}
+
+Two banks of 1-byte-wide glyph bitmaps open the module. Both are
+stored \emph{plane-major}: all glyphs' scanline 0, then all glyphs'
+scanline 1, and so on --- so drawing one glyph reads one byte per
+plane at a fixed index, and animating a glyph can rotate bytes
+through the planes with a constant stride.
+
+\textbf{Bank A, the font} ([[FONT_BANK]]): 128 glyphs of 8 scanlines;
+scanline $s$ of glyph $g$ is at [[FONT_BANK]]$ + 128s + g$. Glyphs
+[[$20]]--[[$7F]] are the ASCII text font (with true lowercase ---
+1986!), drawn identically in any column. Glyphs [[$00]]--[[$19]] are
+\emph{terrain strips} used by the screen border, and they come in
+pre-shifted pairs: [[FONT_DRAW]] adds one to the glyph index when
+drawing them in an odd column, so their color pixels stay aligned.
+Glyphs [[$7C]]--[[$7F]] are the four frames of the flashing cursor
+([[CURSOR_FLASH]] cycles through them).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{images/stuph_font.png}
+\caption{Bank A: the text font, 128 glyphs in index order
+(row-major, 16 per row). Note the terrain strips in the first two
+rows, the full lowercase set, and the cursor frames at the end.}
+\label{fig:stuph-font}
+\end{figure}
+
+\textbf{Bank B, the map tiles} ([[TILE_BANK]]): 96 glyphs of 16
+scanlines; scanline $s$ of glyph $g$ is at [[TILE_BANK]]$ + 96s + g$.
+The map renderer pairs them: map cell code $c$ draws glyphs $c$
+(left) and $c{+}1$ (right), so the effective tile set is 48 tiles of
+$14 \times 16$ pixels. Water, plains, forest, mountains; castles,
+towers, cities and dungeon entrances; the player on foot, horse,
+cart, raft and frigate; and the overworld monsters --- all visible
+in the rendered sheet.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/stuph_tiles.png}
+\caption{Bank B: the 48 outdoor map tiles (each two glyphs wide),
+in code order. The first tile (top left) is open water, whose glyph
+bytes [[DRAW_MAP]] rotates vertically to make it flow.}
+\label{fig:stuph-tiles}
+\end{figure}
+
+The \texttt{MAPCHARS} file (\autoref{sec:mapchars}) is an
+\emph{alternate bank A} that the town and castle overlays load over
+[[FONT_BANK]]: its terrain strips become walls and counters, and it
+adds an inverse-video capital alphabet for lettering shop signs
+directly onto the map.
+
+<<stuph font bank>>=
+        ORG $0800
+FONT_BANK
+        HEX d5 aa ff ff d5 aa ff ff
+        HEX d7 ab f5 ea f7 eb 80 81
+        HEX 80 80 80 80 d5 aa d5 aa
+        HEX 80 c0 98 80 98 98 80 ff
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 84 80 80 80
+        HEX ff 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 80 80 80 80
+        HEX 80 80 80 80 b6 3c 9c 66
+        HEX d5 aa d5 aa d5 aa d5 aa
+        HEX d7 ab f5 ea f7 eb 83 86
+        HEX c0 a0 81 82 d4 aa 95 aa
+        HEX e0 b0 bc 80 bc 98 88 dd
+        HEX 80 98 ec b6 88 80 8e 98
+        HEX b0 86 80 80 80 80 80 88
+        HEX 9c 90 9c 9c b6 be b0 be
+        HEX 9c 9c 80 80 80 80 86 9c
+        HEX ff f0 be b8 be fe fc b8
+        HEX e6 fe fc e6 8c c2 e2 bc
+        HEX be bc be b8 fe e6 e6 e6
+        HEX e6 e6 fe e6 80 98 80 80
+        HEX 80 80 8c 80 b0 80 b8 80
+        HEX 86 80 b0 86 9c 80 80 80
+        HEX 80 80 80 80 8c 80 80 80
+        HEX 80 80 80 80 3c 9c 66 b6
+        HEX d5 aa d5 aa d5 aa d5 aa
+        HEX d7 ab f5 ea f7 eb 8d 9a
+        HEX d0 a0 85 82 d4 a8 95 8a
+        HEX d8 ac fe 9c fe 98 9c ff
+        HEX 80 98 ec ff bc e6 9b 98
+        HEX 98 8c 88 98 80 80 80 be
+        HEX b6 98 b6 b6 b6 86 98 b0
+        HEX b6 b6 98 98 c0 80 8c b6
+        HEX ff f8 ec ec ec 8c 8c ec
+        HEX e6 98 e0 b6 8c e6 e6 e6
+        HEX e6 e6 e6 ec 98 e6 e6 e6
+        HEX e6 e6 e0 e6 aa 98 88 88
+        HEX 80 80 8c 80 b0 80 ec 80
+        HEX 86 98 80 86 98 80 80 80
+        HEX 80 80 80 80 8c 80 80 80
+        HEX 80 80 80 88 9c 66 b6 3c
+        HEX d5 aa d5 aa d5 aa d5 aa
+        HEX d7 ab f5 ea f7 eb b5 ea
+        HEX d0 a8 85 8a d4 a8 95 8a
+        HEX d6 ab 98 be 98 98 aa ff
+        HEX 80 98 b6 b6 8e b6 9b 8c
+        HEX 8c 98 9c 98 80 80 80 dd
+        HEX b6 9c b0 b0 b6 9e 8c b0
+        HEX b6 b6 98 98 80 be 98 b0
+        HEX ff ec ec 86 ec 8c 8c 86
+        HEX e6 98 e0 9e 8c fe ee e6
+        HEX e6 e6 e6 86 98 e6 e6 e6
+        HEX bc e6 b0 fe 9c fe 9c 9c
+        HEX be bc bc bc bc bc 8c bc
+        HEX 86 80 b0 e6 98 c2 b6 bc
+        HEX be fc b6 bc be b6 e6 e6
+        HEX e6 e6 fe be 66 b6 3c 9c
+        HEX d5 aa d5 aa d5 aa d5 aa
+        HEX d7 ab f5 ea f7 eb b5 ea
+        HEX d4 a8 95 8a d0 a8 85 8a
+        HEX d6 ab 98 be 98 98 c9 ff
+        HEX 80 98 80 b6 9c 98 ee 80
+        HEX 8c 98 be fe 80 be 80 c9
+        HEX b6 98 98 9c be b0 9e 98
+        HEX 9c bc 80 80 82 80 b0 98
+        HEX ff ec bc 86 ec bc bc 86
+        HEX fe 98 e0 8e 8c fe fe e6
+        HEX be e6 be bc 98 e6 e6 e6
+        HEX 98 bc fe fe 88 fe b6 aa
+        HEX be b6 ec e6 b6 e6 fe e6
+        HEX 9e 98 b0 b6 98 e6 ee e6
+        HEX e6 e6 ee 86 8c b6 e6 e6
+        HEX bc e6 b0 88 66 b6 3c 9c
+        HEX d5 aa d5 aa d5 aa d5 aa
+        HEX d7 ab f5 ea f7 eb 8d 9a
+        HEX d4 a8 95 8a d0 a0 85 82
+        HEX d8 ac fe 9c 98 fe 94 ff
+        HEX 80 80 80 ff b8 ec bb 80
+        HEX 8c 98 9c 98 98 80 80 9c
+        HEX b6 98 8c b0 b0 b0 b6 8c
+        HEX b6 98 98 98 80 be 98 80
+        HEX ff fc ec 86 ec 8c 8c f6
+        HEX e6 98 e6 9e 8c e6 f6 e6
+        HEX 86 e6 b6 e0 98 e6 e6 fe
+        HEX bc 98 8c e6 88 98 80 88
+        HEX 9c b6 ec 86 b6 fe 8c fc
+        HEX b6 98 b6 9e 98 fe e6 e6
+        HEX be bc 86 bc 8c b6 e6 fe
+        HEX 98 fc 98 88 9c 66 b6 3c
+        HEX d5 aa d5 aa d5 aa d5 aa
+        HEX d7 ab f5 ea f7 eb 83 86
+        HEX d4 aa 95 aa c0 a0 81 82
+        HEX e0 b0 bc 80 98 bc 94 dd
+        HEX 80 98 80 b6 9e e6 bb 80
+        HEX 98 8c 88 98 98 80 98 94
+        HEX b6 98 86 b6 b0 b6 b6 8c
+        HEX b6 8c 98 98 a0 80 8c 98
+        HEX ff ec ec e6 ec 8c 8c e6
+        HEX e6 98 e6 b6 9c e6 e6 e6
+        HEX 86 b6 e6 e6 98 e6 bc e6
+        HEX e6 98 86 e6 94 98 80 94
+        HEX be b6 ec e6 b6 86 8c e0
+        HEX b6 98 b6 b6 98 e6 e6 e6
+        HEX 86 b0 86 e0 ec b6 bc e6
+        HEX bc b0 8c 94 3c 9c 66 b6
+        HEX d5 aa d5 aa ff ff ff ff
+        HEX d7 ab f5 ea f7 eb 80 81
+        HEX d5 aa d5 aa 80 80 80 80
+        HEX 80 c0 98 80 98 98 94 ff
+        HEX 80 98 80 80 88 80 ee 80
+        HEX b0 86 80 80 8c 80 98 94
+        HEX 9c bc be 9c b0 9c 9c 8c
+        HEX 9c 86 80 90 80 80 86 98
+        HEX ff e6 be bc be fe 86 bc
+        HEX e6 fe bc e6 f6 e6 c6 bc
+        HEX 8e ec e6 bc 98 bc 98 c2
+        HEX e6 98 fe 80 a2 80 80 94
+        HEX 80 ec b6 bc ec fc 86 be
+        HEX e6 bc 9c e6 bc e6 e6 bc
+        HEX 8e e0 86 be b8 ec 98 c2
+        HEX e6 9c fe 94 b6 3c 9c 66
+@ %def FONT_BANK
+
+<<stuph tile bank>>=
+        ORG $0C00
+TILE_BANK
+        HEX 8a 80 10 00 14 00 08 04
+        HEX 00 01 00 00 10 00 08 04
+        HEX 00 00 00 00 00 00 80 80
+        HEX 80 80 80 80 00 01 80 81
+        HEX 80 80 80 80 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 14 00 14 00 00 00 00 00
+        HEX 14 00 14 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX a0 85 80 80 00 00 00 00
+        HEX 00 00 02 00 a0 85 d0 82
+        HEX a0 80 00 02 55 00 15 0a
+        HEX 00 07 40 01 00 02 15 0a
+        HEX 60 01 00 00 00 00 80 80
+        HEX a0 80 80 80 40 03 80 81
+        HEX 80 80 80 80 40 01 40 01
+        HEX 80 8f c0 87 e0 80 a0 81
+        HEX 40 03 40 03 30 06 30 06
+        HEX 55 00 55 00 78 00 78 00
+        HEX 55 00 55 00 70 00 70 00
+        HEX 10 04 10 04 40 03 40 03
+        HEX c8 93 c0 83 40 03 40 03
+        HEX 40 03 42 03 a8 95 d4 8a
+        HEX 80 85 01 00 55 00 22 51
+        HEX 00 0d 40 01 09 00 22 51
+        HEX 60 01 00 00 00 00 a0 80
+        HEX e0 81 80 80 20 04 e0 87
+        HEX 80 80 80 87 60 03 60 03
+        HEX e0 9f f0 8f a0 81 e0 80
+        HEX 4f 03 40 03 70 07 76 37
+        HEX 55 00 55 00 78 00 78 00
+        HEX 55 00 55 00 70 00 70 00
+        HEX 70 07 70 07 40 03 40 03
+        HEX c0 83 c0 83 40 03 40 03
+        HEX 40 03 42 03 a8 95 d4 8a
+        HEX 80 d0 00 00 55 00 41 20
+        HEX 00 01 78 0f 38 00 41 20
+        HEX 60 21 00 00 00 00 e0 80
+        HEX a0 83 80 80 20 05 b0 8c
+        HEX e0 81 c0 8f 50 05 50 05
+        HEX b0 9e 98 8f a0 80 a0 80
+        HEX 44 03 40 03 66 33 63 63
+        HEX 55 00 55 00 78 20 78 00
+        HEX 55 00 55 00 70 00 70 00
+        HEX 60 33 66 03 40 03 40 03
+        HEX c8 93 c0 83 40 03 40 03
+        HEX 40 03 46 03 aa d5 d5 aa
+        HEX 8a 80 04 00 14 00 20 40
+        HEX 5b 6d 78 0f 68 00 20 40
+        HEX 00 20 0c 00 00 00 e0 81
+        HEX a0 80 80 80 60 07 a8 94
+        HEX f8 87 e0 9c 70 07 70 07
+        HEX 80 be 80 9f a4 82 a4 82
+        HEX 04 01 00 01 67 73 66 33
+        HEX 14 00 14 00 30 20 30 00
+        HEX 14 00 14 00 20 40 20 00
+        HEX 60 33 66 03 00 01 00 01
+        HEX 80 81 80 81 02 01 00 01
+        HEX 02 01 0a 01 aa d4 95 aa
+        HEX a0 81 00 08 00 0a 10 00
+        HEX 5b 6d 78 0f 08 00 10 00
+        HEX 7c 26 1e 00 00 00 a0 83
+        HEX e2 84 80 80 60 07 a4 a4
+        HEX c0 8f 80 9e 60 03 60 03
+        HEX c0 bb d4 9d fc 83 fc 83
+        HEX 7c 0f 70 0f 63 63 66 33
+        HEX 00 0a 00 0a 7e 23 7e 03
+        HEX 00 0a 00 0a 7c 23 7c 03
+        HEX 40 31 46 01 78 1f 78 1f
+        HEX f2 cf f0 8f 72 0f 70 2f
+        HEX 72 0f 72 0f 8a d1 c5 a8
+        HEX 80 84 00 00 40 2a 08 41
+        HEX 7f 7f 78 0f 0e 00 08 41
+        HEX 7c 2e 3f 00 03 00 a0 83
+        HEX e6 8d bf 80 60 07 a4 a4
+        HEX f0 99 80 b3 58 0d 58 0d
+        HEX 80 b8 e1 bc cf 8f cf 8f
+        HEX 60 17 68 17 7f 7f 7e 3f
+        HEX 40 2a 40 2a 7f 27 7f 47
+        HEX 40 2a 40 2a 7a 15 7a 05
+        HEX 78 1f 7c 0f 6c 37 6c 37
+        HEX ea d7 e8 97 6a 17 68 2f
+        HEX 6a 17 62 17 ca d3 e5 a9
+        HEX 80 d0 00 00 40 2a 45 22
+        HEX 7e 3f 78 0f 4e 73 45 22
+        HEX 7c 72 7a 3f 0e 00 a0 83
+        HEX ee 9d 98 80 60 07 a2 c4
+        HEX 80 b0 80 b0 44 11 44 11
+        HEX 80 b8 84 b8 c9 88 c9 88
+        HEX 40 23 44 23 7e 3f 7c 1f
+        HEX 40 2a 60 2b 7b 76 7b 26
+        HEX 40 2a 40 3b 71 08 71 04
+        HEX 7c 0f 78 1f 46 63 46 63
+        HEX c4 a3 c4 a3 47 13 48 73
+        HEX 46 23 42 23 ea d7 f5 ab
+        HEX 8a 80 10 00 40 2a 22 14
+        HEX 7e 3e 40 01 7f 7e 02 10
+        HEX 7c 22 70 7f 78 7f e0 81
+        HEX ee 9d fc 8c 60 07 e2 c7
+        HEX 80 b0 80 b0 22 22 24 12
+        HEX 80 f8 80 b8 c9 88 c9 88
+        HEX 00 21 03 11 70 07 70 07
+        HEX 40 2a 40 2a 33 3c 33 16
+        HEX 40 2a 40 2a 22 14 21 7e
+        HEX 66 03 60 33 06 31 0c 61
+        HEX 80 81 88 91 02 79 1f 21
+        HEX 02 11 02 11 ca d3 e5 a9
+        HEX a0 80 00 08 00 0a 14 08
+        HEX 3e 3c 40 01 3f 7c 64 03
+        HEX 38 01 78 7f 78 7f e0 80
+        HEX e6 8c fe bf 70 0f ae f4
+        HEX 80 e0 80 b0 11 22 12 22
+        HEX 80 f8 80 b8 ff 8f ff 8f
+        HEX 40 23 42 0b 70 07 70 07
+        HEX 00 0a 00 0a 7b 00 7e 0c
+        HEX 00 0a 00 0a 74 00 71 04
+        HEX 76 03 60 37 46 1b 58 63
+        HEX c0 83 d0 8b 40 13 48 03
+        HEX 42 0b 42 0b 8a d1 c5 a8
+        HEX 80 85 40 00 14 00 08 50
+        HEX 3e 3c 40 01 3f 7c 30 46
+        HEX 50 01 78 3f 78 71 a0 80
+        HEX a2 84 fe bf 70 0f ec b7
+        HEX fc e1 fc b1 11 44 11 21
+        HEX 80 f8 80 f8 a4 82 a4 82
+        HEX 40 03 44 03 70 07 70 07
+        HEX 14 00 14 00 78 00 78 14
+        HEX 14 00 14 00 70 00 70 00
+        HEX 76 07 70 37 60 03 40 07
+        HEX e0 87 e0 87 40 03 40 03
+        HEX 42 03 42 03 aa d4 95 aa
+        HEX 80 d0 00 00 55 00 05 20
+        HEX 3e 3c 40 01 3f 7c 11 24
+        HEX 20 03 14 6c 70 60 fe 8f
+        HEX ff ff 80 80 78 1f ec b7
+        HEX fe e3 fe f3 22 44 11 41
+        HEX f8 f9 f8 f9 ff ff ff ff
+        HEX 60 06 60 06 30 06 30 06
+        HEX 55 00 55 00 4c 01 6c 00
+        HEX 55 00 55 00 58 01 58 01
+        HEX 30 06 30 06 30 06 60 0c
+        HEX e0 87 e0 87 60 06 60 06
+        HEX 62 06 60 06 aa d5 d5 aa
+        HEX 8a 80 00 00 55 00 02 10
+        HEX ca d3 40 01 00 00 12 14
+        HEX 18 06 12 48 40 24 fc 9f
+        HEX b7 9b 80 80 7c 3f e8 97
+        HEX cf f7 cf e7 22 22 22 42
+        HEX fe ff fe ff b7 9b b7 9b
+        HEX 20 04 20 04 30 0e 38 06
+        HEX 55 00 55 00 4c 01 6c 00
+        HEX 55 00 55 00 08 01 04 01
+        HEX 30 06 30 06 30 0c 30 0c
+        HEX f0 8f f0 8f 20 04 20 04
+        HEX 22 04 20 04 a8 95 d4 8a
+        HEX a0 81 00 20 55 00 44 08
+        HEX ca d3 7c 1f 00 20 14 04
+        HEX 18 06 12 48 40 20 80 80
+        HEX ff 8f 80 80 7e 7f b0 8c
+        HEX 87 b7 87 e7 11 22 22 24
+        HEX ff ff ff ff ff 8f ff 8f
+        HEX 20 04 20 04 38 1e 3c 0e
+        HEX 55 00 55 00 4c 03 6c 00
+        HEX 55 00 55 00 08 01 02 01
+        HEX 38 06 30 0e 38 0c 30 1c
+        HEX a0 84 a0 84 20 04 20 04
+        HEX 22 04 20 04 a8 95 d4 8a
+        HEX 80 84 04 00 14 00 28 05
+        HEX c8 93 7f 7f 04 00 10 44
+        HEX 1c 0e 08 24 00 11 80 80
+        HEX fe 87 80 80 7e 7f e0 87
+        HEX 80 80 80 80 09 44 14 14
+        HEX ff ff ff ff fe c7 fe c7
+        HEX 30 0c 30 0c 3c 00 00 1e
+        HEX 14 00 14 00 0e 00 6e 01
+        HEX 14 00 14 00 0c 03 03 03
+        HEX 00 0e 38 00 00 1c 38 00
+        HEX b0 8c b0 8c 30 0c 30 0c
+        HEX 32 0c 30 0c a0 85 d0 82
+        HEX 80 d0 00 00 00 00 10 02
+        HEX 00 00 00 00 00 00 11 24
+        HEX 00 00 00 00 00 0e 80 80
+        HEX 80 80 80 80 60 07 80 80
+        HEX 80 80 80 80 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 00 00 00 00
+        HEX 00 00 00 00 80 80 80 80
+@ %def TILE_BANK
+
+\section{The address tables}
+
+Four look-up tables turn coordinates into screen addresses.
+[[HGR_ROW_LO]]/[[HGR_ROW_HI]] give the base address of each of the
+192 hi-res scanlines on page 1 (every consumer EORs the high byte
+with [[ZP_PAGE_XOR]] to hit the draw page). The text routines index
+them by $8\times$\,row; [[PLOT]] indexes them by pixel row plus
+[[$10]], because the pixel-graphics viewport starts 16 scanlines
+down, under the screen border.
+
+For [[PLOT]], pixel column $x$ (0--255) maps through [[XCOL_TBL]]
+(screen byte offset \emph{plus one} --- a zero entry marks the column
+off-limits, and the offset is one-based because the viewport starts
+at screen byte 1) and [[XMASK_TBL]] (the bit within that byte, with
+bit 7 always set so the palette bit is preserved by the masked
+write).
+
+<<stuph row tables>>=
+        ORG $1200
+HGR_ROW_LO
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 00 00 00 00 00 00 00 00
+        HEX 80 80 80 80 80 80 80 80
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 28 28 28 28 28 28 28 28
+        HEX a8 a8 a8 a8 a8 a8 a8 a8
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+        HEX 50 50 50 50 50 50 50 50
+        HEX d0 d0 d0 d0 d0 d0 d0 d0
+HGR_ROW_HI
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 20 24 28 2c 30 34 38 3c
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 21 25 29 2d 31 35 39 3d
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 22 26 2a 2e 32 36 3a 3e
+        HEX 23 27 2b 2f 33 37 3b 3f
+        HEX 23 27 2b 2f 33 37 3b 3f
+@ %def HGR_ROW_LO HGR_ROW_HI
+
+<<stuph plot tables>>=
+        ORG $1380
+XCOL_TBL
+        HEX 00 00 02 02 02 02 02 02
+        HEX 02 03 03 03 03 03 03 03
+        HEX 04 04 04 04 04 04 04 05
+        HEX 05 05 05 05 05 05 06 06
+        HEX 06 06 06 06 06 07 07 07
+        HEX 07 07 07 07 08 08 08 08
+        HEX 08 08 08 09 09 09 09 09
+        HEX 09 09 0a 0a 0a 0a 0a 0a
+        HEX 0a 0b 0b 0b 0b 0b 0b 0b
+        HEX 0c 0c 0c 0c 0c 0c 0c 0d
+        HEX 0d 0d 0d 0d 0d 0d 0e 0e
+        HEX 0e 0e 0e 0e 0e 0f 0f 0f
+        HEX 0f 0f 0f 0f 10 10 10 10
+        HEX 10 10 10 11 11 11 11 11
+        HEX 11 11 12 12 12 12 12 12
+        HEX 12 13 13 13 13 13 13 13
+        HEX 14 14 14 14 14 14 14 15
+        HEX 15 15 15 15 15 15 16 16
+        HEX 16 16 16 16 16 17 17 17
+        HEX 17 17 17 17 18 18 18 18
+        HEX 18 18 18 19 19 19 19 19
+        HEX 19 19 1a 1a 1a 1a 1a 1a
+        HEX 1a 1b 1b 1b 1b 1b 1b 1b
+        HEX 1c 1c 1c 1c 1c 1c 1c 1d
+        HEX 1d 1d 1d 1d 1d 1d 1e 1e
+        HEX 1e 1e 1e 1e 1e 1f 1f 1f
+        HEX 1f 1f 1f 1f 20 20 20 20
+        HEX 20 20 20 21 21 21 21 21
+        HEX 21 21 22 22 22 22 22 22
+        HEX 22 23 23 23 23 23 23 23
+        HEX 24 24 24 24 24 24 24 25
+        HEX 25 25 25 25 25 25 00 00
+XMASK_TBL
+        HEX a0 c0 81 82 84 88 90 a0
+        HEX c0 81 82 84 88 90 a0 c0
+        HEX 81 82 84 88 90 a0 c0 81
+        HEX 82 84 88 90 a0 c0 81 82
+        HEX 84 88 90 a0 c0 81 82 84
+        HEX 88 90 a0 c0 81 82 84 88
+        HEX 90 a0 c0 81 82 84 88 90
+        HEX a0 c0 81 82 84 88 90 a0
+        HEX c0 81 82 84 88 90 a0 c0
+        HEX 81 82 84 88 90 a0 c0 81
+        HEX 82 84 88 90 a0 c0 81 82
+        HEX 84 88 90 a0 c0 81 82 84
+        HEX 88 90 a0 c0 81 82 84 88
+        HEX 90 a0 c0 81 82 84 88 90
+        HEX a0 c0 81 82 84 88 90 a0
+        HEX c0 81 82 84 88 90 a0 c0
+        HEX 81 82 84 88 90 a0 c0 81
+        HEX 82 84 88 90 a0 c0 81 82
+        HEX 84 88 90 a0 c0 81 82 84
+        HEX 88 90 a0 c0 81 82 84 88
+        HEX 90 a0 c0 81 82 84 88 90
+        HEX a0 c0 81 82 84 88 90 a0
+        HEX c0 81 82 84 88 90 a0 c0
+        HEX 81 82 84 88 90 a0 c0 81
+        HEX 82 84 88 90 a0 c0 81 82
+        HEX 84 88 90 a0 c0 81 82 84
+        HEX 88 90 a0 c0 81 82 84 88
+        HEX 90 a0 c0 81 82 84 88 90
+        HEX a0 c0 81 82 84 88 90 a0
+        HEX c0 81 82 84 88 90 a0 c0
+        HEX 81 82 84 88 90 a0 c0 81
+        HEX 82 84 88 90 a0 c0 81 82
+@ %def XCOL_TBL XMASK_TBL
+
+\section{Flags and the vector table}
+
+Three public flag bytes, then the 34-entry API. Callers ---
+\texttt{MI.U1} and all seven overlays --- know only the [[$15xx]]
+addresses; every chapter that follows refers to these routines by
+the names below.
+
+<<stuph flags and vectors>>=
+        ORG $1580
+SOUND_ON        DC.B $FF        ; $00 = master sound off
+SFX_ON          DC.B $FF        ; $00 = sound effects off
+PLAYER_TILE     DC.B $10        ; glyph code drawn at the player's cell
+VEC_LIB_INIT        JMP LIB_INIT
+VEC_LIB_SHUTDOWN    JMP LIB_SHUTDOWN
+VEC_FILE_LOAD       JMP FILE_LOAD
+VEC_FILE_LOAD_AT    JMP FILE_LOAD_AT
+VEC_PAGE_COPY       JMP PAGE_COPY
+VEC_TEXT_SCROLL     JMP TEXT_SCROLL
+VEC_CLR_ROW         JMP CLR_ROW
+VEC_CLR_EOL         JMP CLR_EOL
+VEC_CLR_WINDOW      JMP CLR_WINDOW
+VEC_WIN_FULL        JMP WIN_FULL
+VEC_WIN_STATS       JMP WIN_STATS
+VEC_WIN_TEXT        JMP WIN_TEXT
+VEC_WIN_VIEW        JMP WIN_VIEW
+VEC_VIEW_CLEAR      JMP VIEW_CLEAR
+VEC_PAGE_FLIP       JMP PAGE_FLIP
+VEC_FONT_DRAW       JMP FONT_DRAW
+VEC_DRAW_MAP        JMP DRAW_MAP
+VEC_KEY_DELAY       JMP KEY_DELAY
+VEC_RND             JMP RND
+VEC_KEY_POLL        JMP KEY_POLL
+VEC_KEY_WAIT        JMP KEY_WAIT
+VEC_KEY_GET         JMP KEY_GET
+VEC_KEY_GET_ANIM    JMP KEY_GET_ANIM
+VEC_CURSOR_FLASH    JMP CURSOR_FLASH
+VEC_SFX_PLAY        JMP SFX_PLAY
+VEC_SFX_QUEUE       JMP SFX_QUEUE
+VEC_SFX_DRAIN       JMP SFX_DRAIN
+VEC_COLOR_SET       JMP COLOR_SET
+VEC_PLOT            JMP PLOT
+VEC_LINE_TO         JMP LINE_TO
+VEC_LINE_AGAIN      JMP LINE_AGAIN
+VEC_SOUND_SET       JMP SOUND_SET
+VEC_ACCEL_NUDGE     JMP ACCEL_NUDGE
+VEC_FRAME_SYNC      JMP FRAME_SYNC
+@ %def SOUND_ON SFX_ON PLAYER_TILE
+
+The vector summary, with each entry's calling convention:
+
+\begin{center}
+\small
+\begin{tabular}{llp{6.8cm}}
+[[$1583]] & [[LIB_INIT]] & detect mouse/IIgs, hook VBL, hi-res on \\
+[[$1586]] & [[LIB_SHUTDOWN]] & text mode, unhook, restore speed \\
+[[$1589]] & [[FILE_LOAD]] & load file in [[MLIB_PATH]] (RAM-disk cache) \\
+[[$158C]] & [[FILE_LOAD_AT]] & same, at address Y/A (lo/hi) \\
+[[$158F]] & [[PAGE_COPY]] & copy displayed page onto draw page \\
+[[$1592]] & [[TEXT_SCROLL]] & scroll the text window up one row \\
+[[$1595]] & [[CLR_ROW]] & clear the cursor row, both pages \\
+[[$1598]] & [[CLR_EOL]] & clear cursor to end of window row \\
+[[$159B]] & [[CLR_WINDOW]] & clear the whole text window \\
+[[$159E]] & [[WIN_FULL]] & window := full screen \\
+[[$15A1]] & [[WIN_STATS]] & window := stats panel (cols 31--39) \\
+[[$15A4]] & [[WIN_TEXT]] & window := message area (cols 0--29) \\
+[[$15A7]] & [[WIN_VIEW]] & window := viewport (rows 1--18) \\
+[[$15AA]] & [[VIEW_CLEAR]] & black out the viewport scanlines \\
+[[$15AD]] & [[PAGE_FLIP]] & show drawn page, toggle, drain effects \\
+[[$15B0]] & [[FONT_DRAW]] & A = char: draw glyph at the cursor \\
+[[$15B3]] & [[DRAW_MAP]] & render the 19$\times$9 tile viewport \\
+[[$15B6]] & [[KEY_DELAY]] & short delay, cut short by a keypress \\
+[[$15B9]] & [[RND]] & A := next pseudo-random byte \\
+[[$15BC]] & [[KEY_POLL]] & sample keyboard into the type-ahead queue \\
+[[$15BF]] & [[KEY_WAIT]] & block until a key; A := key \\
+[[$15C2]] & [[KEY_GET]] & poll once; A := key or 0 \\
+[[$15C5]] & [[KEY_GET_ANIM]] & as [[KEY_GET]] but redraw the map \\
+[[$15C8]] & [[CURSOR_FLASH]] & draw next cursor frame; A := random \\
+[[$15CB]] & [[SFX_PLAY]] & A = even code 0--[[$10]]: play effect \\
+[[$15CE]] & [[SFX_QUEUE]] & queue effect for the next [[PAGE_FLIP]] \\
+[[$15D1]] & [[SFX_DRAIN]] & play one queued effect \\
+[[$15D4]] & [[COLOR_SET]] & A = 0--7: set the [[PLOT]] color \\
+[[$15D7]] & [[PLOT]] & plot color dot pair at ([[ZP_PX]],[[ZP_PY]]) \\
+[[$15DA]] & [[LINE_TO]] & line from ([[ZP_PX]],[[ZP_PY]]) to (X,Y) \\
+[[$15DD]] & [[LINE_AGAIN]] & line to the previous destination \\
+[[$15E0]] & [[SOUND_SET]] & A = 0/1: master sound off/on \\
+[[$15E3]] & [[ACCEL_NUDGE]] & slow accelerators when sound is off \\
+[[$15E6]] & [[FRAME_SYNC]] & wait for vertical blank (if any) \\
+[[$15E9]] & [[VDELAY]] & calibrated delay of A units \\
+\end{tabular}
+\end{center}
+
+\section{Calibrated delays}
+
+The game must run at the same speed on a 1\,MHz Apple ][+, an
+accelerated machine, and a IIgs. [[VDELAY]] is the model for how the
+library copes: on a IIgs it drops [[CYAREG]] to 1\,MHz around the
+delay loop and restores it after; on anything else it reads
+[[DRIVE_OFF]] first --- a classic trick, because Zip-Chip-style
+accelerator boards drop to 1\,MHz for a while whenever a Disk II soft
+switch is touched.
+
+<<stuph delay>>=
+        ORG $15E9
+VDELAY  SUBROUTINE
+        ; Delay roughly A*1.3ms at 1 MHz, on any machine.
+        ;
+        ; Inputs:
+        ;   A       -- delay count (outer iterations)
+        ;
+        ; Behavior:
+        ;   IIgs: save CYAREG, force 1 MHz, delay, restore.
+        ;   Otherwise: touch DRIVE_OFF so accelerator boards
+        ;   self-slow, then delay.
+        ;
+        ; Clobbers: A
+        BIT GS_SPEED                    ; bit 6 set = not a IIgs
+        BVS DELAY_SLOW
+        STA .cnt                        ; patch the reload below
+        LDA CYAREG
+        AND #$9F
+        PHA
+        AND #$7F                        ; clear the fast bit
+        STA CYAREG
+.cnt = *+1
+        LDA #$00                        ; (patched: the saved count)
+        JSR DELAY_256
+        PLA
+        STA CYAREG                      ; back to the caller's speed
+        LDA #$00
+        RTS
+DELAY_SLOW
+        ; Nudge accelerators down to 1 MHz, then delay A units.
+        BIT DRIVE_OFF
+DELAY_256
+        ; Busy-wait A*256 SBC loops (A=0 acts as 256).
+        SEC
+.outer  PHA
+.inner  SBC #$01
+        BNE .inner
+        PLA
+        SBC #$01
+        BNE .outer
+        RTS
+@ %def VDELAY DELAY_SLOW DELAY_256
+
+\section{Clearing, flipping and copying the hi-res pages}
+
+[[VIEW_CLEAR]] blacks out scanlines 8--151 (the viewport area
+between the border rows) on the \emph{draw} page, columns 1--38,
+writing [[$80]] (black, palette bit set).
+
+<<stuph view clear>>=
+        ORG $1617
+VIEW_CLEAR
+        SUBROUTINE
+        ; Black out the map viewport on the draw page.
+        ;
+        ; Behavior:
+        ;   For scanlines 8..$97, write $80 to screen bytes 1..$26
+        ;   of the page selected by ZP_PAGE_XOR.
+        ;
+        ; Clobbers: A, X, Y
+        LDX #$08
+.row    LDA HGR_ROW_LO,X
+        STA .dstl
+        LDA HGR_ROW_HI,X
+        EOR ZP_PAGE_XOR
+        STA .dsth
+        LDY #$26
+        LDA #$80
+.dstl = *+1
+.dsth = *+2
+.col    STA HGR1,Y
+        DEY
+        BNE .col
+        INX
+        CPX #$98
+        BCC .row
+        RTS
+@ %def VIEW_CLEAR
+
+[[PAGE_FLIP]] is the frame boundary: wait for vertical blank, show
+the page that was just drawn, retarget drawing at the other page,
+and play out any sound effects the frame queued.
+
+<<stuph page flip>>=
+        ORG $1637
+PAGE_FLIP
+        SUBROUTINE
+        ; End of frame: display the draw page, swap buffers,
+        ; play queued sound effects.
+        ;
+        ; Behavior:
+        ;   FRAME_SYNC; display page 1 or 2 per ZP_PAGE_XOR;
+        ;   ZP_PAGE_XOR ^= ZP_PAGE_TGL; graphics on; drain the
+        ;   effect queue until empty.
+        ;
+        ; Clobbers: A, X
+        JSR FRAME_SYNC
+        LDX #$00
+        LDA ZP_PAGE_XOR
+        BEQ .show
+        INX
+.show   CMP TXTPAGE1,X                  ; soft switch: show drawn page
+        EOR ZP_PAGE_TGL
+        STA ZP_PAGE_XOR
+        BIT TXTCLR
+.drain  JSR SFX_DRAIN
+        BNE .drain
+        RTS
+@ %def PAGE_FLIP
+
+[[PAGE_COPY]] copies the \emph{displayed} page onto the \emph{draw}
+page --- 8\,KB --- used when the engine wants to start a frame from
+what the player currently sees rather than from a stale back buffer.
+
+<<stuph page copy>>=
+        ORG $1719
+PAGE_COPY
+        SUBROUTINE
+        ; Copy the displayed hi-res page onto the draw page.
+        ;
+        ; Behavior:
+        ;   dst high byte = $20 EOR ZP_PAGE_XOR (the draw page);
+        ;   src = dst EOR ZP_PAGE_TGL (the other page); copy
+        ;   $20 pages of 256 bytes.
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$20
+        TAX                             ; 32 pages = 8 KB
+        EOR ZP_PAGE_XOR
+        STA .dsth
+        EOR ZP_PAGE_TGL
+        STA .srch
+        LDY #$00
+.srch = *+2
+.cp     LDA HGR2,Y
+.dsth = *+2
+        STA HGR1,Y
+        INY
+        BNE .cp
+        INC .srch
+        INC .dsth
+        DEX
+        BNE .cp
+        RTS
+@ %def PAGE_COPY
+
+\section{Sound switches and the accelerator nudge}
+
+[[SOUND_SET]] records the master sound flag. On a IIgs it also picks
+the system speed policy: sound on runs fast (effects slow the clock
+themselves around playback); sound off parks the machine at 1\,MHz so
+the busy-wait game pacing stays right. [[ACCEL_NUDGE]] gives
+accelerator boards their Disk-II-soft-switch slowdown cue whenever
+sound is \emph{off} --- when sound is on, the speaker timing loops
+already do it.
+
+<<stuph sound enable>>=
+        ORG $1651
+SOUND_SET
+        SUBROUTINE
+        ; Set the master sound flag and the IIgs speed policy.
+        ;
+        ; Inputs:
+        ;   A       -- 0 = sound off, nonzero = sound on
+        ;
+        ; Behavior:
+        ;   SOUND_ON <- #$00 or #$FF. On a IIgs, sound on restores
+        ;   full speed (effects slow themselves around playback);
+        ;   sound off parks the clock at 1 MHz so busy-wait pacing
+        ;   stays right.
+        ;
+        ; Modifies:
+        ;   SOUND_ON; CYAREG fast bit on a IIgs.
+        CMP #$00
+        BEQ .store
+        LDA #$FF
+.store  STA SOUND_ON
+        PHA
+        BIT GS_SPEED                    ; not a IIgs: done
+        BVS .done
+        CMP #$01                        ; C = sound on
+        LDA CYAREG
+        AND #$1F
+        BCC .slow                       ; off -> stay at 1 MHz
+        ORA #$80                        ; on -> full speed
+.slow   STA CYAREG
+.done   PLA
+        RTS
+@ %def SOUND_SET
+
+<<stuph accel nudge>>=
+        ORG $1670
+ACCEL_NUDGE
+        SUBROUTINE
+        ; Keep accelerator boards at 1 MHz when sound is off.
+        ;
+        ; Behavior:
+        ;   If SOUND_ON is clear, read DRIVE_OFF -- Zip-Chip-style
+        ;   boards drop to 1 MHz after a Disk II soft switch access.
+        ;   When sound is on the speaker loops do this themselves.
+        BIT SOUND_ON
+        BMI .done
+        BIT DRIVE_OFF
+.done   RTS
+@ %def ACCEL_NUDGE
+
+\section{File loading through the RAM-disk cache}
+
+The library's file loader sits on top of the [[$B700]] file library
+and adds one feature: on a 128K machine it shadows every file it
+loads onto the \texttt{/RAM} volume, and tries \texttt{/RAM} first
+the next time --- so revisiting a town or dungeon needs no disk
+access at all. The caller parses the filename into [[MLIB_PATH]]
+first (via [[MLIB_PARSE_PATH]]); [[FILE_LOAD]] loads at the file's
+own aux-type address, [[FILE_LOAD_AT]] at the address in Y/A. The
+error buzz is suppressed around the speculative \texttt{/RAM} read,
+and a full RAM volume (translated error 9) silently falls back to
+deleting the cached copy.
+
+<<stuph file load>>=
+        ORG $1679
+FILE_LOAD
+        SUBROUTINE
+        ; Load the file named in MLIB_PATH, through the /RAM cache.
+        ;
+        ; Inputs:
+        ;   MLIB_PATH -- parsed pathname (length-prefixed)
+        ;   FILE_LOAD_AT only: Y/A = load address lo/hi
+        ;
+        ; Behavior:
+        ;   Build "/RAM/<name>" in RAM_NAME; on a 128K machine try
+        ;   loading that (buzz suppressed). On a miss, BLOAD from
+        ;   disk (at aux address or at Y/A per the entry point),
+        ;   then BSAVE a copy to /RAM for next time.
+        ;
+        ; Outputs:
+        ;   C set on error, A = translated error code.
+        ;
+        ; Modifies:
+        ;   LOAD_AUX_FLAG, RAM_NAME, MLIB_QUIET (restored)
+        ; Clobbers: A, X, Y
+        JMP .load
+FILE_LOAD_AT
+        STA .addr+1
+        STY .addr
+        LDA #$00
+        BEQ .mode
+.load   LDA #$80
+.mode   STA LOAD_AUX_FLAG               ; bit 7: load at aux address
+        LDY MLIB_PATH                   ; pathname length
+        LDA #$00
+        STA RAM_NAME,Y                  ; zero-terminate the copy
+        DEY
+.copy   LDA MLIB_PATH+1,Y
+        STA RAM_NAME,Y
+        DEY
+        BPL .copy
+        LDA MLIB_QUIET
+        PHA
+        STY MLIB_QUIET                  ; Y=$FF: no buzz while we probe
+        LDA GP_MACHID
+        AND #$30
+        CMP #$30                        ; 128K machine?
+        BNE .disk
+        JSR MLIB_BLOAD_P                ; try the /RAM shadow copy
+        DC.W RAM_PATH
+        BCC .exit                       ; cache hit
+.disk   BIT LOAD_AUX_FLAG
+        BPL .at
+        JSR MLIB_BLOAD_P                ; load at the file's aux address
+        DC.W RAM_NAME
+        JMP .ckerr
+.at     JSR MLIB_BLOAD_AT_P             ; load at the caller's address
+.addr   DC.W $FFFF                      ; (patched per call)
+        DC.W RAM_NAME
+.ckerr  BCS .exit
+        LDA GP_MACHID
+        AND #$30
+        CMP #$30
+        BNE .exit
+        LDY #$01                        ; shadow the load to /RAM:
+.args   LDA PARM_RW+2,Y                 ; where the data landed
+        STA .sva,Y
+        LDA PARM_RW+6,Y                 ; how many bytes arrived
+        STA .svl,Y
+        DEY
+        BPL .args
+        JSR MLIB_BSAVE_P
+.sva    DC.W $0000                      ; (patched: data address)
+.svl    DC.W $0000                      ; (patched: data length)
+        DC.W RAM_PATH
+        BCC .exit
+        CMP #$09                        ; /RAM full?
+        BNE .fail
+        JSR MLIB_DESTROY_P              ; drop the partial copy
+        DC.W RAM_PATH
+        CLC
+        BCC .exit
+.fail   SEC
+.exit   TAX
+        PLA
+        STA MLIB_QUIET
+        TXA
+        RTS
+LOAD_AUX_FLAG
+        DC.B $00                        ; bit 7: FILE_LOAD entry used
+RAM_PATH
+        HEX 2f 52 41 4d 2f              ; "/RAM/" -- prefix of RAM_NAME
+RAM_NAME
+        DS.B 16,$00                     ; the bare name, copied per call
+@ %def FILE_LOAD FILE_LOAD_AT LOAD_AUX_FLAG RAM_PATH RAM_NAME
+
+\section{The pixel color}
+
+[[COLOR_SET]] patches the two color-mask immediates inside [[PLOT]].
+Hi-res color depends on byte parity, so each of the eight colors has
+an even-column and an odd-column mask --- the same six non-monochrome
+patterns every Apple II program uses ([[$2A]]/[[$55]] violet--green,
+[[$AA]]/[[$D5]] blue--orange), plus black and white in both palettes.
+
+<<stuph color set>>=
+        ORG $173B
+COLOR_SET
+        SUBROUTINE
+        ; Select the color that PLOT and LINE_TO will draw with.
+        ;
+        ; Inputs:
+        ;   A       -- color 0-7 (hi-res palette pairs)
+        ;
+        ; Behavior:
+        ;   Patch PLOT's two immediate operands with the color's
+        ;   even-column and odd-column bit masks.
+        ;
+        ; Modifies:
+        ;   PLOT_CEVEN, PLOT_CODD
+        AND #$07
+        TAX
+        LDA COLOR_EVEN,X
+        STA PLOT_CEVEN
+        LDA COLOR_ODD,X
+        STA PLOT_CODD
+        RTS
+COLOR_EVEN
+        HEX 00 2a 55 7f 80 aa d5 ff     ; even screen byte
+COLOR_ODD
+        HEX 00 55 2a 7f 80 d5 aa ff     ; odd screen byte
+@ %def COLOR_SET COLOR_EVEN COLOR_ODD
+
+\section{Machine state and the interrupt handler}
+
+The library's machine-detection state, the ProDOS interrupt
+parameter block, and the interrupt handler itself. The remarkable
+part: the game looks for an \textbf{AppleMouse card not to read the
+mouse, but to use it as a VBL interrupt source} --- [[SETMOUSE]] mode
+8 generates interrupts at vertical blank without tracking motion at
+all, and the handler just calls \textsc{servemouse} and decrements
+[[VBL_TICK]]. [[FRAME_SYNC]] then locks the frame rate to it.
+
+<<stuph machine state>>=
+        ORG $175B
+GS_SPEED
+        DC.B $FF                ; IIgs: saved CYAREG bit 7; $FF = not a
+                                ;   IIgs (bit 6 set, tested with BIT/BVS)
+HAS_VBL DC.B $00                ; $FF = RDVBL ($C019) is readable
+VBL_TICK
+        DC.B $00                ; decremented by each VBL interrupt
+MOUSE_CN
+        DC.B $C0                ; mouse slot firmware page ($Cn)
+MOUSE_N0
+        DC.B $00                ; mouse slot << 4; 0 = no mouse card
+INT_PARM
+        DC.B $02                ; ALLOC_INTERRUPT: 2 parameters
+INT_NUM DC.B $00                ; -> interrupt number (for DEALLOC)
+        DC.W INT_HANDLER
+KEY_XSAV
+        DC.B $00                ; caller's X across KEY_GET
+KEY_YSAV
+        DC.B $00                ; caller's Y across KEY_GET
+ANIM_CNT1
+        DC.B $01                ; frames until the water scrolls
+ANIM_CNT2
+        DC.B $03                ; frames until the castle flag waves
+ANIM_CNT3
+        DC.B $02                ; frames until the tower flag waves
+DITHER_IX
+        DC.B $01                ; walking index into MLIB_CODE noise
+INT_HANDLER
+        ; ProDOS interrupt handler: acknowledge the mouse card's
+        ; VBL interrupt and count it. Claims every interrupt (CLC).
+        CLD
+INT_SRV = *+1
+        JSR MOUSE_FW_DEF        ; (patched: the slot's SERVEMOUSE)
+        DEC VBL_TICK
+        CLC
+        RTS
+@ %def GS_SPEED HAS_VBL VBL_TICK MOUSE_CN MOUSE_N0 INT_PARM INT_NUM
+@ %def KEY_XSAV KEY_YSAV ANIM_CNT1 ANIM_CNT2 ANIM_CNT3 DITHER_IX
+@ %def INT_HANDLER INT_SRV
+
+\section{Machine detection}
+
+[[LIB_INIT]] runs once at game start. It scans slots 7 down to 1 for
+the AppleMouse firmware signature (bytes [[$20]]/[[$00]]/[[$D6]] at
+offsets [[$0C]]/[[$11]]/[[$FB]] of the slot ROM), hooks its VBL
+interrupt if found, then identifies the machine from the ROM id
+bytes: an enhanced-IIe-class ROM means [[RDVBL]] can be polled, and
+a positive [[MON_IDROUTINE]] means a IIgs, whose speed register is
+saved and forced fast. It ends by zeroing the queues and switching
+on full-screen hi-res.
+
+<<stuph firmware byte>>=
+        ORG $1773
+FW_BYTE SUBROUTINE
+        ; Read a byte of the mouse slot's firmware page.
+        ;
+        ; Inputs:
+        ;   Y       -- offset into the $Cn00 firmware page
+        ;
+        ; Behavior:
+        ;   Point ZP_FW_PTR at MOUSE_CN's page and load its byte Y.
+        ;
+        ; Outputs:
+        ;   A = the firmware byte; X = $Cn; ZP_FW_PTR+1 = $Cn.
+        LDX #$00
+        STX ZP_FW_PTR
+        LDX MOUSE_CN
+        STX ZP_FW_PTR+1
+        LDA (ZP_FW_PTR),Y
+        RTS
+@ %def FW_BYTE
+
+<<stuph machine init>>=
+        ORG $177F
+LIB_INIT
+        SUBROUTINE
+        ; One-time hardware setup: find a mouse card for VBL
+        ; interrupts, classify the machine, enter hi-res.
+        ;
+        ; Behavior:
+        ;   Scan $C7xx..$C1xx for the AppleMouse signature; if
+        ;   found, record the slot and call MOUSE_HOOK. Then read
+        ;   ROM_MACHID/ROM_SUBID: enhanced-class ROMs set HAS_VBL;
+        ;   a IIgs (MON_IDROUTINE clears carry) saves its speed bit
+        ;   in GS_SPEED and switches to fast. Clear the queues and
+        ;   page state; display hi-res page 2, full screen.
+        ;
+        ; Modifies:
+        ;   HAS_VBL, MOUSE_CN, MOUSE_N0, GS_SPEED, ZP_INVERSE,
+        ;   ZP_KEY_CNT, ZP_SFX_CNT, ZP_PAGE_XOR, ZP_PAGE_TGL
+        ; Clobbers: A, X, Y
+        SEI
+        JSR SPEED_RESTORE
+        LDA #$00
+        STA HAS_VBL
+        STA ZP_FW_PTR
+        STA ZP_INVERSE
+        LDX #$C7                        ; scan slot 7 first
+.slot   STX ZP_FW_PTR+1
+        LDY #$0C                        ; mouse firmware signature
+        LDA (ZP_FW_PTR),Y
+        CMP #$20
+        BNE .next
+        LDY #$11
+        LDA (ZP_FW_PTR),Y
+        BNE .next
+        LDY #$FB
+        LDA (ZP_FW_PTR),Y
+        CMP #$D6
+        BNE .next
+        TXA                             ; found one
+        STA MOUSE_CN
+        ASL
+        ASL
+        ASL
+        ASL
+        STA MOUSE_N0                    ; $n0, the firmware's id reg
+        JSR MOUSE_HOOK
+        BNE .gs
+.next   DEX
+        CPX #$C1
+        BCS .slot
+.gs     LDX ROM_MACHID
+        CPX #$06                        ; IIe or later?
+        BNE .common
+        LDX ROM_SUBID
+        CPX #$F0
+        BCS .common
+        CPX #$E0                        ; $Ex = enhanced class
+        BCC .common
+        PHP
+        DEC HAS_VBL                     ; RDVBL is pollable
+        PLP
+        BNE .common                     ; only $E0 can be a IIgs
+        JSR MON_IDROUTINE
+        BCS .common
+        LDA CYAREG                      ; a IIgs: remember its speed,
+        PHA                             ;   then run fast
+        AND #$80
+        STA GS_SPEED
+        PLA
+        AND #$9F
+        ORA #$80
+        STA CYAREG
+.common LDA #$00
+        STA ZP_KEY_CNT
+        STA ZP_SFX_CNT
+        STA ZP_PAGE_XOR
+        STA ZP_PAGE_TGL
+        CLI
+        BIT HIRES
+        BIT TXTPAGE2
+        BIT MIXCLR
+.rts    RTS
+MOUSE_HOOK
+        ; Allocate a ProDOS interrupt for the mouse card, point
+        ; INT_HANDLER's SERVEMOUSE call at the slot firmware, then
+        ; INITMOUSE and SETMOUSE mode 8 (VBL interrupts only --
+        ; the card is used purely as a frame clock).
+        LDA MOUSE_N0
+        BEQ .rts                        ; no card: nothing to hook
+        LDA #$02
+        STA INT_PARM
+        JSR MLI
+        DC.B $40                        ; ALLOC_INTERRUPT
+        DC.W INT_PARM
+        LDY #$13                        ; firmware offset: SERVEMOUSE
+        JSR FW_BYTE
+        STA INT_SRV
+        STX INT_SRV+1
+        LDY #$19                        ; firmware offset: INITMOUSE
+        JSR MOUSE_CALL
+        LDA #$08                        ; mode 8: VBL interrupts only
+MOUSE_SETMODE
+        LDY #$12                        ; firmware offset: SETMOUSE
+MOUSE_CALL
+        ; Call mouse firmware routine Y (offset table entry) with
+        ; the required X=$Cn / Y=$n0 register convention.
+        SEI
+        PHA
+        JSR FW_BYTE                     ; A := entry low byte; X := $Cn
+        STA ZP_FW_PTR                   ; ZP_FW_PTR+1 is already $Cn
+        LDY MOUSE_N0
+        PLA
+        JMP (ZP_FW_PTR)
+@ %def LIB_INIT MOUSE_HOOK MOUSE_SETMODE MOUSE_CALL
+
+[[LIB_SHUTDOWN]] is the mirror image, called before the game quits
+to ProDOS: back to text mode, mouse off, interrupt deallocated,
+IIgs speed restored.
+
+<<stuph shutdown>>=
+        ORG $1831
+LIB_SHUTDOWN
+        SUBROUTINE
+        ; Undo LIB_INIT before returning to ProDOS.
+        ;
+        ; Behavior:
+        ;   Map ROM in; full text window, clear screen, text mode;
+        ;   if a mouse was hooked, SETMOUSE off and DEALLOC its
+        ;   interrupt; fall into SPEED_RESTORE.
+        ;
+        ; Modifies:
+        ;   MOUSE_N0, INT_PARM; CYAREG on a IIgs.
+        BIT ROMIN                       ; make sure ROM is mapped
+        JSR WIN_FULL
+        JSR MON_HOME
+        JSR MON_INIT                    ; text mode, full window
+        LDA MOUSE_N0
+        BEQ SPEED_RESTORE
+        LDA #$00
+        JSR MOUSE_SETMODE               ; mouse off
+        LDY #$00
+        STY MOUSE_N0
+        INY
+        STY INT_PARM                    ; 1 parameter this time
+        JSR MLI
+        DC.B $41                        ; DEALLOC_INTERRUPT
+        DC.W INT_PARM
+SPEED_RESTORE
+        SUBROUTINE
+        ; Put a IIgs back at the speed it had before LIB_INIT.
+        ;
+        ; Behavior:
+        ;   Not a IIgs (GS_SPEED bit 6 set): do nothing. Otherwise
+        ;   restore the saved fast bit into CYAREG.
+        BIT GS_SPEED
+        BVS .rts                        ; not a IIgs
+        LDA CYAREG
+        AND #$1F
+        ORA GS_SPEED
+        STA CYAREG
+.rts    RTS
+@ %def LIB_SHUTDOWN SPEED_RESTORE
+
+\section{Plot and line}
+
+The dungeon overlay's wireframe view is drawn with these. [[PLOT]]
+draws a \emph{pair} of adjacent dots (one color pixel) at column
+[[ZP_PX]], row [[ZP_PY]] --- rows are offset 16 scanlines down into
+the viewport, and a zero entry in [[XCOL_TBL]] rejects off-limits
+columns. The masked read-modify-write ([[EOR]]/[[AND]]/[[EOR]])
+replaces exactly the bits in [[XMASK_TBL]] with the color mask that
+[[COLOR_SET]] patched in.
+
+[[LINE_TO]] is integer Bresenham with separate steep and shallow
+loops; it leaves ([[ZP_PX]],[[ZP_PY]]) at the destination, so chained
+calls trace a polyline. The shallow loop caches the row pointer and
+calls the inner pair-plot directly, only recomputing the row on a
+vertical step.
+
+<<stuph plot and line>>=
+        ORG $1867
+PLOT    SUBROUTINE
+        ; Plot one color pixel (a dot pair) at (ZP_PX, ZP_PY).
+        ;
+        ; Inputs:
+        ;   ZP_PX, ZP_PY -- pixel coordinates (row + 16 = scanline)
+        ;   PLOT_CEVEN/PLOT_CODD -- color masks (via COLOR_SET)
+        ;
+        ; Behavior:
+        ;   Row tables give the draw-page address; XCOL_TBL/
+        ;   XMASK_TBL give byte and bit; masked write per dot.
+        ;
+        ; Clobbers: A, X, Y
+        LDY ZP_PY
+        BMI .rts
+        LDX ZP_PX
+        LDA HGR_ROW_LO+$10,Y
+        STA ZP_HGR_PTR
+        LDA HGR_ROW_HI+$10,Y
+        EOR ZP_PAGE_XOR
+        STA ZP_HGR_PTR+1
+PLOT_PAIR
+        ; Plot the dots at columns X and X+1 on the cached row.
+        JSR .dot
+        INX
+.dot    LDY XCOL_TBL,X                  ; screen byte + 1; 0 = clipped
+        BEQ .rts
+        TYA
+        LSR                             ; C = odd screen byte
+PLOT_CEVEN = *+1
+        LDA #$80                        ; (patched: even color mask)
+        BCC .mix
+PLOT_CODD = *+1
+        LDA #$80                        ; (patched: odd color mask)
+.mix    EOR (ZP_HGR_PTR),Y
+        AND XMASK_TBL,X
+        EOR (ZP_HGR_PTR),Y
+        STA (ZP_HGR_PTR),Y
+.rts    RTS
+LINE_TO
+        ; Bresenham line from (ZP_PX,ZP_PY) to (X,Y), leaving
+        ; ZP_PX/ZP_PY at the destination.
+        STX ZP_LX2
+        STY ZP_LY2
+LINE_AGAIN
+        ; Line to the previously stored (ZP_LX2,ZP_LY2).
+        JSR PLOT
+        LDA ZP_LX2
+        CMP ZP_PX
+        BNE .go
+        LDA ZP_LY2
+        CMP ZP_PY
+        BEQ .rts                        ; zero-length line
+.go     LDA #$01
+        STA ZP_XSTEP
+        STA ZP_YSTEP
+        LDX #$FF
+        SEC
+        LDA ZP_LX2
+        SBC ZP_PX
+        BCS .dxok
+        SEC
+        LDA ZP_PX
+        SBC ZP_LX2
+        STX ZP_XSTEP                    ; ZP_XSTEP <- #$FF (leftward)
+.dxok   STA ZP_DX
+        SEC
+        LDA ZP_LY2
+        SBC ZP_PY
+        BCS .dyok
+        SEC
+        LDA ZP_PY
+        SBC ZP_LY2
+        STX ZP_YSTEP                    ; ZP_YSTEP <- #$FF (upward)
+.dyok   STA ZP_DY
+        CMP ZP_DX
+        BCC .shallow
+        ; --- steep: one y step per iteration, x on overflow ---
+        STA ZP_CNT
+        LSR
+        STA ZP_ERR
+.sloop  CLC
+        LDA ZP_ERR
+        ADC ZP_DX
+        STA ZP_ERR
+        SEC
+        SBC ZP_DY
+        BCC .nox
+        STA ZP_ERR
+        CLC
+        LDA ZP_PX
+        ADC ZP_XSTEP
+        STA ZP_PX
+.nox    CLC
+        LDA ZP_PY
+        ADC ZP_YSTEP
+        STA ZP_PY
+        JSR PLOT
+        DEC ZP_CNT
+        BNE .sloop
+        RTS
+        ; --- shallow: one x step per iteration, y on overflow ---
+.shallow
+        LDA ZP_DX
+        STA ZP_CNT
+        LSR
+        STA ZP_ERR
+.hloop  CLC
+        LDA ZP_PX
+        ADC ZP_XSTEP
+        STA ZP_PX
+        TAX
+        CLC
+        LDA ZP_ERR
+        ADC ZP_DY
+        STA ZP_ERR
+        BCC .nc
+        SBC ZP_DX                       ; (overflowed past 256)
+        JMP .ystep
+.nc     SEC
+        SBC ZP_DX
+        BCC .plot                       ; no row change this step
+.ystep  STA ZP_ERR
+        CLC
+        LDA ZP_PY
+        ADC ZP_YSTEP
+        STA ZP_PY
+        TAY
+        BMI .skip
+        LDA HGR_ROW_LO+$10,Y            ; re-cache the row pointer
+        STA ZP_HGR_PTR
+        LDA HGR_ROW_HI+$10,Y
+        EOR ZP_PAGE_XOR
+        STA ZP_HGR_PTR+1
+.plot   JSR PLOT_PAIR
+.skip   DEC ZP_CNT
+        BNE .hloop
+        RTS
+@ %def PLOT PLOT_PAIR PLOT_CEVEN PLOT_CODD LINE_TO LINE_AGAIN
+
+\section{The text window: scroll, clear, presets}
+
+Text lives in the monitor's window variables ([[MON_WNDLFT]] and
+friends), and every text write goes to \emph{both} hi-res pages so
+the windows persist across page flips. [[TEXT_SCROLL]] moves each
+window row up eight scanlines and falls through into [[CLR_ROW]] to
+blank the newly exposed bottom row. [[CLR_EOL]] ends by polling the
+keyboard --- a free type-ahead sample on every printed line.
+
+<<stuph text scroll and clear>>=
+        ORG $193E
+TEXT_SCROLL
+        SUBROUTINE
+        ; Scroll the text window up one character row (both pages),
+        ; leave the cursor on the bottom row, and clear it.
+        ;
+        ; Behavior:
+        ;   For each scanline of rows WNDTOP..WNDBTM-2, copy the
+        ;   scanline 8 below it (read from page 1, written to both
+        ;   pages), then fall into CLR_ROW for the last row.
+        ;
+        ; Modifies: MON_CV
+        ; Clobbers: A, X, Y
+        LDX MON_WNDBTM
+        DEX
+        TXA
+        STA MON_CV                      ; cursor to the bottom row
+        ASL
+        ASL
+        ASL
+        STA ZP_ROWLIM                   ; last scanline to fill
+        LDA MON_WNDTOP
+        ASL
+        ASL
+        ASL
+        TAX
+.row    LDA HGR_ROW_LO,X
+        ADC MON_WNDLFT
+        STA .d1l
+        STA .d2l
+        LDA HGR_ROW_HI,X
+        STA .d1h
+        EOR ZP_PAGE_TGL
+        STA .d2h
+        LDA HGR_ROW_LO+8,X              ; the row 8 scanlines below
+        ADC MON_WNDLFT
+        STA .sl
+        LDA HGR_ROW_HI+8,X
+        STA .sh
+        LDY MON_WNDWDTH
+        DEY
+.sl = *+1
+.sh = *+2
+.cp     LDA $2100,Y                     ; (patched: src, page 1)
+.d1l = *+1
+.d1h = *+2
+        STA HGR1,Y
+.d2l = *+1
+.d2h = *+2
+        STA HGR2,Y
+        DEY
+        BPL .cp
+        INX
+        CPX ZP_ROWLIM
+        BCC .row
+        ; falls into CLR_ROW for the exposed bottom row
+CLR_ROW SUBROUTINE
+        ; Clear the cursor row (CLR_ROW), row A (CLR_ROW_A), or
+        ; from the cursor column to the row end (CLR_EOL), writing
+        ; background ($80 EOR ZP_INVERSE) to both pages.
+        ;
+        ; Behavior:
+        ;   Compute the row's 8 scanline addresses from the tables;
+        ;   fill columns MON_CH..MON_WNDWDTH-1. CLR_EOL exits (and
+        ;   the others end) via KEY_POLL.
+        ;
+        ; Clobbers: A, X
+        LDA MON_CV
+CLR_ROW_A
+        LDX #$00
+        STX MON_CH
+        BEQ .calc
+CLR_EOL LDX MON_CH
+        CPX MON_WNDWDTH
+        BCS .out
+        LDA MON_CV
+.calc   ASL
+        ASL
+        ASL
+        TAX
+        LDA #$08
+        STA ZP_ROWLIM                   ; 8 scanlines per text row
+        LDA HGR_ROW_LO,X
+        ADC MON_WNDLFT
+        STA .c1l
+        STA .c2l
+        LDA HGR_ROW_HI,X
+        EOR ZP_PAGE_XOR
+.hibump STA .c1h
+        EOR ZP_PAGE_TGL
+        STA .c2h
+        LDA #$80
+        EOR ZP_INVERSE                  ; background byte
+        LDX MON_CH
+.c1l = *+1
+.c1h = *+2
+.col    STA HGR1,X
+.c2l = *+1
+.c2h = *+2
+        STA HGR2,X
+        INX
+        CPX MON_WNDWDTH
+        BCC .col
+        LDA .c1h
+        ADC #$03                        ; +4 with the loop's carry:
+        DEC ZP_ROWLIM                   ;   next scanline of the row
+        BNE .hibump
+.out    JMP KEY_POLL                    ; free type-ahead sample
+@ %def TEXT_SCROLL CLR_ROW CLR_ROW_A CLR_EOL
+
+The four window presets correspond to the game screen's fixed
+layout: the bordered \textbf{viewport} (text rows 1--18, columns
+1--38) where the map or dungeon view is drawn, the \textbf{message
+area} (rows 20--23, columns 0--29), and the \textbf{stats panel}
+(rows 20--23, columns 31--39). [[WIN_FULL]] opens the whole screen.
+
+<<stuph window presets>>=
+        ORG $19D4
+WIN_TEXT
+        SUBROUTINE
+        ; Window := the message area (cols 0-29, rows 20-23).
+        ;
+        ; Behavior:
+        ;   The four entry points load the monitor window variables
+        ;   with one of the screen's fixed regions and home the
+        ;   cursor to its top-left. Shared tails set the common
+        ;   rows and clear MON_CH.
+        ;
+        ; Modifies:
+        ;   MON_WNDLFT, MON_WNDWDTH, MON_WNDTOP, MON_WNDBTM,
+        ;   MON_CH, MON_CV
+        LDA #$1E
+        STA MON_WNDWDTH
+        LDA #$00
+        BEQ .left
+WIN_STATS
+        ; Window := the stats panel (cols 31-39, rows 20-23).
+        LDA #$09
+        STA MON_WNDWDTH
+        LDA #$1F
+.left   STA MON_WNDLFT
+        LDA #$18
+        STA MON_WNDBTM
+        LDA #$14
+.top    STA MON_WNDTOP
+        STA MON_CV
+        LDA #$00
+        STA MON_CH
+        RTS
+WIN_FULL
+        ; Window := the full 40x24 screen.
+        LDA #$28
+        STA MON_WNDWDTH
+        LDA #$18
+        STA MON_WNDBTM
+        LDA #$00
+        STA MON_WNDLFT
+        BEQ .top
+WIN_VIEW
+        ; Window := the viewport interior (cols 1-38, rows 1-18).
+        LDA #$26
+        STA MON_WNDWDTH
+        LDA #$13
+        STA MON_WNDBTM
+        LDA #$01
+        STA MON_WNDLFT
+        BNE .top
+@ %def WIN_TEXT WIN_STATS WIN_FULL WIN_VIEW
+
+<<stuph window clear>>=
+        ORG $1A0F
+CLR_WINDOW
+        SUBROUTINE
+        ; Clear every row of the current text window (both pages).
+        ;
+        ; Behavior:
+        ;   For each row WNDTOP..WNDBTM-1, call CLR_ROW_A. Leaves
+        ;   MON_CV at the top row.
+        LDY MON_WNDTOP
+        STY MON_CV
+.row    TYA
+        JSR CLR_ROW_A
+        INY
+        CPY MON_WNDBTM
+        BCC .row
+        RTS
+@ %def CLR_WINDOW
+
+\section{The font blitter}
+
+[[FONT_DRAW]] paints glyph A at the cursor --- the primitive under
+every character the game ever prints. The glyph index is taken mod
+128; indexes below [[$1A]] (the terrain strips) are bumped to the
+odd-column variant when the screen address is odd. The eight
+scanlines come from [[FONT_BANK]]'s eight 128-byte planes --- the
+plane address alternates its low byte between [[$00]] and [[$80]]
+and increments its high byte every second plane, while the screen
+address steps by [[$0400]] per scanline. Both pages are written.
+The cursor does \emph{not} advance --- the engine's [[PUTCH]] does
+that.
+
+<<stuph glyph draw>>=
+        ORG $1A1D
+FONT_DRAW
+        SUBROUTINE
+        ; Draw glyph A & $7F at the text cursor, on both pages.
+        ;
+        ; Inputs:
+        ;   A -- character; MON_CH/MON_CV/MON_WNDLFT -- position
+        ;
+        ; Behavior:
+        ;   Reject columns outside the window. Odd screen columns
+        ;   use glyph+1 for codes < $1A (pre-shifted pairs). Copy
+        ;   8 planes EORed with ZP_INVERSE to both pages.
+        ;
+        ; Clobbers: (A, X preserved; Y clobbered)
+        PHA
+        STX FONT_XSAV
+        LDX MON_CH
+        CPX MON_WNDWDTH
+        BCS .out
+        AND #$7F
+        TAY
+        LDA MON_CV
+        ASL
+        ASL
+        ASL
+        TAX
+        LDA HGR_ROW_LO,X
+        ADC MON_WNDLFT
+        ADC MON_CH
+        STA .d1l
+        STA .d2l
+        LSR                             ; odd screen byte?
+        BCC .even
+        CPY #$1A
+        BCS .even
+        INY                             ; terrain strip: odd variant
+.even   LDA HGR_ROW_HI,X
+        EOR ZP_PAGE_XOR
+        STA .d1h
+        EOR ZP_PAGE_TGL
+        STA .d2h
+        CLC
+        LDX #$08                        ; plane high byte $08..$0B
+.plane  STX .srch
+.srcl = *+1
+.srch = *+2
+.half   LDA FONT_BANK,Y                 ; (patched: the 8 planes)
+        EOR ZP_INVERSE
+.d1l = *+1
+.d1h = *+2
+        STA HGR1
+.d2l = *+1
+.d2h = *+2
+        STA HGR2
+        LDA .d1h
+        ADC #$04                        ; next scanline, both pages
+        STA .d1h
+        EOR ZP_PAGE_TGL
+        STA .d2h
+        LDA .srcl
+        EOR #$80                        ; second half of the page pair
+        STA .srcl
+        BMI .half
+        INX
+        CPX #$0C
+        BCC .plane
+.out    LDX FONT_XSAV
+        PLA
+        RTS
+FONT_XSAV
+        DC.B $00                        ; caller's X
+@ %def FONT_DRAW FONT_XSAV
+
+\section{Tile animation}
+
+[[TILE_ROLL]] rotates one glyph column of [[TILE_BANK]] vertically
+by one scanline (with wrap), by walking the sixteen 96-byte planes
+and exchanging bytes; [[TILE_ROLL2]] does a glyph pair. [[DRAW_MAP]]
+calls it on glyphs 0--1 every other frame --- that is the flowing
+water --- and swaps a few fixed plane bytes of the castle, tower and
+ship glyphs for their flag-wave and sparkle.
+
+<<stuph tile roll>>=
+        ORG $1A85
+TILE_ROLL2
+        SUBROUTINE
+        ; Rotate a glyph pair of TILE_BANK down one scanline.
+        ;
+        ; Inputs:
+        ;   Y       -- left glyph index (TILE_ROLL: single glyph)
+        ;
+        ; Behavior:
+        ;   Walk the sixteen 96-byte planes exchanging bytes, with
+        ;   the plane-15 byte wrapping to plane 0 -- a vertical
+        ;   rotation. This is the flowing-water animation.
+        JSR TILE_ROLL
+        INY
+TILE_ROLL
+        ; Rotate glyph column Y of TILE_BANK by one scanline.
+        LDA #$00
+        STA ZP_TILE_PTR
+        LDA #$0C
+        STA ZP_TILE_PTR+1
+        LDX TILE_BANK+$5A0,Y            ; plane 15: the wrap byte
+        CLC                             ; (the loop re-enters via BCC)
+.swap   LDA (ZP_TILE_PTR),Y
+        PHA
+        TXA
+        STA (ZP_TILE_PTR),Y
+        PLA
+        TAX
+        LDA ZP_TILE_PTR
+        ADC #$60                        ; next plane
+        STA ZP_TILE_PTR
+        BCC .swap
+        INC ZP_TILE_PTR+1
+        LDA ZP_TILE_PTR+1
+        CMP #$12
+        BCC .swap
+        TXA
+        STA TILE_BANK,Y
+        RTS
+@ %def TILE_ROLL2 TILE_ROLL
+
+\section{Sound effects}
+
+Nine effects, dispatched by even codes 0--[[$10]] through an
+address-minus-one table and an RTS jump. [[SFX_PLAY]] ignores odd or
+out-of-range codes and anything while [[SFX_ON]] is clear; on a IIgs
+with sound enabled it wraps playback at 1\,MHz. Interrupts are masked
+during an effect so the mouse VBL cannot warp the pitch.
+
+Effects are usually not played directly: the engine \emph{queues}
+them ([[SFX_QUEUE]] into [[ZP_SFX_Q]]) and [[PAGE_FLIP]] plays the
+queue back at the frame boundary ([[SFX_DRAIN]]). Names follow their
+observed use in the engine: code 0 is queued when the player takes
+damage, 2 twice at death, [[$10]] is the ``Huh?'' error blat, 8 the
+command beep.
+
+<<stuph sfx dispatch>>=
+        ORG $1AB2
+SFX_TBL ; RTS-dispatch addresses (minus one), codes 0,2,..,$10
+        DC.W SFX_THUD-1
+        DC.W SFX_RUMBLE-1
+        DC.W SFX_NOISE-1
+        DC.W SFX_BUZZ-1
+        DC.W SFX_TONE-1
+        DC.W SFX_SIREN-1
+        DC.W SFX_FADE-1
+        DC.W SFX_TICK-1
+        DC.W SFX_BLAT-1
+SFX_PLAY
+        SUBROUTINE
+        ; Play sound effect A (even, 0..$10), if effects are on.
+        ;
+        ; Behavior:
+        ;   Validate the code; honor SFX_ON; on a IIgs with sound
+        ;   on, drop to 1 MHz around playback; dispatch through
+        ;   SFX_TBL with interrupts masked. X is preserved.
+        STX ZP_XSAV
+        TAX
+        LSR
+        BCS .out                        ; odd codes are not effects
+        CPX #$12
+        BCS .out
+        LDA SFX_ON
+        BEQ .out
+        LDA SOUND_ON
+        BEQ SFX_RAW
+        BIT GS_SPEED
+        BVS SFX_RAW                     ; not a IIgs
+        LDA CYAREG
+        AND #$1F
+        PHA
+        STA CYAREG                      ; 1 MHz for true pitch
+        JSR SFX_RAW
+        PLA
+        ORA #$80
+        STA CYAREG
+        RTS
+SFX_RAW PHP
+        SEI                             ; no VBL ticks mid-effect
+        JSR .disp
+        PLP
+        RTS
+.disp   LDA SFX_TBL+1,X
+        PHA
+        LDA SFX_TBL,X
+        PHA                             ; RTS-dispatch below
+.out    LDX ZP_XSAV
+        RTS
+@ %def SFX_TBL SFX_PLAY SFX_RAW
+
+<<stuph sfx queue>>=
+        ORG $1B02
+SFX_DRAIN
+        SUBROUTINE
+        ; Play and remove the oldest queued effect, if any.
+        ;
+        ; Behavior:
+        ;   If ZP_SFX_CNT is zero, return. Otherwise shift the
+        ;   queue down, SFX_PLAY the popped code, and decrement
+        ;   the count.
+        ;
+        ; Outputs:
+        ;   Z clear while effects remain queued (loop on BNE).
+        LDA ZP_SFX_CNT
+        BEQ .rts
+        LDA ZP_SFX_Q                    ; oldest entry
+        LDX #$01
+.shift  LDY ZP_SFX_Q,X
+        STY ZP_SFX_Q-1,X
+        INX
+        CPX #$04
+        BCC .shift
+        JSR SFX_PLAY
+        DEC ZP_SFX_CNT
+.rts    RTS
+SFX_QUEUE
+        SUBROUTINE
+        ; Append effect A to the queue for the next PAGE_FLIP.
+        ;
+        ; Inputs:
+        ;   A       -- effect code (even, 0..$10)
+        ;
+        ; Behavior:
+        ;   Store at the tail (collapsing onto a trailing zero
+        ;   entry); if the 4-byte queue is full, SFX_DRAIN one
+        ;   effect first to make room.
+        ;
+        ; Modifies:
+        ;   ZP_SFX_Q, ZP_SFX_CNT
+        LDX ZP_SFX_CNT
+        BEQ .store
+        LDY ZP_SFX_Q-1,X                ; collapse a trailing zero
+        BNE .full
+        DEX
+.full   CPX #$04
+        BCC .store
+        PHA
+        JSR SFX_DRAIN
+        PLA
+        LDX ZP_SFX_CNT
+.store  STA ZP_SFX_Q,X
+        INC ZP_SFX_CNT
+        RTS
+@ %def SFX_DRAIN SFX_QUEUE
+
+The effects themselves are conventional Apple II speaker loops ---
+toggle [[SPKR]], burn cycles, vary the period. Each speaker touch is
+paired with a [[DRIVE_OFF]] read to keep accelerator boards at
+1\,MHz. The noise-based effects get their randomness from [[RND]].
+
+<<stuph sfx effects>>=
+        ORG $1B32
+SFX_TICK
+        SUBROUTINE
+        ; Code $0E: 16 evenly spaced clicks (a soft tick/whirr).
+        ;
+        ; Behavior:
+        ;   Each effect below toggles SPKR with cycle-burning loops
+        ;   (paired with DRIVE_OFF reads for accelerators); they
+        ;   differ only in period schedule and envelope. Reached by
+        ;   SFX_PLAY's RTS dispatch; interrupts are masked.
+        LDY #$10
+        LDA #$30
+.click  PHA
+        JSR DELAY_SLOW
+        BIT SPKR
+        PLA
+        DEY
+        BNE .click
+        RTS
+SFX_BLAT
+        ; Code $10: 50 fast clicks -- the "Huh?" error blat.
+        LDY #$32
+        LDA #$17
+        BNE .click
+SFX_SIREN
+        ; Code $0A: two interleaved voices sweeping toward each
+        ; other and back -- the siren/alarm.
+        LDX #$40
+        LDY #$40
+        BNE .voices
+SFX_BUZZ
+        ; Code $06: the same engine with a long/short period pair:
+        ; a low buzz.
+        LDX #$E0
+        LDY #$06
+.voices STX ZP_CNT
+        STX ZP_SFX_P1
+        STY ZP_SFX_PER
+        LDA #$01
+        STA ZP_SFX_P2
+        ; --- sweep P1 down / P2 up ---
+.sweep1 LDA ZP_SFX_PER
+        STA ZP_ROWLIM
+.s1     LDX ZP_SFX_P1
+.d1     DEX
+        BNE .d1
+        BIT SPKR
+        BIT DRIVE_OFF
+        LDX ZP_SFX_P2
+.d2     DEX
+        BNE .d2
+        BIT SPKR
+        BIT DRIVE_OFF
+        DEC ZP_ROWLIM
+        BNE .s1
+        DEC ZP_SFX_P1
+        INC ZP_SFX_P2
+        LDA ZP_SFX_P2
+        CMP #$1B
+        BNE .sweep1
+        ; --- and back ---
+.sweep2 LDA ZP_SFX_PER
+        STA ZP_ROWLIM
+.s2     LDX ZP_SFX_P1
+.d3     DEX
+        BNE .d3
+        BIT SPKR
+        BIT DRIVE_OFF
+        LDX ZP_SFX_P2
+.d4     DEX
+        BNE .d4
+        BIT SPKR
+        BIT DRIVE_OFF
+        DEC ZP_ROWLIM
+        BNE .s2
+        INC ZP_SFX_P1
+        DEC ZP_SFX_P2
+        BNE .sweep2
+        RTS
+SFX_FADE
+        ; Code $0C: a long single tone that fades out as its
+        ; period counter runs down.
+        LDA #$FB
+        STA ZP_CNT
+.cycle  INX
+        BNE .cycle
+        BIT SPKR
+        BIT DRIVE_OFF
+        DEC ZP_CNT
+        LDX ZP_CNT
+        BNE .cycle
+        RTS
+SFX_TONE
+        ; Code $08: a steady mid tone -- the command beep.
+        LDY #$A0
+.period TYA
+        TAX
+.dly    DEX
+        BNE .dly
+        BIT SPKR
+        BIT DRIVE_OFF
+        DEY
+        BNE .period
+        RTS
+SFX_NOISE
+        ; Code $04: white noise with a rising envelope (period
+        ; sweeps $E0 down to $40) -- an explosion.
+        LDA #$40
+        STA ZP_CNT
+        LDA #$E0
+        STA ZP_SFX_PER
+.hiss   JSR RND
+        ORA ZP_SFX_PER
+        TAX
+.dlyn   DEX
+        BNE .dlyn
+        BIT SPKR
+        BIT DRIVE_OFF
+        DEC ZP_SFX_PER
+        LDA ZP_SFX_PER
+        CMP ZP_CNT
+        BCS .hiss
+        RTS
+SFX_RUMBLE
+        ; Code $02: long random rumble (death knell, played twice).
+        LDA #$E8
+        LDX #$FF
+        BNE .noise
+SFX_THUD
+        ; Code $00: short noise burst -- the damage thud.
+        LDA #$00
+        LDX #$08
+.noise  STX ZP_CNT
+        STA .acc                        ; $E8 keeps the accelerator
+        LDA #$00                        ;   nudge; $00 disables it
+        STA ZP_SFX_PER
+.hiss2  JSR RND
+        ORA ZP_SFX_PER
+        TAX
+.dly2   DEX
+        BNE .dly2
+        BIT SPKR
+.acc = *+1
+        BIT DRIVE_OFF                   ; (operand low byte patched)
+        DEC ZP_CNT
+        BNE .hiss2
+        RTS
+@ %def SFX_TICK SFX_BLAT SFX_SIREN SFX_BUZZ SFX_FADE SFX_TONE
+@ %def SFX_NOISE SFX_RUMBLE SFX_THUD
+
+\section{Frame synchronization}
+
+[[FRAME_SYNC]] paces the game to the display. With a mouse card it
+waits for the next two VBL interrupt ticks (a full frame); on an
+enhanced IIe/IIc/IIgs without one it polls [[RDVBL]] for an edge; on
+an older machine it returns immediately and the game free-runs at
+whatever the busy-wait delays allow. Either way it samples the
+keyboard first, so type-ahead never drops keys.
+
+<<stuph frame sync>>=
+        ORG $1C15
+FRAME_SYNC
+        SUBROUTINE
+        ; Wait for the vertical blank, by the best available means.
+        ;
+        ; Behavior:
+        ;   Sample the keyboard; then with a mouse card wait for
+        ;   two VBL_TICK changes (a full frame); else on an
+        ;   enhanced machine wait for an RDVBL edge; else return
+        ;   immediately (free-run).
+        JSR KEY_POLL
+        LDA MOUSE_N0
+        BEQ .novbl
+        LDY VBL_TICK                    ; mouse card: wait 2 ticks
+.tick   JSR KEY_POLL
+        CPY VBL_TICK
+        BEQ .tick
+        RTS
+.novbl  LDA HAS_VBL
+        BEQ .rts                        ; old machine: free-run
+.hi     LDA RDVBL                       ; wait for a VBL edge
+        BPL .hi
+.lo     LDA RDVBL
+        BMI .lo
+.rts    RTS
+@ %def FRAME_SYNC
+
+\section{The map renderer}
+
+[[DRAW_MAP]] paints the whole 19$\times$9-tile viewport from the
+64$\times$64 map at [[MAP_BASE]] --- the game's single most
+important graphics routine, called every frame of every outdoor,
+town and castle turn (the main loop's [[KEY_GET_ANIM]] calls it
+while waiting for input, which is what keeps the world animated).
+
+The view is centered on the player at ([[ZP_PLR_X]],[[ZP_PLR_Y]]):
+tile columns [[ZP_PLR_X]]$-9$ through $+9$, rows [[ZP_PLR_Y]]$-4$
+through $+4$. For each map row it builds a 38-glyph code string in
+[[MAPROW_BUF]]: each cell byte is masked with [[$7E]] and becomes
+the glyph pair $(c, c{+}1)$. Cells outside the 0--63 map range
+become water --- the seas at the edge of the world are an
+\emph{artifact of the clipping}, not map data. Codes
+[[$20]]--[[$58]] are creatures, and get $+2$ added pseudo-randomly
+--- creature tiles come in two-frame pairs, and the renderer picks a
+frame per cell per band by reading bit 1 of an arbitrary byte of the
+file library's code at [[MLIB_CODE]] (a free, if cheeky, noise
+source). The player's own cells (buffer columns 18--19) are
+overwritten with [[PLAYER_TILE]], which the engine sets to the
+on-foot/horse/cart/raft/frigate tile as transport changes.
+
+Then sixteen scanlines are blitted per band: for each, one byte per
+buffer column, read from [[TILE_BANK]] plane by plane and stored
+through a patched address into screen bytes 1--38 of the draw page.
+After the last band comes [[PAGE_FLIP]], then the tile-bank
+animations (water roll, flag waves, ship sparkle), and a final fall
+through into [[KEY_POLL]]. Mid-draw, the keyboard is sampled once
+per band so fast typists never outrun the renderer.
+
+<<stuph map renderer>>=
+        ORG $1C39
+DRAW_MAP
+        SUBROUTINE
+        ; Render the tile viewport centered on the player, flip
+        ; pages, animate the tile bank, and poll the keyboard.
+        ;
+        ; Inputs:
+        ;   ZP_PLR_X/ZP_PLR_Y -- player map position
+        ;   MAP_BASE -- 64x64 cell map, one byte per cell
+        ;   PLAYER_TILE -- glyph code for the player's tile
+        ;
+        ; Behavior:
+        ;   9 bands of 16 scanlines; per band, decode 19 cells
+        ;   into 38 glyph codes in MAPROW_BUF (clipping to water,
+        ;   randomizing creature frames), insert the player tile
+        ;   on the player's row, then blit 16 glyph scanlines.
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$08
+        STA ZP_SCANROW                  ; first scanline row
+        SEC
+        LDA ZP_PLR_X
+        SBC #$09
+        STA ZP_MAP_X0                   ; leftmost visible column
+        SEC
+        LDA ZP_PLR_Y
+        SBC #$04
+        STA ZP_MAP_Y0                   ; topmost visible row
+.band   LDA #$10
+        STA ZP_ROWLIM                   ; 16 scanlines per band
+        LDA #$00
+        STA .tsl
+        LDA #$0C
+        STA .tsh                        ; tile source := TILE_BANK
+        LDA KBD                         ; sample the keyboard
+        BPL .nokey
+        JSR KEY_STASH
+.nokey  LDA ZP_MAP_Y0
+        CMP #$40
+        BCS .fill                       ; off the map: a water band
+        LSR                             ; map row pointer =
+        STA ZP_MAP_PTR+1                ;   MAP_BASE + row*64
+        LDA #$00
+        ROR
+        LSR ZP_MAP_PTR+1
+        ROR
+        STA ZP_MAP_PTR
+        LDA ZP_MAP_PTR+1
+        ADC #$60
+        STA ZP_MAP_PTR+1
+        LDX #$00
+        LDY ZP_MAP_X0
+.cell   CPY #$40
+        BCC .incell
+        LDA #$00                        ; off the edge: water
+        BEQ .pair
+.fill   LDX #$25                        ; fill the whole band
+.fl     LDA #$01
+        STA MAPROW_BUF,X
+        DEX
+        LDA #$00
+        STA MAPROW_BUF,X
+        DEX
+        BPL .fl
+        BMI .player
+.incell LDA (ZP_MAP_PTR),Y
+        AND #$7E
+        CMP #$20
+        BCC .pair                       ; terrain: as stored
+        CMP #$59
+        BCS .pair
+        STX ZP_CELLX                    ; creature: pick a frame
+        STA ZP_CELLA
+        INC DITHER_IX
+        LDX DITHER_IX
+        LDA MLIB_CODE,X                 ; cheap noise: library code
+        AND #$02
+        ADC ZP_CELLA                    ; +0 or +2: frame A or B
+        LDX ZP_CELLX
+.pair   STA MAPROW_BUF,X                ; left glyph
+        INX
+        CLC
+        ADC #$01
+        STA MAPROW_BUF,X                ; right glyph
+        INX
+        INY
+        CPX #$26
+        BCC .cell
+.player LDA ZP_MAP_Y0
+        INC ZP_MAP_Y0
+        CMP ZP_PLR_Y                    ; the player's row?
+        BNE .scan
+        LDY PLAYER_TILE
+        STY MAPROW_BUF+$12              ; center cell of the view
+        INY
+        STY MAPROW_BUF+$13
+.scan   LDY ZP_SCANROW
+        INC ZP_SCANROW
+        CLC
+        LDA HGR_ROW_LO,Y
+        ADC #$01                        ; viewport starts at byte 1
+        STA .dl
+        LDA HGR_ROW_HI,Y
+        EOR ZP_PAGE_XOR
+        STA .dh
+        LDX #$25
+.cp     LDY MAPROW_BUF,X
+.tsl = *+1
+.tsh = *+2
+        LDA TILE_BANK,Y                 ; (patched: plane by plane)
+.dl = *+1
+.dh = *+2
+        STA HGR1,X                      ; (patched: each scanline)
+        DEX
+        BPL .cp
+        CLC
+        LDA .tsl
+        ADC #$60                        ; next tile plane
+        STA .tsl
+        BCC .noc
+        INC .tsh
+.noc    DEC ZP_ROWLIM
+        BNE .scan
+        LDA ZP_SCANROW
+        CMP #$98                        ; 9 bands done?
+        BCS .anim
+        JMP .band
+        ; --- end of frame: flip, then animate the tile bank ---
+.anim   JSR PAGE_FLIP
+        DEC ANIM_CNT1
+        BNE .wave
+        LDA #$02
+        STA ANIM_CNT1
+        LDY #$00
+        JSR TILE_ROLL2                  ; the water flows
+.wave   DEC ANIM_CNT2
+        BNE .wave2
+        LDA #$03
+        STA ANIM_CNT2
+        LDX TILE_BANK+$69               ; castle flag: swap two
+        LDY TILE_BANK+$C9               ;   scanlines of glyph 9
+        STY TILE_BANK+$69
+        STX TILE_BANK+$C9
+.wave2  DEC ANIM_CNT3
+        BNE .spark
+        LDA #$02
+        STA ANIM_CNT3
+        LDX TILE_BANK+$12C              ; tower flag: glyph $0C
+        LDY TILE_BANK+$18C
+        STY TILE_BANK+$12C
+        STX TILE_BANK+$18C
+.spark  LDX TILE_BANK+$D9               ; ship sparkle: glyphs
+        LDY TILE_BANK+$139              ;   $18/$19, every frame
+        STY TILE_BANK+$D9
+        STX TILE_BANK+$139
+        LDX TILE_BANK+$D8
+        LDY TILE_BANK+$138
+        STY TILE_BANK+$D8
+        STX TILE_BANK+$138
+        ; falls into KEY_POLL
+@ %def DRAW_MAP
+
+\section{The keyboard}
+
+A four-key type-ahead queue in zero page. [[KEY_POLL]] samples the
+hardware register --- it is called from every clear, every frame
+sync, and twice per map band, so the queue fills no matter what the
+game is busy doing. Pressing \emph{space} flushes the queue first:
+space is the ``stop everything'' key. [[KEY_GET]] pops a key,
+erasing the flashing cursor behind it, translating Delete to
+backspace and folding lowercase to uppercase; [[KEY_GET_ANIM]] is
+the main loop's variant that keeps the world animated while it
+waits. The cursor itself is [[CURSOR_FLASH]]: glyphs [[$7F]] down to
+[[$7C]] drawn in rotation, falling through into [[RND]] --- so every
+caller gets a fresh random number as a side effect, and the RNG
+state advances with every flash of the cursor.
+
+<<stuph keyboard>>=
+        ORG $1D64
+KEY_POLL
+        SUBROUTINE
+        ; Sample the keyboard into the type-ahead queue.
+        ;
+        ; Behavior:
+        ;   If a key is down: space flushes the queue first; then
+        ;   the key (high bit set) is appended if room, and the
+        ;   strobe is cleared.
+        LDA KBD
+        BPL .rts
+KEY_STASH
+        ; (entry with the key already in A, from DRAW_MAP)
+        CMP #$A0                        ; space: flush type-ahead
+        BNE .store
+        LDX #$00
+        STX ZP_KEY_CNT
+.store  LDX ZP_KEY_CNT
+        CPX #$04
+        BCS .rts                        ; queue full: drop the key
+        STA ZP_KEY_BUF,X
+        INC ZP_KEY_CNT
+        BIT KBDSTRB
+.rts    RTS
+KEY_DELAY
+        ; A short delay (7 x $4F units), cut short by a waiting
+        ; key -- the pacing primitive for message display.
+        LDY #$07
+.poll   JSR KEY_POLL
+        LDA ZP_KEY_CNT
+        BNE .rts
+        LDA #$4F
+        JSR DELAY_256
+        DEY
+        BNE .poll
+        RTS
+KEY_WAIT
+        ; Block until a key arrives; A := the key (see KEY_GET).
+        JSR KEY_GET
+        BEQ KEY_WAIT
+        RTS
+KEY_GET
+        ; Poll once (with cursor flash and delay); A := key or 0.
+        ;
+        ; Outputs:
+        ;   A = ASCII key (Delete -> $08+$80, lowercase folded to
+        ;   upper, high bit stripped), or 0 if none. X/Y preserved.
+        JSR KEY_CTX
+        JSR KEY_DELAY
+        LDA ZP_KEY_CNT
+        BNE .pop
+        BEQ .none
+KEY_GET_ANIM
+        ; As KEY_GET, but the wait redraws the animated map view.
+        JSR KEY_CTX
+        JSR DRAW_MAP
+        LDA ZP_KEY_CNT
+        BEQ .none
+.pop    LDA #$20
+        JSR FONT_DRAW                   ; erase the cursor glyph
+        LDA ZP_KEY_BUF                  ; the oldest key
+        DEC ZP_KEY_CNT
+        LDX #$01
+        CMP #$FF
+        BNE .nodel
+        LDA #$88                        ; Delete -> backspace
+.nodel  CMP #$E0
+        BCC .shift
+        EOR #$20                        ; fold lowercase to upper
+.shift  LDY ZP_KEY_BUF,X
+        STY ZP_KEY_BUF-1,X
+        INX
+        CPX #$04
+        BCC .shift
+.none   LDX KEY_XSAV
+        LDY KEY_YSAV
+        AND #$7F
+        RTS
+KEY_CTX ; Save X/Y, nudge accelerators, and fall into the cursor.
+        STX KEY_XSAV
+        STY KEY_YSAV
+        JSR ACCEL_NUDGE
+CURSOR_FLASH
+        ; Draw the next cursor frame (glyphs $7F down to $7C, in
+        ; rotation) at the text cursor, then fall into RND -- the
+        ; cursor's flicker doubles as entropy for the RNG.
+        LDX .frame
+        DEX
+        CPX #$7C
+        BCS .keep
+        LDX #$7F
+.keep   STX .frame
+.frame = *+1
+        LDA #$7C                        ; (operand: the frame glyph)
+        JSR FONT_DRAW
+        ; falls into RND
+@ %def KEY_POLL KEY_STASH KEY_DELAY KEY_WAIT KEY_GET KEY_GET_ANIM
+@ %def KEY_CTX CURSOR_FLASH
+
+\section{The random number generator}
+
+A 16-byte lagged additive generator. Each call sweeps the last
+state byte through the first fifteen as a running sum (a chain of
+additions whose carries interact chaotically), adds it into byte 0
+again, then increments the state as a little-endian 16-byte counter
+to guarantee the sequence never locks up at zero. Byte 0 is the
+result. Combined with the cursor-flash coupling above, the stream
+is effectively seeded by player timing.
+
+<<stuph rng>>=
+        ORG $1DF1
+RND     SUBROUTINE
+        ; A := next pseudo-random byte. Preserves X, Y.
+        ;
+        ; Behavior:
+        ;   Sweep the last state byte through the first fifteen as
+        ;   a carry-chained running sum, fold it into byte 0, then
+        ;   increment the state as a 16-byte counter so the
+        ;   sequence has no fixed point. Returns byte 0.
+        ;
+        ; Modifies:
+        ;   RND_STATE
+        CLC
+        LDA RND_STATE+$0F
+        LDX #$0E
+.mix    ADC RND_STATE,X                 ; running chaotic sum
+        STA RND_STATE,X
+        DEX
+        BPL .mix
+        LDA RND_STATE+$0F
+        CLC
+        ADC RND_STATE
+        STA RND_STATE
+        LDX #$0F
+.count  INC RND_STATE,X                 ; 16-byte counter: never
+        BNE .done                       ;   a fixed point
+        DEX
+        BPL .count
+.done   LDA RND_STATE
+        RTS
+RND_STATE
+        HEX 64 76 85 54 f6 5c 76 1f     ; state as shipped on disk
+        HEX e7 12 a7 6b 93 c4 6e 1b
+RND_SPARE
+        ; 18 further seed bytes, never referenced by code.
+        HEX e7 12 a7 6b 93 c4 6e 1b
+        HEX 76 1f e7 12 a7 6b 93 c4
+        HEX 6e 1b
+STUPH_FILL
+        DS.B 454,$00                    ; zero fill to $1FFF
+@ %def RND RND_STATE RND_SPARE STUPH_FILL
+
+<<stuph.asm>>=
+        PROCESSOR 6502
+<<stuph defines>>
+<<stuph font bank>>
+<<stuph tile bank>>
+<<stuph row tables>>
+<<stuph plot tables>>
+<<stuph flags and vectors>>
+<<stuph delay>>
+<<stuph view clear>>
+<<stuph page flip>>
+<<stuph sound enable>>
+<<stuph accel nudge>>
+<<stuph file load>>
+<<stuph page copy>>
+<<stuph color set>>
+<<stuph machine state>>
+<<stuph firmware byte>>
+<<stuph machine init>>
+<<stuph shutdown>>
+<<stuph plot and line>>
+<<stuph text scroll and clear>>
+<<stuph window presets>>
+<<stuph window clear>>
+<<stuph glyph draw>>
+<<stuph tile roll>>
+<<stuph sfx dispatch>>
+<<stuph sfx queue>>
+<<stuph sfx effects>>
+<<stuph frame sync>>
+<<stuph map renderer>>
+<<stuph keyboard>>
+<<stuph rng>>
+@
+
 \chapter{The resident engine: MI.U1}
 
 \texttt{MI.U1} (``machine interface'') is the game's memory-resident
@@ -4586,10 +7158,12 @@ MIU1_CODE_A
 
 The engine's text system, the most-called code in the game (the
 overlays invoke [[MSG_PRINT]] alone some 349 times). Text renders on
-the hi-res screen through a font blitter in low RAM (at
-[[FONT_DRAW]]; installed by \texttt{MAKE.INDATA} and not yet reverse
-engineered), with the monitor's window and cursor zero-page variables
-([[MON_WNDLFT]]\dots[[MON_CV]]) defining the text region.
+the hi-res screen through the resident library's font blitter
+([[FONT_DRAW]], documented in the \texttt{STUPH} chapter), with the
+monitor's window and cursor zero-page variables
+([[MON_WNDLFT]]\dots[[MON_CV]]) defining the text region. The
+[[$15xx]] addresses below are \texttt{STUPH}'s public jump vectors;
+the engine assembles against them as EQUs.
 
 Three printing interfaces, all using the same inline-argument
 convention as the file library:
@@ -4613,24 +7187,57 @@ newline-only-if-needed-then-column-1, and [[$7F]] (in the string
 readers) adds the following byte to the column --- a tab. This is why
 the game's strings are full of \texttt{|}, \texttt{\}}, and
 \texttt{\~{}} characters. The newline path scrolls the text window
-via the low-RAM helper when the cursor passes [[MON_WNDBTM]].
+via [[TEXT_SCROLL]] when the cursor passes [[MON_WNDBTM]].
 
 <<miu1 text defines>>=
-; --- Monitor text window and cursor (shared with the engine) ---
+; --- Monitor text window and cursor (shared with STUPH) ---
 MON_WNDLFT      EQU $20         ; text window: left column
 MON_WNDWDTH     EQU $21         ; text window: width
 MON_WNDTOP      EQU $22         ; text window: top row
 MON_WNDBTM      EQU $23         ; text window: bottom row + 1
 MON_CH          EQU $24         ; cursor column
 MON_CV          EQU $25         ; cursor row
-; --- Low-RAM text helpers (installed by MAKE.INDATA) ---
-TEXT_SCROLL     EQU $1592       ; STUB - scroll the text window
-LOW_1598        EQU $1598       ; STUB - low-RAM text helper
-FONT_DRAW       EQU $15B0       ; STUB - draw char A at the cursor
+; --- The resident library's jump vectors (see the STUPH chapter) ---
+LIB_INIT        EQU $1583       ; detect mouse/IIgs, hi-res on
+LIB_SHUTDOWN    EQU $1586       ; text mode, unhook, restore speed
+FILE_LOAD       EQU $1589       ; load MLIB_PATH file (RAM cache)
+FILE_LOAD_AT    EQU $158C       ; same, at address Y/A
+PAGE_COPY       EQU $158F       ; copy shown page onto draw page
+TEXT_SCROLL     EQU $1592       ; scroll the text window up a row
+CLR_ROW         EQU $1595       ; clear the cursor row
+CLR_EOL         EQU $1598       ; clear cursor to end of row
+CLR_WINDOW      EQU $159B       ; clear the whole text window
+WIN_FULL        EQU $159E       ; window := full screen
+WIN_STATS       EQU $15A1       ; window := stats panel
+WIN_TEXT        EQU $15A4       ; window := message area
+WIN_VIEW        EQU $15A7       ; window := viewport interior
+VIEW_CLEAR      EQU $15AA       ; black out the viewport
+PAGE_FLIP       EQU $15AD       ; show drawn page, toggle, drain sfx
+FONT_DRAW       EQU $15B0       ; draw glyph A at the cursor
+DRAW_MAP        EQU $15B3       ; render the tile viewport
+KEY_DELAY       EQU $15B6       ; short delay, cut by a keypress
+RND             EQU $15B9       ; A := pseudo-random byte
+KEY_POLL        EQU $15BC       ; sample keyboard into type-ahead
+KEY_WAIT        EQU $15BF       ; block for a key
+KEY_GET         EQU $15C2       ; poll once; A := key or 0
+KEY_GET_ANIM    EQU $15C5       ; poll with animated map redraw
+CURSOR_FLASH    EQU $15C8       ; flash the cursor; A := random
+SFX_PLAY        EQU $15CB       ; play effect A now
+SFX_QUEUE       EQU $15CE       ; queue effect for next PAGE_FLIP
+SFX_DRAIN       EQU $15D1       ; play one queued effect
+COLOR_SET       EQU $15D4       ; set the PLOT color (A = 0-7)
+PLOT            EQU $15D7       ; plot color dot pair
+LINE_TO         EQU $15DA       ; line to (X,Y)
+LINE_AGAIN      EQU $15DD       ; line to previous destination
+SOUND_SET       EQU $15E0       ; master sound off/on (A = 0/1)
+ACCEL_NUDGE     EQU $15E3       ; slow accelerators (sound off)
+FRAME_SYNC      EQU $15E6       ; wait for vertical blank
+VDELAY          EQU $15E9       ; calibrated delay of A units
+; --- The keyboard type-ahead count (STUPH zero page) ---
+ZP_KEY_CNT      EQU $78         ; pending keys in the queue
 ; --- Engine state still inside stub regions ---
 CAP_FLAG        EQU $7E37       ; STUB - bit 7: capitalize next letter
-@ %def MON_WNDLFT MON_WNDWDTH MON_WNDTOP MON_WNDBTM MON_CV
-@ %def TEXT_SCROLL LOW_1598 FONT_DRAW CAP_FLAG
+@ %def CAP_FLAG
 
 <<miu1 inline text readers>>=
         ORG $8037
@@ -4713,8 +7320,8 @@ PUTCH
         STA MON_CH
         RTS
 NEWLINE_ALT
-        ; newline preceded by a low-RAM helper (not yet RE'd)
-        JSR LOW_1598
+        ; newline after blanking the rest of the current row
+        JSR CLR_EOL
 NEWLINE
         SUBROUTINE
         ; Advance to the next line, scrolling the window if needed.
@@ -14056,14 +16663,37 @@ MAKEINDATA_BLOB
 @
 
 \section{MAPCHARS}
+\label{sec:mapchars}
 
-\texttt{MAPCHARS} --- tile graphics data, 1024 bytes at [[$0800]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
+\texttt{MAPCHARS} --- the town and castle glyph bank: an alternate
+\textbf{bank A} (128 glyphs $\times$ 8 scanlines, plane-major ---
+the format is documented with [[FONT_BANK]] in the \texttt{STUPH}
+chapter) that the \texttt{TWN} and \texttt{CAS} overlays load over
+[[FONT_BANK]] at [[$0800]]. Its terrain-strip glyphs
+([[$00]]--[[$19]]) become wall sections, doors and counters, and it
+adds an \emph{inverse-video} capital alphabet --- the
+\texttt{TCMAPS} map data embeds ASCII letters directly in its cell
+codes to spell shop signs (\texttt{FOOD} is plainly visible in the
+map bytes) and these glyphs render them. The text positions
+[[$20]]--[[$2F]] are blank because town maps never put
+punctuation on the floor.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{images/mapchars_font.png}
+\caption{The \texttt{MAPCHARS} glyph bank, 128 glyphs in index
+order. Wall and counter strips at the top; the inverse shop-sign
+alphabet in the middle; a few special figures at the end.}
+\label{fig:mapchars-font}
+\end{figure}
+
+The glyph bitmaps:
 
 <<mapchars blob>>=
         ORG $0800
 MAPCHARS_BLOB
-        ; STUB — not yet disassembled (tile graphics data)
+        ; The town/castle glyph bank (bank A format: scanline s of
+        ; glyph g at offset s*$80+g).
         HEX d5 aa 80 80 81 80 d5 aa
         HEX d5 aa 80 80 81 80 d5 aa
         HEX d5 aa 80 80 80 80 80 80
@@ -15173,790 +17803,6 @@ TCMAPS_BLOB
 <<tcmaps blob>>
 @
 
-\section{STUPH}
-
-\texttt{STUPH} --- graphics/shape data, 6144 bytes at [[$0800]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
-
-<<stuph blob>>=
-        ORG $0800
-STUPH_BLOB
-        ; STUB — not yet disassembled (graphics/shape data)
-        HEX d5 aa ff ff d5 aa ff ff
-        HEX d7 ab f5 ea f7 eb 80 81
-        HEX 80 80 80 80 d5 aa d5 aa
-        HEX 80 c0 98 80 98 98 80 ff
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 84 80 80 80
-        HEX ff 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 b6 3c 9c 66
-        HEX d5 aa d5 aa d5 aa d5 aa
-        HEX d7 ab f5 ea f7 eb 83 86
-        HEX c0 a0 81 82 d4 aa 95 aa
-        HEX e0 b0 bc 80 bc 98 88 dd
-        HEX 80 98 ec b6 88 80 8e 98
-        HEX b0 86 80 80 80 80 80 88
-        HEX 9c 90 9c 9c b6 be b0 be
-        HEX 9c 9c 80 80 80 80 86 9c
-        HEX ff f0 be b8 be fe fc b8
-        HEX e6 fe fc e6 8c c2 e2 bc
-        HEX be bc be b8 fe e6 e6 e6
-        HEX e6 e6 fe e6 80 98 80 80
-        HEX 80 80 8c 80 b0 80 b8 80
-        HEX 86 80 b0 86 9c 80 80 80
-        HEX 80 80 80 80 8c 80 80 80
-        HEX 80 80 80 80 3c 9c 66 b6
-        HEX d5 aa d5 aa d5 aa d5 aa
-        HEX d7 ab f5 ea f7 eb 8d 9a
-        HEX d0 a0 85 82 d4 a8 95 8a
-        HEX d8 ac fe 9c fe 98 9c ff
-        HEX 80 98 ec ff bc e6 9b 98
-        HEX 98 8c 88 98 80 80 80 be
-        HEX b6 98 b6 b6 b6 86 98 b0
-        HEX b6 b6 98 98 c0 80 8c b6
-        HEX ff f8 ec ec ec 8c 8c ec
-        HEX e6 98 e0 b6 8c e6 e6 e6
-        HEX e6 e6 e6 ec 98 e6 e6 e6
-        HEX e6 e6 e0 e6 aa 98 88 88
-        HEX 80 80 8c 80 b0 80 ec 80
-        HEX 86 98 80 86 98 80 80 80
-        HEX 80 80 80 80 8c 80 80 80
-        HEX 80 80 80 88 9c 66 b6 3c
-        HEX d5 aa d5 aa d5 aa d5 aa
-        HEX d7 ab f5 ea f7 eb b5 ea
-        HEX d0 a8 85 8a d4 a8 95 8a
-        HEX d6 ab 98 be 98 98 aa ff
-        HEX 80 98 b6 b6 8e b6 9b 8c
-        HEX 8c 98 9c 98 80 80 80 dd
-        HEX b6 9c b0 b0 b6 9e 8c b0
-        HEX b6 b6 98 98 80 be 98 b0
-        HEX ff ec ec 86 ec 8c 8c 86
-        HEX e6 98 e0 9e 8c fe ee e6
-        HEX e6 e6 e6 86 98 e6 e6 e6
-        HEX bc e6 b0 fe 9c fe 9c 9c
-        HEX be bc bc bc bc bc 8c bc
-        HEX 86 80 b0 e6 98 c2 b6 bc
-        HEX be fc b6 bc be b6 e6 e6
-        HEX e6 e6 fe be 66 b6 3c 9c
-        HEX d5 aa d5 aa d5 aa d5 aa
-        HEX d7 ab f5 ea f7 eb b5 ea
-        HEX d4 a8 95 8a d0 a8 85 8a
-        HEX d6 ab 98 be 98 98 c9 ff
-        HEX 80 98 80 b6 9c 98 ee 80
-        HEX 8c 98 be fe 80 be 80 c9
-        HEX b6 98 98 9c be b0 9e 98
-        HEX 9c bc 80 80 82 80 b0 98
-        HEX ff ec bc 86 ec bc bc 86
-        HEX fe 98 e0 8e 8c fe fe e6
-        HEX be e6 be bc 98 e6 e6 e6
-        HEX 98 bc fe fe 88 fe b6 aa
-        HEX be b6 ec e6 b6 e6 fe e6
-        HEX 9e 98 b0 b6 98 e6 ee e6
-        HEX e6 e6 ee 86 8c b6 e6 e6
-        HEX bc e6 b0 88 66 b6 3c 9c
-        HEX d5 aa d5 aa d5 aa d5 aa
-        HEX d7 ab f5 ea f7 eb 8d 9a
-        HEX d4 a8 95 8a d0 a0 85 82
-        HEX d8 ac fe 9c 98 fe 94 ff
-        HEX 80 80 80 ff b8 ec bb 80
-        HEX 8c 98 9c 98 98 80 80 9c
-        HEX b6 98 8c b0 b0 b0 b6 8c
-        HEX b6 98 98 98 80 be 98 80
-        HEX ff fc ec 86 ec 8c 8c f6
-        HEX e6 98 e6 9e 8c e6 f6 e6
-        HEX 86 e6 b6 e0 98 e6 e6 fe
-        HEX bc 98 8c e6 88 98 80 88
-        HEX 9c b6 ec 86 b6 fe 8c fc
-        HEX b6 98 b6 9e 98 fe e6 e6
-        HEX be bc 86 bc 8c b6 e6 fe
-        HEX 98 fc 98 88 9c 66 b6 3c
-        HEX d5 aa d5 aa d5 aa d5 aa
-        HEX d7 ab f5 ea f7 eb 83 86
-        HEX d4 aa 95 aa c0 a0 81 82
-        HEX e0 b0 bc 80 98 bc 94 dd
-        HEX 80 98 80 b6 9e e6 bb 80
-        HEX 98 8c 88 98 98 80 98 94
-        HEX b6 98 86 b6 b0 b6 b6 8c
-        HEX b6 8c 98 98 a0 80 8c 98
-        HEX ff ec ec e6 ec 8c 8c e6
-        HEX e6 98 e6 b6 9c e6 e6 e6
-        HEX 86 b6 e6 e6 98 e6 bc e6
-        HEX e6 98 86 e6 94 98 80 94
-        HEX be b6 ec e6 b6 86 8c e0
-        HEX b6 98 b6 b6 98 e6 e6 e6
-        HEX 86 b0 86 e0 ec b6 bc e6
-        HEX bc b0 8c 94 3c 9c 66 b6
-        HEX d5 aa d5 aa ff ff ff ff
-        HEX d7 ab f5 ea f7 eb 80 81
-        HEX d5 aa d5 aa 80 80 80 80
-        HEX 80 c0 98 80 98 98 94 ff
-        HEX 80 98 80 80 88 80 ee 80
-        HEX b0 86 80 80 8c 80 98 94
-        HEX 9c bc be 9c b0 9c 9c 8c
-        HEX 9c 86 80 90 80 80 86 98
-        HEX ff e6 be bc be fe 86 bc
-        HEX e6 fe bc e6 f6 e6 c6 bc
-        HEX 8e ec e6 bc 98 bc 98 c2
-        HEX e6 98 fe 80 a2 80 80 94
-        HEX 80 ec b6 bc ec fc 86 be
-        HEX e6 bc 9c e6 bc e6 e6 bc
-        HEX 8e e0 86 be b8 ec 98 c2
-        HEX e6 9c fe 94 b6 3c 9c 66
-        HEX 8a 80 10 00 14 00 08 04
-        HEX 00 01 00 00 10 00 08 04
-        HEX 00 00 00 00 00 00 80 80
-        HEX 80 80 80 80 00 01 80 81
-        HEX 80 80 80 80 00 00 00 00
-        HEX 80 80 80 80 80 80 80 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 14 00 14 00 00 00 00 00
-        HEX 14 00 14 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX a0 85 80 80 00 00 00 00
-        HEX 00 00 02 00 a0 85 d0 82
-        HEX a0 80 00 02 55 00 15 0a
-        HEX 00 07 40 01 00 02 15 0a
-        HEX 60 01 00 00 00 00 80 80
-        HEX a0 80 80 80 40 03 80 81
-        HEX 80 80 80 80 40 01 40 01
-        HEX 80 8f c0 87 e0 80 a0 81
-        HEX 40 03 40 03 30 06 30 06
-        HEX 55 00 55 00 78 00 78 00
-        HEX 55 00 55 00 70 00 70 00
-        HEX 10 04 10 04 40 03 40 03
-        HEX c8 93 c0 83 40 03 40 03
-        HEX 40 03 42 03 a8 95 d4 8a
-        HEX 80 85 01 00 55 00 22 51
-        HEX 00 0d 40 01 09 00 22 51
-        HEX 60 01 00 00 00 00 a0 80
-        HEX e0 81 80 80 20 04 e0 87
-        HEX 80 80 80 87 60 03 60 03
-        HEX e0 9f f0 8f a0 81 e0 80
-        HEX 4f 03 40 03 70 07 76 37
-        HEX 55 00 55 00 78 00 78 00
-        HEX 55 00 55 00 70 00 70 00
-        HEX 70 07 70 07 40 03 40 03
-        HEX c0 83 c0 83 40 03 40 03
-        HEX 40 03 42 03 a8 95 d4 8a
-        HEX 80 d0 00 00 55 00 41 20
-        HEX 00 01 78 0f 38 00 41 20
-        HEX 60 21 00 00 00 00 e0 80
-        HEX a0 83 80 80 20 05 b0 8c
-        HEX e0 81 c0 8f 50 05 50 05
-        HEX b0 9e 98 8f a0 80 a0 80
-        HEX 44 03 40 03 66 33 63 63
-        HEX 55 00 55 00 78 20 78 00
-        HEX 55 00 55 00 70 00 70 00
-        HEX 60 33 66 03 40 03 40 03
-        HEX c8 93 c0 83 40 03 40 03
-        HEX 40 03 46 03 aa d5 d5 aa
-        HEX 8a 80 04 00 14 00 20 40
-        HEX 5b 6d 78 0f 68 00 20 40
-        HEX 00 20 0c 00 00 00 e0 81
-        HEX a0 80 80 80 60 07 a8 94
-        HEX f8 87 e0 9c 70 07 70 07
-        HEX 80 be 80 9f a4 82 a4 82
-        HEX 04 01 00 01 67 73 66 33
-        HEX 14 00 14 00 30 20 30 00
-        HEX 14 00 14 00 20 40 20 00
-        HEX 60 33 66 03 00 01 00 01
-        HEX 80 81 80 81 02 01 00 01
-        HEX 02 01 0a 01 aa d4 95 aa
-        HEX a0 81 00 08 00 0a 10 00
-        HEX 5b 6d 78 0f 08 00 10 00
-        HEX 7c 26 1e 00 00 00 a0 83
-        HEX e2 84 80 80 60 07 a4 a4
-        HEX c0 8f 80 9e 60 03 60 03
-        HEX c0 bb d4 9d fc 83 fc 83
-        HEX 7c 0f 70 0f 63 63 66 33
-        HEX 00 0a 00 0a 7e 23 7e 03
-        HEX 00 0a 00 0a 7c 23 7c 03
-        HEX 40 31 46 01 78 1f 78 1f
-        HEX f2 cf f0 8f 72 0f 70 2f
-        HEX 72 0f 72 0f 8a d1 c5 a8
-        HEX 80 84 00 00 40 2a 08 41
-        HEX 7f 7f 78 0f 0e 00 08 41
-        HEX 7c 2e 3f 00 03 00 a0 83
-        HEX e6 8d bf 80 60 07 a4 a4
-        HEX f0 99 80 b3 58 0d 58 0d
-        HEX 80 b8 e1 bc cf 8f cf 8f
-        HEX 60 17 68 17 7f 7f 7e 3f
-        HEX 40 2a 40 2a 7f 27 7f 47
-        HEX 40 2a 40 2a 7a 15 7a 05
-        HEX 78 1f 7c 0f 6c 37 6c 37
-        HEX ea d7 e8 97 6a 17 68 2f
-        HEX 6a 17 62 17 ca d3 e5 a9
-        HEX 80 d0 00 00 40 2a 45 22
-        HEX 7e 3f 78 0f 4e 73 45 22
-        HEX 7c 72 7a 3f 0e 00 a0 83
-        HEX ee 9d 98 80 60 07 a2 c4
-        HEX 80 b0 80 b0 44 11 44 11
-        HEX 80 b8 84 b8 c9 88 c9 88
-        HEX 40 23 44 23 7e 3f 7c 1f
-        HEX 40 2a 60 2b 7b 76 7b 26
-        HEX 40 2a 40 3b 71 08 71 04
-        HEX 7c 0f 78 1f 46 63 46 63
-        HEX c4 a3 c4 a3 47 13 48 73
-        HEX 46 23 42 23 ea d7 f5 ab
-        HEX 8a 80 10 00 40 2a 22 14
-        HEX 7e 3e 40 01 7f 7e 02 10
-        HEX 7c 22 70 7f 78 7f e0 81
-        HEX ee 9d fc 8c 60 07 e2 c7
-        HEX 80 b0 80 b0 22 22 24 12
-        HEX 80 f8 80 b8 c9 88 c9 88
-        HEX 00 21 03 11 70 07 70 07
-        HEX 40 2a 40 2a 33 3c 33 16
-        HEX 40 2a 40 2a 22 14 21 7e
-        HEX 66 03 60 33 06 31 0c 61
-        HEX 80 81 88 91 02 79 1f 21
-        HEX 02 11 02 11 ca d3 e5 a9
-        HEX a0 80 00 08 00 0a 14 08
-        HEX 3e 3c 40 01 3f 7c 64 03
-        HEX 38 01 78 7f 78 7f e0 80
-        HEX e6 8c fe bf 70 0f ae f4
-        HEX 80 e0 80 b0 11 22 12 22
-        HEX 80 f8 80 b8 ff 8f ff 8f
-        HEX 40 23 42 0b 70 07 70 07
-        HEX 00 0a 00 0a 7b 00 7e 0c
-        HEX 00 0a 00 0a 74 00 71 04
-        HEX 76 03 60 37 46 1b 58 63
-        HEX c0 83 d0 8b 40 13 48 03
-        HEX 42 0b 42 0b 8a d1 c5 a8
-        HEX 80 85 40 00 14 00 08 50
-        HEX 3e 3c 40 01 3f 7c 30 46
-        HEX 50 01 78 3f 78 71 a0 80
-        HEX a2 84 fe bf 70 0f ec b7
-        HEX fc e1 fc b1 11 44 11 21
-        HEX 80 f8 80 f8 a4 82 a4 82
-        HEX 40 03 44 03 70 07 70 07
-        HEX 14 00 14 00 78 00 78 14
-        HEX 14 00 14 00 70 00 70 00
-        HEX 76 07 70 37 60 03 40 07
-        HEX e0 87 e0 87 40 03 40 03
-        HEX 42 03 42 03 aa d4 95 aa
-        HEX 80 d0 00 00 55 00 05 20
-        HEX 3e 3c 40 01 3f 7c 11 24
-        HEX 20 03 14 6c 70 60 fe 8f
-        HEX ff ff 80 80 78 1f ec b7
-        HEX fe e3 fe f3 22 44 11 41
-        HEX f8 f9 f8 f9 ff ff ff ff
-        HEX 60 06 60 06 30 06 30 06
-        HEX 55 00 55 00 4c 01 6c 00
-        HEX 55 00 55 00 58 01 58 01
-        HEX 30 06 30 06 30 06 60 0c
-        HEX e0 87 e0 87 60 06 60 06
-        HEX 62 06 60 06 aa d5 d5 aa
-        HEX 8a 80 00 00 55 00 02 10
-        HEX ca d3 40 01 00 00 12 14
-        HEX 18 06 12 48 40 24 fc 9f
-        HEX b7 9b 80 80 7c 3f e8 97
-        HEX cf f7 cf e7 22 22 22 42
-        HEX fe ff fe ff b7 9b b7 9b
-        HEX 20 04 20 04 30 0e 38 06
-        HEX 55 00 55 00 4c 01 6c 00
-        HEX 55 00 55 00 08 01 04 01
-        HEX 30 06 30 06 30 0c 30 0c
-        HEX f0 8f f0 8f 20 04 20 04
-        HEX 22 04 20 04 a8 95 d4 8a
-        HEX a0 81 00 20 55 00 44 08
-        HEX ca d3 7c 1f 00 20 14 04
-        HEX 18 06 12 48 40 20 80 80
-        HEX ff 8f 80 80 7e 7f b0 8c
-        HEX 87 b7 87 e7 11 22 22 24
-        HEX ff ff ff ff ff 8f ff 8f
-        HEX 20 04 20 04 38 1e 3c 0e
-        HEX 55 00 55 00 4c 03 6c 00
-        HEX 55 00 55 00 08 01 02 01
-        HEX 38 06 30 0e 38 0c 30 1c
-        HEX a0 84 a0 84 20 04 20 04
-        HEX 22 04 20 04 a8 95 d4 8a
-        HEX 80 84 04 00 14 00 28 05
-        HEX c8 93 7f 7f 04 00 10 44
-        HEX 1c 0e 08 24 00 11 80 80
-        HEX fe 87 80 80 7e 7f e0 87
-        HEX 80 80 80 80 09 44 14 14
-        HEX ff ff ff ff fe c7 fe c7
-        HEX 30 0c 30 0c 3c 00 00 1e
-        HEX 14 00 14 00 0e 00 6e 01
-        HEX 14 00 14 00 0c 03 03 03
-        HEX 00 0e 38 00 00 1c 38 00
-        HEX b0 8c b0 8c 30 0c 30 0c
-        HEX 32 0c 30 0c a0 85 d0 82
-        HEX 80 d0 00 00 00 00 10 02
-        HEX 00 00 00 00 00 00 11 24
-        HEX 00 00 00 00 00 0e 80 80
-        HEX 80 80 80 80 60 07 80 80
-        HEX 80 80 80 80 00 00 00 00
-        HEX 80 80 80 80 80 80 80 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 80 80 80 80 00 00 00 00
-        HEX 00 00 00 00 80 80 80 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 80 80 80 80 80 80 80 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 80 80 80 80 80 80 80 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 80 80 80 80 80 80 80 80
-        HEX 00 00 00 00 00 00 00 00
-        HEX 80 80 80 80 80 80 80 80
-        HEX 28 28 28 28 28 28 28 28
-        HEX a8 a8 a8 a8 a8 a8 a8 a8
-        HEX 28 28 28 28 28 28 28 28
-        HEX a8 a8 a8 a8 a8 a8 a8 a8
-        HEX 28 28 28 28 28 28 28 28
-        HEX a8 a8 a8 a8 a8 a8 a8 a8
-        HEX 28 28 28 28 28 28 28 28
-        HEX a8 a8 a8 a8 a8 a8 a8 a8
-        HEX 50 50 50 50 50 50 50 50
-        HEX d0 d0 d0 d0 d0 d0 d0 d0
-        HEX 50 50 50 50 50 50 50 50
-        HEX d0 d0 d0 d0 d0 d0 d0 d0
-        HEX 50 50 50 50 50 50 50 50
-        HEX d0 d0 d0 d0 d0 d0 d0 d0
-        HEX 50 50 50 50 50 50 50 50
-        HEX d0 d0 d0 d0 d0 d0 d0 d0
-        HEX 20 24 28 2c 30 34 38 3c
-        HEX 20 24 28 2c 30 34 38 3c
-        HEX 21 25 29 2d 31 35 39 3d
-        HEX 21 25 29 2d 31 35 39 3d
-        HEX 22 26 2a 2e 32 36 3a 3e
-        HEX 22 26 2a 2e 32 36 3a 3e
-        HEX 23 27 2b 2f 33 37 3b 3f
-        HEX 23 27 2b 2f 33 37 3b 3f
-        HEX 20 24 28 2c 30 34 38 3c
-        HEX 20 24 28 2c 30 34 38 3c
-        HEX 21 25 29 2d 31 35 39 3d
-        HEX 21 25 29 2d 31 35 39 3d
-        HEX 22 26 2a 2e 32 36 3a 3e
-        HEX 22 26 2a 2e 32 36 3a 3e
-        HEX 23 27 2b 2f 33 37 3b 3f
-        HEX 23 27 2b 2f 33 37 3b 3f
-        HEX 20 24 28 2c 30 34 38 3c
-        HEX 20 24 28 2c 30 34 38 3c
-        HEX 21 25 29 2d 31 35 39 3d
-        HEX 21 25 29 2d 31 35 39 3d
-        HEX 22 26 2a 2e 32 36 3a 3e
-        HEX 22 26 2a 2e 32 36 3a 3e
-        HEX 23 27 2b 2f 33 37 3b 3f
-        HEX 23 27 2b 2f 33 37 3b 3f
-        HEX 00 00 02 02 02 02 02 02
-        HEX 02 03 03 03 03 03 03 03
-        HEX 04 04 04 04 04 04 04 05
-        HEX 05 05 05 05 05 05 06 06
-        HEX 06 06 06 06 06 07 07 07
-        HEX 07 07 07 07 08 08 08 08
-        HEX 08 08 08 09 09 09 09 09
-        HEX 09 09 0a 0a 0a 0a 0a 0a
-        HEX 0a 0b 0b 0b 0b 0b 0b 0b
-        HEX 0c 0c 0c 0c 0c 0c 0c 0d
-        HEX 0d 0d 0d 0d 0d 0d 0e 0e
-        HEX 0e 0e 0e 0e 0e 0f 0f 0f
-        HEX 0f 0f 0f 0f 10 10 10 10
-        HEX 10 10 10 11 11 11 11 11
-        HEX 11 11 12 12 12 12 12 12
-        HEX 12 13 13 13 13 13 13 13
-        HEX 14 14 14 14 14 14 14 15
-        HEX 15 15 15 15 15 15 16 16
-        HEX 16 16 16 16 16 17 17 17
-        HEX 17 17 17 17 18 18 18 18
-        HEX 18 18 18 19 19 19 19 19
-        HEX 19 19 1a 1a 1a 1a 1a 1a
-        HEX 1a 1b 1b 1b 1b 1b 1b 1b
-        HEX 1c 1c 1c 1c 1c 1c 1c 1d
-        HEX 1d 1d 1d 1d 1d 1d 1e 1e
-        HEX 1e 1e 1e 1e 1e 1f 1f 1f
-        HEX 1f 1f 1f 1f 20 20 20 20
-        HEX 20 20 20 21 21 21 21 21
-        HEX 21 21 22 22 22 22 22 22
-        HEX 22 23 23 23 23 23 23 23
-        HEX 24 24 24 24 24 24 24 25
-        HEX 25 25 25 25 25 25 00 00
-        HEX a0 c0 81 82 84 88 90 a0
-        HEX c0 81 82 84 88 90 a0 c0
-        HEX 81 82 84 88 90 a0 c0 81
-        HEX 82 84 88 90 a0 c0 81 82
-        HEX 84 88 90 a0 c0 81 82 84
-        HEX 88 90 a0 c0 81 82 84 88
-        HEX 90 a0 c0 81 82 84 88 90
-        HEX a0 c0 81 82 84 88 90 a0
-        HEX c0 81 82 84 88 90 a0 c0
-        HEX 81 82 84 88 90 a0 c0 81
-        HEX 82 84 88 90 a0 c0 81 82
-        HEX 84 88 90 a0 c0 81 82 84
-        HEX 88 90 a0 c0 81 82 84 88
-        HEX 90 a0 c0 81 82 84 88 90
-        HEX a0 c0 81 82 84 88 90 a0
-        HEX c0 81 82 84 88 90 a0 c0
-        HEX 81 82 84 88 90 a0 c0 81
-        HEX 82 84 88 90 a0 c0 81 82
-        HEX 84 88 90 a0 c0 81 82 84
-        HEX 88 90 a0 c0 81 82 84 88
-        HEX 90 a0 c0 81 82 84 88 90
-        HEX a0 c0 81 82 84 88 90 a0
-        HEX c0 81 82 84 88 90 a0 c0
-        HEX 81 82 84 88 90 a0 c0 81
-        HEX 82 84 88 90 a0 c0 81 82
-        HEX 84 88 90 a0 c0 81 82 84
-        HEX 88 90 a0 c0 81 82 84 88
-        HEX 90 a0 c0 81 82 84 88 90
-        HEX a0 c0 81 82 84 88 90 a0
-        HEX c0 81 82 84 88 90 a0 c0
-        HEX 81 82 84 88 90 a0 c0 81
-        HEX 82 84 88 90 a0 c0 81 82
-        HEX ff ff 10 4c 7f 17 4c 31
-        HEX 18 4c 79 16 4c 7c 16 4c
-        HEX 19 17 4c 3e 19 4c 87 19
-        HEX 4c 8f 19 4c 0f 1a 4c f3
-        HEX 19 4c dc 19 4c d4 19 4c
-        HEX 01 1a 4c 17 16 4c 37 16
-        HEX 4c 1d 1a 4c 39 1c 4c 7f
-        HEX 1d 4c f1 1d 4c 64 1d 4c
-        HEX 91 1d 4c 97 1d 4c a3 1d
-        HEX 4c df 1d 4c c4 1a 4c 19
-        HEX 1b 4c 02 1b 4c 3b 17 4c
-        HEX 67 18 4c 94 18 4c 98 18
-        HEX 4c 51 16 4c 70 16 4c 15
-        HEX 1c 2c 5b 17 70 1a 8d fd
-        HEX 15 ad 36 c0 29 9f 48 29
-        HEX 7f 8d 36 c0 a9 00 20 0b
-        HEX 16 68 8d 36 c0 a9 00 60
-        HEX 2c e8 c0 38 48 e9 01 d0
-        HEX fc 68 e9 01 d0 f6 60 a2
-        HEX 08 bd 00 12 8d 2c 16 bd
-        HEX c0 12 45 7f 8d 2d 16 a0
-        HEX 26 a9 80 99 00 20 88 d0
-        HEX fa e8 e0 98 90 e3 60 20
-        HEX 15 1c a2 00 a5 7f f0 01
-        HEX e8 dd 54 c0 45 80 85 7f
-        HEX 2c 50 c0 20 02 1b d0 fb
-        HEX 60 c9 00 f0 02 a9 ff 8d
-        HEX 80 15 48 2c 5b 17 70 0e
-        HEX c9 01 ad 36 c0 29 1f 90
-        HEX 02 09 80 8d 36 c0 68 60
-        HEX 2c 80 15 30 03 2c e8 c0
-        HEX 60 4c 86 16 8d c5 16 8c
-        HEX c4 16 a9 00 f0 02 a9 80
-        HEX 8d 03 17 ac 79 ba a9 00
-        HEX 99 09 17 88 b9 7a ba 99
-        HEX 09 17 88 10 f7 ad 3c b7
-        HEX 48 8c 3c b7 ad 98 bf 29
-        HEX 30 c9 30 d0 07 20 1e b7
-        HEX 04 17 90 48 2c 03 17 10
-        HEX 08 20 1e b7 09 17 4c c8
-        HEX 16 20 21 b7 ff ff 09 17
-        HEX b0 32 ad 98 bf 29 30 c9
-        HEX 30 d0 29 a0 01 b9 f2 ba
-        HEX 99 e7 16 b9 f6 ba 99 e9
-        HEX 16 88 10 f1 20 24 b7 00
-        HEX 00 00 00 04 17 90 0d c9
-        HEX 09 d0 08 20 30 b7 04 17
-        HEX 18 90 01 38 aa 68 8d 3c
-        HEX b7 8a 60 00 2f 52 41 4d
-        HEX 2f 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 a9 20 aa 45 7f 8d 2d
-        HEX 17 45 80 8d 2a 17 a0 00
-        HEX b9 00 40 99 00 20 c8 d0
-        HEX f7 ee 2a 17 ee 2d 17 ca
-        HEX d0 ee 60 29 07 aa bd 4b
-        HEX 17 8d 85 18 bd 53 17 8d
-        HEX 89 18 60 00 2a 55 7f 80
-        HEX aa d5 ff 00 55 2a 7f 80
-        HEX d5 aa ff ff 00 00 c0 00
-        HEX 02 00 6a 17 00 00 01 03
-        HEX 02 01 d8 20 00 c4 ce 5d
-        HEX 17 18 60 a2 00 86 2a ae
-        HEX 5e 17 86 2b b1 2a 60 78
-        HEX 20 56 18 a9 00 8d 5c 17
-        HEX 85 2a 85 7e a2 c7 86 2b
-        HEX a0 0c b1 2a c9 20 d0 1e
-        HEX a0 11 b1 2a d0 18 a0 fb
-        HEX b1 2a c9 d6 d0 10 8a 8d
-        HEX 5e 17 0a 0a 0a 0a 8d 5f
-        HEX 17 20 ff 17 d0 05 ca e0
-        HEX c1 b0 d3 ae b3 fb e0 06
-        HEX d0 28 ae c0 fb e0 f0 b0
-        HEX 21 e0 e0 90 1d 08 ce 5c
-        HEX 17 28 d0 16 20 1f fe b0
-        HEX 11 ad 36 c0 48 29 80 8d
-        HEX 5b 17 68 29 9f 09 80 8d
-        HEX 36 c0 a9 00 85 78 85 7d
-        HEX 85 7f 85 80 58 2c 57 c0
-        HEX 2c 55 c0 2c 52 c0 60 ad
-        HEX 5f 17 f0 fa a9 02 8d 60
-        HEX 17 20 00 bf 40 60 17 a0
-        HEX 13 20 73 17 8d 6c 17 8e
-        HEX 6d 17 a0 19 20 23 18 a9
-        HEX 08 a0 12 78 48 20 73 17
-        HEX 85 2a ac 5f 17 68 6c 2a
-        HEX 00 2c 82 c0 20 f3 19 20
-        HEX 58 fc 20 2f fb ad 5f 17
-        HEX f0 14 a9 00 20 21 18 a0
-        HEX 00 8c 5f 17 c8 8c 60 17
-        HEX 20 00 bf 41 60 17 2c 5b
-        HEX 17 70 0b ad 36 c0 29 1f
-        HEX 0d 5b 17 8d 36 c0 60 a4
-        HEX 07 30 28 a6 06 b9 10 12
-        HEX 85 26 b9 d0 12 45 7f 85
-        HEX 27 20 7d 18 e8 bc 80 13
-        HEX f0 11 98 4a a9 80 90 02
-        HEX a9 80 51 26 3d 80 14 51
-        HEX 26 91 26 60 86 08 84 09
-        HEX 20 67 18 a5 08 c5 06 d0
-        HEX 06 a5 09 c5 07 f0 ec a9
-        HEX 01 85 0a 85 0b a2 ff 38
-        HEX a5 08 e5 06 b0 07 38 a5
-        HEX 06 e5 08 86 0a 85 04 38
-        HEX a5 09 e5 07 b0 07 38 a5
-        HEX 07 e5 09 86 0b 85 05 c5
-        HEX 04 90 29 85 60 4a 85 61
-        HEX 18 a5 61 65 04 85 61 38
-        HEX e5 05 90 09 85 61 18 a5
-        HEX 06 65 0a 85 06 18 a5 07
-        HEX 65 0b 85 07 20 67 18 c6
-        HEX 60 d0 dd 60 a5 04 85 60
-        HEX 4a 85 61 18 a5 06 65 0a
-        HEX 85 06 aa 18 a5 61 65 05
-        HEX 85 61 90 05 e5 04 4c 1e
-        HEX 19 38 e5 04 90 18 85 61
-        HEX 18 a5 07 65 0b 85 07 a8
-        HEX 30 0f b9 10 12 85 26 b9
-        HEX d0 12 45 7f 85 27 20 79
-        HEX 18 c6 60 d0 c6 60 a6 23
-        HEX ca 8a 85 25 0a 0a 0a 85
-        HEX 69 a5 22 0a 0a 0a aa bd
-        HEX 00 12 65 20 8d 7a 19 8d
-        HEX 7d 19 bd c0 12 8d 7b 19
-        HEX 45 80 8d 7e 19 bd 08 12
-        HEX 65 20 8d 77 19 bd c8 12
-        HEX 8d 78 19 a4 21 88 b9 00
-        HEX 21 99 00 20 99 00 40 88
-        HEX 10 f4 e8 e4 69 90 c8 a5
-        HEX 25 a2 00 86 24 f0 08 a6
-        HEX 24 e4 21 b0 3c a5 25 0a
-        HEX 0a 0a aa a9 08 85 69 bd
-        HEX 00 12 65 20 8d be 19 8d
-        HEX c1 19 bd c0 12 45 7f 8d
-        HEX bf 19 45 80 8d c2 19 a9
-        HEX 80 45 7e a6 24 9d 00 20
-        HEX 9d 00 40 e8 e4 21 90 f5
-        HEX ad bf 19 69 03 c6 69 d0
-        HEX de 4c 64 1d a9 1e 85 21
-        HEX a9 00 f0 06 a9 09 85 21
-        HEX a9 1f 85 20 a9 18 85 23
-        HEX a9 14 85 22 85 25 a9 00
-        HEX 85 24 60 a9 28 85 21 a9
-        HEX 18 85 23 a9 00 85 20 f0
-        HEX e9 a9 26 85 21 a9 13 85
-        HEX 23 a9 01 85 20 d0 db a4
-        HEX 22 84 25 98 20 89 19 c8
-        HEX c4 23 90 f7 60 48 8e 84
-        HEX 1a a6 24 e4 21 b0 58 29
-        HEX 7f a8 a5 25 0a 0a 0a aa
-        HEX bd 00 12 65 20 65 24 8d
-        HEX 5e 1a 8d 61 1a 4a 90 05
-        HEX c0 1a b0 01 c8 bd c0 12
-        HEX 45 7f 8d 5f 1a 45 80 8d
-        HEX 62 1a 18 a2 08 8e 5a 1a
-        HEX b9 00 08 45 7e 8d 00 20
-        HEX 8d 00 40 ad 5f 1a 69 04
-        HEX 8d 5f 1a 45 80 8d 62 1a
-        HEX ad 59 1a 49 80 8d 59 1a
-        HEX 30 de e8 e0 0c 90 d6 ae
-        HEX 84 1a 68 60 00 20 89 1a
-        HEX c8 a9 00 85 72 a9 0c 85
-        HEX 73 be a0 11 18 b1 72 48
-        HEX 8a 91 72 68 aa a5 72 69
-        HEX 60 85 72 90 f0 e6 73 a5
-        HEX 73 c9 12 90 e8 8a 99 00
-        HEX 0c 60 f3 1b ed 1b cd 1b
-        HEX 4d 1b bc 1b 47 1b a8 1b
-        HEX 31 1b 41 1b 86 69 aa 4a
-        HEX b0 35 e0 12 b0 31 ad 81
-        HEX 15 f0 2c ad 80 15 f0 18
-        HEX 2c 5b 17 70 13 ad 36 c0
-        HEX 29 1f 48 8d 36 c0 20 f0
-        HEX 1a 68 09 80 8d 36 c0 60
-        HEX 08 78 20 f7 1a 28 60 bd
-        HEX b3 1a 48 bd b2 1a 48 a6
-        HEX 69 60 a5 7d f0 12 a5 79
-        HEX a2 01 b4 79 94 78 e8 e0
-        HEX 04 90 f7 20 c4 1a c6 7d
-        HEX 60 a6 7d f0 10 b4 78 d0
-        HEX 01 ca e0 04 90 07 48 20
-        HEX 02 1b 68 a6 7d 95 79 e6
-        HEX 7d 60 a0 10 a9 30 48 20
-        HEX 08 16 2c 30 c0 68 88 d0
-        HEX f5 60 a0 32 a9 17 d0 ee
-        HEX a2 40 a0 40 d0 04 a2 e0
-        HEX a0 06 86 60 86 0a 84 61
-        HEX a9 01 85 0b a5 61 85 69
-        HEX a6 0a ca d0 fd 2c 30 c0
-        HEX 2c e8 c0 a6 0b ca d0 fd
-        HEX 2c 30 c0 2c e8 c0 c6 69
-        HEX d0 e6 c6 0a e6 0b a5 0b
-        HEX c9 1b d0 d8 a5 61 85 69
-        HEX a6 0a ca d0 fd 2c 30 c0
-        HEX 2c e8 c0 a6 0b ca d0 fd
-        HEX 2c 30 c0 2c e8 c0 c6 69
-        HEX d0 e6 e6 0a c6 0b d0 dc
-        HEX 60 a9 fb 85 60 e8 d0 fd
-        HEX 2c 30 c0 2c e8 c0 c6 60
-        HEX a6 60 d0 f1 60 a0 a0 98
-        HEX aa ca d0 fd 2c 30 c0 2c
-        HEX e8 c0 88 d0 f2 60 a9 40
-        HEX 85 60 a9 e0 85 61 20 f1
-        HEX 1d 05 61 aa ca d0 fd 2c
-        HEX 30 c0 2c e8 c0 c6 61 a5
-        HEX 61 c5 60 b0 e9 60 a9 e8
-        HEX a2 ff d0 04 a9 00 a2 08
-        HEX 86 60 8d 0e 1c a9 00 85
-        HEX 61 20 f1 1d 05 61 aa ca
-        HEX d0 fd 2c 30 c0 2c e8 c0
-        HEX c6 60 d0 ed 60 20 64 1d
-        HEX ad 5f 17 f0 0c ac 5d 17
-        HEX 20 64 1d cc 5d 17 f0 f8
-        HEX 60 ad 5c 17 f0 0a ad 19
-        HEX c0 10 fb ad 19 c0 30 fb
-        HEX 60 a9 08 85 6b 38 a5 00
-        HEX e9 09 85 6c 38 a5 01 e9
-        HEX 04 85 6d a9 10 85 69 a9
-        HEX 00 8d eb 1c a9 0c 8d ec
-        HEX 1c ad 00 c0 10 03 20 69
-        HEX 1d a5 6d c9 40 b0 1d 4a
-        HEX 85 73 a9 00 6a 46 73 6a
-        HEX 85 72 a5 73 69 60 85 73
-        HEX a2 00 a4 6c c0 40 90 14
-        HEX a9 00 f0 2f a2 25 a9 01
-        HEX 95 81 ca a9 00 95 81 ca
-        HEX 10 f4 30 2d b1 72 29 7e
-        HEX c9 20 90 17 c9 59 b0 13
-        HEX 86 6e 85 6f ee 69 17 ae
-        HEX 69 17 bd 00 b7 29 02 65
-        HEX 6f a6 6e 95 81 e8 18 69
-        HEX 01 95 81 e8 c8 e0 26 90
-        HEX bb a5 6d e6 6d c5 01 d0
-        HEX 08 ac 82 15 84 93 c8 84
-        HEX 94 a4 6b e6 6b 18 b9 00
-        HEX 12 69 01 8d ee 1c b9 c0
-        HEX 12 45 7f 8d ef 1c a2 25
-        HEX b4 81 b9 00 0c 9d 00 20
-        HEX ca 10 f5 18 ad eb 1c 69
-        HEX 60 8d eb 1c 90 03 ee ec
-        HEX 1c c6 69 d0 cc a5 6b c9
-        HEX 98 b0 03 4c 4b 1c 20 37
-        HEX 16 ce 66 17 d0 0a a9 02
-        HEX 8d 66 17 a0 00 20 85 1a
-        HEX ce 67 17 d0 11 a9 03 8d
-        HEX 67 17 ae 69 0c ac c9 0c
-        HEX 8c 69 0c 8e c9 0c ce 68
-        HEX 17 d0 11 a9 02 8d 68 17
-        HEX ae 2c 0d ac 8c 0d 8c 2c
-        HEX 0d 8e 8c 0d ae d9 0c ac
-        HEX 39 0d 8c d9 0c 8e 39 0d
-        HEX ae d8 0c ac 38 0d 8c d8
-        HEX 0c 8e 38 0d ad 00 c0 10
-        HEX 15 c9 a0 d0 04 a2 00 86
-        HEX 78 a6 78 e0 04 b0 07 95
-        HEX 74 e6 78 2c 10 c0 60 a0
-        HEX 07 20 64 1d a5 78 d0 f6
-        HEX a9 4f 20 0b 16 88 d0 f1
-        HEX 60 20 97 1d f0 fb 60 20
-        HEX d6 1d 20 7f 1d a5 78 d0
-        HEX 0c f0 2a 20 d6 1d 20 39
-        HEX 1c a5 78 f0 20 a9 20 20
-        HEX 1d 1a a5 74 c6 78 a2 01
-        HEX c9 ff d0 02 a9 88 c9 e0
-        HEX 90 02 49 20 b4 74 94 73
-        HEX e8 e0 04 90 f7 ae 64 17
-        HEX ac 65 17 29 7f 60 8e 64
-        HEX 17 8c 65 17 20 70 16 ae
-        HEX ed 1d ca e0 7c b0 02 a2
-        HEX 7f 8e ed 1d a9 7c 20 1d
-        HEX 1a 18 ad 27 1e a2 0e 7d
-        HEX 18 1e 9d 18 1e ca 10 f7
-        HEX ad 27 1e 18 6d 18 1e 8d
-        HEX 18 1e a2 0f fe 18 1e d0
-        HEX 03 ca 10 f8 ad 18 1e 60
-        HEX 64 76 85 54 f6 5c 76 1f
-        HEX e7 12 a7 6b 93 c4 6e 1b
-        HEX e7 12 a7 6b 93 c4 6e 1b
-        HEX 76 1f e7 12 a7 6b 93 c4
-        HEX 6e 1b 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-@ %def STUPH_BLOB
-
-<<stuph.asm>>=
-        PROCESSOR 6502
-<<stuph blob>>
-@
-
 \section{NIF: the ending screen}
 
 \texttt{NIF} --- \emph{fin} reversed --- is the game's victory screen:
@@ -16967,7 +18813,8 @@ reverse engineering proceeds.
 \midrule
 \$0000--\$00FF & zero page (PROM, boot, game workspaces) & --- \\
 \$0800--\$09FF & boot block (boot time only) & block 0 \\
-\$0800--\$0BFF & \texttt{MAPCHARS} tile graphics (run time) & file \\
+\$0800--\$1FFF & \texttt{STUPH} resident library (run time;
+  \texttt{MAPCHARS} overlays \$0800--\$0BFF in towns/castles) & files \\
 \$0C00--\$13FF & volume directory buffer (boot time) & boot \\
 \$1E00--\$1FFF & kernel index block buffer (boot time) & boot \\
 \$2000--\$3FFF & hi-res page 1; kernel load area (boot time) & --- \\

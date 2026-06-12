@@ -50,10 +50,10 @@ The 16 assembly targets mirror `targets.json` — one per ProDOS file (plus the 
 | `gen` | `$8956` | 8932 | character generation overlay |
 | `tm` | `$8956` | 8123 | time machine (endgame) overlay |
 | `makeindata` | `$1E00` | 13877 | initial game state builder |
-| `mapchars` | `$0800` | 1024 | tile graphics data |
+| `mapchars` | `$0800` | 1024 | town/castle glyph bank (alternate font bank A) |
 | `tcmaps` | `$4000` | 7660 | town/castle map data |
 | `nif` | `$4000` | 7680 | hi-res image data |
-| `stuph` | `$0800` | 6144 | graphics/shape data |
+| `stuph` | `$0800` | 6144 | resident low-memory library: fonts, tiles, blitters, keyboard, sound, RNG ($1583 vector API) |
 
 The ProDOS 1.1.1 kernel (file `PRODOS`, byte-identical to Apple's 18-SEP-84 release) is extracted as `reference/prodos111.bin` for inspection but is **not** an RE target — it is treated as an external dependency like the monitor ROM.
 
