@@ -9,6 +9,24 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 9 (2026-06-12): MI.U1 low region carved; EQU stubs = 0
+
+- MIU1_CODE_A is gone: DISK_PROMPT/$7DCC (dual entry, DC.B $2C
+  trick, carry = caller's error flag, "Ultima"/"Player" disk
+  names), PAGE1_LOCK/$7E05 (end double-buffering with the image
+  live on page 1), and the full player state block $7E16-$8036 as
+  labeled data: LOC_NAME table, WIN_SAVE_BUF, CAP_FLAG, the
+  /U1.PLAYER + /U1.VARS pathnames, TICK params, CMD_KEYS (26:
+  arrows, space, ctrl-A, ABCDEFGHIKNOQRSTUVXZ), sound mirrors,
+  OWNED_*/READY_* arrays, PLR_NAME..PLR_EXP (shipped snapshot:
+  Glinda, female, 900 hits, 2104 coin -- the crack's master save),
+  two unidentified $03E8 words + a few flag bytes, 325-byte BSS.
+- All round-7/8 state EQUs converted to real labels; CAP_FLAG EQU
+  stub resolved -> EQU-stub metric is now ZERO. The 2 stray code
+  bytes ($7DCC) moved out of MIU1_STRINGS.
+- Remaining ORG stubs: 11 (miu1 masks $7003 + strings $73AF, 7
+  overlays, makeindata, tcmaps). PDF 477 pages.
+
 ### Round 8 (2026-06-12): MI.U1 engine code complete ($841E-$89BC)
 
 - The high stub is GONE -- all engine code $8037-$89BC annotated:

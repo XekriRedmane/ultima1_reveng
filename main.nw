@@ -6600,10 +6600,8 @@ data regions remain as classified stubs:
 \item [[MIU1_STRINGS]] --- roughly 2.6K of packed text: the race,
   class, item, weapon, spell, and command name tables (their entry
   points are EQU'd below, [[STR_RACES]] through [[STR_COMMANDS]]),
-  prompts, and the save-file
-  pathnames. The engine's player state block ([[$7E05]]--[[$8036]],
-  inside [[MIU1_CODE_A]]) holds the live character data; both are
-  carved in the next rounds.
+  prompts, and place names. The player state block that follows it
+  is fully carved (see [[LOC_NAME]] onward).
 \end{itemize}
 
 <<miu1 defines>>=
@@ -7070,92 +7068,201 @@ MIU1_STRINGS
         HEX 42 72 6f 74 68 65 f2 54
         HEX 68 65 20 54 75 72 74 6c
         HEX e5 4c 6f 73 74 20 46 72
-        HEX 69 65 6e 64 f3 a2 00
+        HEX 69 65 6e 64 f3
 @ %def MIU1_STRINGS
 
-<<miu1 code low stub>>=
-        ORG $7DCE
-MIU1_CODE_A
-        ; STUB — not yet disassembled (engine code, first part)
-        HEX 2c a2 01 90 25 20 19 81
-        HEX 7d 50 75 74 20 69 6e 20
-        HEX 74 68 65 20 00 20 b8 80
-        HEX f9 7d 20 19 81 20 44 69
-        HEX 73 6b 00 20 fa 87 20 98
-        HEX 15 38 60 55 6c 74 69 6d
-        HEX e1 50 6c 61 79 65 f2 a5
-        HEX 7f d0 03 20 8f 15 2c 54
-        HEX c0 a9 00 85 7f 85 80 60
-        HEX 47 45 4e 00 4f 55 54 00
-        HEX 44 4e 47 00 54 57 4e 00
-        HEX 43 41 53 00 53 50 41 00
-        HEX 54 4d 00 00 28 00 18 00
-        HEX 00 00 2f 55 31 2e 50 4c
-        HEX 41 59 45 52 2f 55 31 2e
-        HEX 56 41 52 53 00 00 00 00
-        HEX 00 05 50 00 00 0b 0a 15
-        HEX 08 20 01 41 42 43 44 45
-        HEX 46 47 48 49 4b 4e 4f 51
-        HEX 52 53 54 55 56 58 5a ca
-        HEX 01 00 00 ff ff 20 20 00
-        HEX 00 00 00 00 00 00 00 01
+\section{The disk prompt}
+
+When a file operation fails with an error, the engine asks for the
+right disk and retries. Two entry points pick the disk name ---
+[[DISK_PROMPT]] (the \emph{Ultima} disk, with the classic
+[[DC.B $2C]] skip over the second entry's [[LDX]]) and
+[[DISK_PROMPT_P]] (the \emph{Player} disk). The carry is the
+caller's error flag: called with carry clear nothing happens, so
+callers can unconditionally [[JSR]] here after a load and loop on
+the returned carry.
+
+<<miu1 disk prompt>>=
+        ORG $7DCC
+DISK_PROMPT
+        SUBROUTINE
+        ; On error (C set), ask for the Ultima disk and return
+        ; C set; on C clear, return immediately.
+        ;
+        ; Behavior:
+        ;   X selects the disk name (0 = Ultima, 1 = Player);
+        ;   print "Put in the <name> Disk", PRESS_SPACE, clear
+        ;   the line, return C set so the caller retries.
+        LDX #$00                        ; the Ultima disk
+        DC.B $2C                        ; BIT abs: skip the LDX
+DISK_PROMPT_P
+        LDX #$01                        ; the Player disk
+        BCC .rts                        ; no error: nothing to do
+        JSR MSG_PRINT
+        DC.B "}Put in the ",$00
+        JSR STR_NTH
+        DC.W DISK_NAMES
+        JSR MSG_PRINT
+        DC.B " Disk",$00
+        JSR PRESS_SPACE
+        JSR CLR_EOL
+        SEC                             ; tell the caller to retry
+.rts    RTS
+DISK_NAMES
+        DC.B "Ultim",$E1                ; "Ultima"
+        DC.B "Playe",$F2                ; "Player"
+@ %def DISK_PROMPT DISK_PROMPT_P DISK_NAMES
+
+\section{Locking onto page 1}
+
+Popups and overlay switches end double-buffering first:
+[[PAGE1_LOCK]] makes page 1 the live image (copying the displayed
+page onto it if page 1 was the stale buffer) and zeroes both page
+variables, so every later draw lands directly on the visible
+screen.
+
+<<miu1 page1 lock>>=
+        ORG $7E05
+PAGE1_LOCK
+        SUBROUTINE
+        ; End double-buffering with the current image on page 1.
+        ;
+        ; Behavior:
+        ;   If page 1 is the (stale) draw page, PAGE_COPY the
+        ;   displayed image onto it. Show page 1; ZP_PAGE_XOR and
+        ;   ZP_PAGE_TGL := 0 (all drawing now on the live page).
+        LDA ZP_PAGE_XOR
+        BNE .show                       ; page 2 was being drawn:
+        JSR PAGE_COPY                   ;   page 1 already shows
+.show   BIT TXTPAGE1
+        LDA #$00
+        STA ZP_PAGE_XOR
+        STA ZP_PAGE_TGL
+        RTS
+@ %def PAGE1_LOCK
+
+\section{The player state block}
+
+Everything the game knows about the player lives in one block at
+[[LOC_NAME]]--[[$7EF1]], and the engine ships with a snapshot of a
+mid-game character already in it --- \emph{Glinda}, female, 900 hit
+points, 2104 coin --- presumably whatever save was loaded when this
+disk image was mastered. \texttt{GEN} rewrites the block for a new
+game, and the save and restore commands move it to and from
+\texttt{/U1.PLAYER} (whose pathname sits right here in the block).
+
+The block opens with the location-name table that [[GAME_LOAD]]
+indexes (the current location's name at offset 0, the seven overlay
+names at fixed 4-byte offsets), and ends with a stretch of zeroed
+working storage reaching to the text-reader code at [[MSG_GETC]].
+A few fields' meanings are not yet pinned down; they are kept as
+commented hex until an overlay shows how they are used.
+
+<<miu1 state block>>=
+        ORG $7E16
+LOC_NAME
+        DC.B "GEN",$00                  ; +0: the current location
+        DC.B "OUT",$00                  ; +4: outdoors
+        DC.B "DNG",$00                  ; +8: dungeons
+        DC.B "TWN",$00                  ; +12: towns
+        DC.B "CAS",$00                  ; +16: castles
+        DC.B "SPA",$00                  ; +20: space
+        DC.B "TM",$00                   ; +24: the time machine
+WIN_SAVE_BUF
+        HEX 00 28 00 18 00 00           ; saved window: full screen
+CAP_FLAG
+        DC.B $00                        ; STR_NTH_CAP: bit 7 set =
+                                        ;   capitalize next letter
+PATH_PLAYER
+        DC.B "/U1.PLAYER"               ; the character save file
+PATH_VARS
+        DC.B "/U1.VARS",$00             ; the world-state save file
+        HEX 00 00                       ; (unused)
+SAVE_PAGE_TGL
+        DC.B $00                        ; ZP_PAGE_TGL save (popups)
+HILITE_IDX
+        DC.B $00                        ; item index marked readied
+TICK_FOOD
+        DC.B $05                        ; TICK: food cost (stale)
+TICK_MOVE
+        DC.B $50                        ; TICK: move delta (stale)
+DIR_STR_PTR
+        DC.W $0000                      ; overlay's direction-name
+                                        ;   table; 0 = use defaults
+CMD_KEYS
+        HEX 0b 0a 15 08                 ; up, down, right, left
+        HEX 20 01                       ; space (pass), ctrl-A
+        DC.B "ABCDEFGHI"
+        DC.B "KNOQRSTUVXZ"              ; the letter commands
+        HEX ca 01 00 00                 ; fields not yet identified
+PLR_SOUND
+        DC.B $FF                        ; saved master-sound flag
+PLR_SFX DC.B $FF                        ; saved effects flag
+        HEX 20 20                       ; fields not yet identified
+OWNED_ITEMS
+        HEX 00 00 00 00                 ; special items (4)
+READY_SPELL
+        DC.B $00                        ; readied spell index
+READY_WEAPON
+        DC.B $00                        ; readied weapon index
+READY_ARMOUR
+        DC.B $00                        ; readied armour index
+READY_TRANSPORT
+        DC.B $00                        ; current transport index
+OWNED_ARMOUR
+        HEX 01 01 01 01 01 01           ; armour counts (0..5)
+OWNED_WEAPONS
+        HEX 01 01 01 01 01 01 01 01     ; weapon counts (0..15)
         HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 01 01 03 03
-        HEX 03 00 03 03 03 03 03 03
-        HEX 01 01 01 01 01 01 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 ff ff ff ff 00
-        HEX 00 01 47 6c 69 6e 64 61
-        HEX 00 00 00 00 00 00 00 00
-        HEX 84 03 5a 00 5a 00 0f 00
-        HEX 0f 00 32 00 0f 00 38 08
-        HEX 02 00 02 00 00 00 00 00
-        HEX 00 00 00 00 00 00 95 59
-        HEX 00 37 02 e8 03 e8 03 00
-        HEX ff ef be 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00
-@ %def MIU1_CODE_A
+OWNED_SPELLS
+        HEX 01 03 03 03 00 03 03 03     ; spell counts (0..10)
+        HEX 03 03 03
+OWNED_TRANSPORT
+        HEX 01 01 01 01 01 01 00 00     ; transport counts (0..10)
+        HEX 00 00 00
+        HEX 00 00 00 00 00 00 00 00     ; fields not yet identified
+        HEX ff ff ff ff 00              ; fields not yet identified
+PLR_VESSELS
+        DC.B $00                        ; captured enemy vessels
+PLR_SEX DC.B $01                        ; 0 = male, else female
+PLR_NAME
+        DC.B "Glinda",$00               ; the player's name,
+        HEX 00 00 00 00 00 00 00        ;   in a 14-byte field
+PLR_HITS
+        DC.W $0384                      ; hit points (binary), then
+        DC.W $005A                      ;   the six attribute pairs
+        DC.W $005A
+        DC.W $000F
+        DC.W $000F
+        DC.W $0032
+        DC.W $000F
+PLR_COIN
+        DC.W $0838                      ; coin (binary)
+PLR_RACE
+        DC.W $0002                      ; race index (STR_RACES)
+PLR_CLASS
+        DC.W $0002                      ; class index (STR_CLASSES)
+MOVE_CNT
+        HEX 00 00 00 00 00              ; move counter, BCD,
+        HEX 00 00 00 00 00              ;   low byte first
+FOOD_FRAC
+        DC.B $95                        ; food fraction, BCD
+PLR_FOOD
+        DC.W $0059                      ; food (binary)
+PLR_EXP DC.W $0237                      ; experience (binary)
+        DC.W $03E8                      ; not yet identified (1000)
+        DC.W $03E8                      ; not yet identified (1000)
+        HEX 00 ff ef be 00              ; fields not yet identified
+PLR_BSS DS.B 325,$00                    ; zeroed working storage,
+                                        ;   up to the engine code
+@ %def LOC_NAME WIN_SAVE_BUF CAP_FLAG PATH_PLAYER PATH_VARS
+@ %def SAVE_PAGE_TGL HILITE_IDX
+@ %def TICK_FOOD TICK_MOVE DIR_STR_PTR CMD_KEYS PLR_SOUND PLR_SFX
+@ %def OWNED_ITEMS READY_SPELL READY_WEAPON READY_ARMOUR
+@ %def READY_TRANSPORT OWNED_ARMOUR OWNED_WEAPONS OWNED_SPELLS
+@ %def OWNED_TRANSPORT PLR_VESSELS PLR_SEX PLR_NAME PLR_HITS
+@ %def PLR_COIN PLR_RACE PLR_CLASS MOVE_CNT FOOD_FRAC PLR_FOOD
+@ %def PLR_EXP PLR_BSS
 
 \section{Text output}
 
@@ -7238,9 +7345,7 @@ FRAME_SYNC      EQU $15E6       ; wait for vertical blank
 VDELAY          EQU $15E9       ; calibrated delay of A units
 ; --- The keyboard type-ahead count (STUPH zero page) ---
 ZP_KEY_CNT      EQU $78         ; pending keys in the queue
-; --- Engine state still inside stub regions ---
-CAP_FLAG        EQU $7E37       ; STUB - bit 7: capitalize next letter
-@ %def CAP_FLAG
+@
 
 <<miu1 inline text readers>>=
         ORG $8037
@@ -7479,6 +7584,7 @@ advances the cursor).
 
 <<miu1 engine defines>>=
 KBDSTRB         EQU $C010       ; clear keyboard strobe
+TXTPAGE1        EQU $C054       ; display page 1
 TXTPAGE2        EQU $C055       ; display page 2
 HGR2            EQU $4000       ; hi-res page 2
 MLIB_BLOAD      EQU $B703       ; file library: BLOAD, inline path
@@ -7514,51 +7620,9 @@ STR_ARMOUR      EQU $7520       ; armour names, X-indexed (5)
 STR_CLASSES     EQU $755D       ; class names, X-indexed
 STR_TRANSPORT   EQU $757C       ; transport names, X-indexed (10)
 STR_ITEMS       EQU $7687       ; special-item names (4)
-; --- Player and engine state (inside the $7Exx state block) ---
-DISK_PROMPT     EQU $7DCC       ; "Put in the Ultima disk" retry
-PAGE1_LOCK      EQU $7E05       ; end double-buffering, settle pg 1
-LOC_NAME        EQU $7E16       ; current location name; +4n: the
-                                ;   GEN/OUT/DNG/TWN/CAS/SPA/TM table
-WIN_SAVE_BUF    EQU $7E31       ; 6-byte window-variable save area
-SAVE_PAGE_TGL   EQU $7E4D       ; ZP_PAGE_TGL save across popups
-HILITE_IDX      EQU $7E4E       ; item index to mark as readied
-PLR_SOUND       EQU $7E71       ; saved copy of SOUND_ON
-PLR_SFX         EQU $7E72       ; saved copy of SFX_ON
-OWNED_ITEMS     EQU $7E75       ; special-item counts (4)
-READY_WEAPON    EQU $7E7A       ; readied weapon index
-READY_ARMOUR    EQU $7E7B       ; readied armour index
-READY_TRANSPORT EQU $7E7C       ; current transport index
-OWNED_ARMOUR    EQU $7E7D       ; armour counts (1..5)
-OWNED_WEAPONS   EQU $7E83       ; weapon counts (1..15)
-OWNED_SPELLS    EQU $7E93       ; spell counts (1..10)
-OWNED_TRANSPORT EQU $7E9E       ; transport counts (1..10)
-PLR_VESSELS     EQU $7EB6       ; captured enemy vessels (space)
-PLR_SEX         EQU $7EB7       ; 0 = male, else female
-PLR_NAME        EQU $7EB8       ; player name, zero-terminated
-TICK_FOOD       EQU $7E4F       ; TICK: food cost (BCD fraction)
-TICK_MOVE       EQU $7E50       ; TICK: move-counter increment
-DIR_STR_PTR     EQU $7E51       ; alternate direction-name table, or 0
-CMD_KEYS        EQU $7E53       ; the 26 command key codes
-READY_SPELL     EQU $7E79       ; readied spell index
-PLR_HITS        EQU $7EC6       ; hit points, 16-bit binary; +2Y:
-                                ;   the six attribute pairs follow
-PLR_COIN        EQU $7ED4       ; coin, 16-bit binary
-PLR_RACE        EQU $7ED6       ; race index (STR_RACES)
-PLR_CLASS       EQU $7ED8       ; class index (STR_CLASSES)
-MOVE_CNT        EQU $7EDA       ; move counter, multi-byte BCD
-FOOD_FRAC       EQU $7EE4       ; food, BCD hundredths
-PLR_FOOD        EQU $7EE5       ; food, 16-bit binary
-PLR_EXP         EQU $7EE7       ; experience, 16-bit binary
 @ %def ZP_TXT_PTR ZP_BCD ZP_BIN ZP_RND_TMP STR_COMMANDS STR_SPELLS
-@ %def WIN_SAVE_BUF TICK_FOOD TICK_MOVE DIR_STR_PTR CMD_KEYS
-@ %def READY_SPELL PLR_HITS PLR_COIN MOVE_CNT FOOD_FRAC PLR_FOOD
-@ %def PLR_EXP ZP_LIST ZP_ROWS ZP_ITEM STR_RACES STR_WEAPONS
+@ %def ZP_LIST ZP_ROWS ZP_ITEM STR_RACES STR_WEAPONS
 @ %def STR_STATS STR_ARMOUR STR_CLASSES STR_TRANSPORT STR_ITEMS
-@ %def DISK_PROMPT PAGE1_LOCK LOC_NAME SAVE_PAGE_TGL HILITE_IDX
-@ %def PLR_SOUND PLR_SFX OWNED_ITEMS READY_WEAPON READY_ARMOUR
-@ %def READY_TRANSPORT OWNED_ARMOUR OWNED_WEAPONS OWNED_SPELLS
-@ %def OWNED_TRANSPORT PLR_VESSELS PLR_SEX PLR_NAME PLR_RACE
-@ %def PLR_CLASS
 
 <<miu1 char repeat>>=
         ORG $8144
@@ -9158,7 +9222,9 @@ OVERLAY_ENTRY
 <<miu1 entry>>
 <<miu1 mask tables>>
 <<miu1 string region>>
-<<miu1 code low stub>>
+<<miu1 disk prompt>>
+<<miu1 page1 lock>>
+<<miu1 state block>>
 <<miu1 inline text readers>>
 <<miu1 char repeat>>
 <<miu1 screen frame>>
