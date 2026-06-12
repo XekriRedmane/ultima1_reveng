@@ -15,10 +15,21 @@ The work is done by Claude Code running the `reverse-engineer` agent, which oper
 3. **Configure the container**: create a `.env` file next to `docker-compose.yml`:
 
    ```
-   ANTHROPIC_API_KEY=sk-ant-...
    GIT_USER_NAME=Your Name
    GIT_USER_EMAIL=you@example.com
    ```
+
+   **Authentication** — pick one:
+
+   - **Subscription (Pro/Max):** leave `ANTHROPIC_API_KEY` unset. The first time
+     you start the container, run `claude` (not `yolo`), complete the browser
+     login it prompts for, then exit. The credentials are written to the
+     persistent state dir (`CLAUDE_STATE_DIR`, symlinked to `~/.claude.json`
+     inside the container), so you only log in once — later sessions and the
+     `yolo` autonomous mode reuse it.
+   - **API key:** add `ANTHROPIC_API_KEY=sk-ant-...` to the `.env` file. This
+     uses metered API billing, which is **separate from and billed independently
+     of a subscription** — long autonomous runs can get expensive this way.
 
    SSH keys for `git push` are mounted read-only from `~/.ssh` (see `docker-compose.yml`).
 4. **Build and enter the container**:
@@ -73,5 +84,6 @@ The work is done by Claude Code running the `reverse-engineer` agent, which oper
 ## Requirements
 
 - Docker (the container brings Claude Code, dasm, pdflatex, and Python deps)
-- An Anthropic API key
+- A Claude Code login: either a Pro/Max **subscription** (log in once inside the
+  container) or an **Anthropic API key** (metered, billed separately) — see step 3
 - The legal right to reverse engineer the disk image you supply

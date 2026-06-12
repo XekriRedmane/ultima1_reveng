@@ -1,16 +1,21 @@
 # Apple II reverse-engineering agent container.
 #
 # Configuration via environment (or a .env file next to this compose file):
-#   ANTHROPIC_API_KEY  — required
+#   ANTHROPIC_API_KEY  — optional. Authenticates Claude Code via metered API
+#                        billing (separate from a Pro/Max subscription). Leave
+#                        unset to use a subscription instead — run `claude`
+#                        once inside the container and complete the browser
+#                        login; credentials persist in CLAUDE_STATE_DIR.
 #   GIT_USER_NAME      — git committer name  (default: "RE Agent")
 #   GIT_USER_EMAIL     — git committer email (default: "re-agent@localhost")
-#   CLAUDE_STATE_DIR   — host dir for persistent Claude Code state
-#                        (default: ~/.a2re-claude-container-state)
+#   CLAUDE_STATE_DIR   — host dir for persistent Claude Code state, including
+#                        the subscription login (default: ~/.a2re-claude-container-state)
 #
 # Usage:
 #   docker compose build
 #   docker compose run --rm re
-#   # inside the container:
+#   # inside the container, first run only (subscription auth): `claude`, log in, exit
+#   # thereafter:
 #   yolo    # claude --dangerously-skip-permissions
 services:
   re:
