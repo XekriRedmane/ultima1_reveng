@@ -6590,24 +6590,27 @@ and assorted drawing helpers. Its first instruction simply jumps to
 the overlay entry point: running \texttt{MI.U1} \emph{is} running
 whichever overlay is currently loaded at [[OVERLAY_ENTRY]].
 
-This chapter currently reproduces the engine as classified stub
-regions --- the gross map below --- and will be decomposed routine by
-routine in subsequent rounds.
+The engine code ([[$8037]]--[[$89BC]]) is now fully decomposed; two
+data regions remain as classified stubs:
 
 \begin{itemize}
-\item [[MIU1_TABLES]] --- bitmask/graphics tables (runs of [[$FF]],
-  [[$E0]], [[$83]] patterns suggesting pixel masks).
-\item [[MIU1_STRINGS]] --- roughly 2.6K of high-ASCII text: item,
-  monster, and place names (``The Castle of Lord British'', \dots),
-  shop and status vocabulary, prompts, and the save-file pathnames.
-\item [[MIU1_CODE_A]], [[MIU1_CODE_B]] --- the engine code proper,
-  being decomposed routine by routine (the text-output cluster is
-  done; see below).
+\item [[MIU1_TABLES]] --- graphics data, including the 10-byte-wide
+  death image that [[DEATH]] blits (runs of [[$FF]], [[$E0]],
+  [[$83]] pixel patterns).
+\item [[MIU1_STRINGS]] --- roughly 2.6K of packed text: the race,
+  class, item, weapon, spell, and command name tables (their entry
+  points are EQU'd below, [[STR_RACES]] through [[STR_COMMANDS]]),
+  prompts, and the save-file
+  pathnames. The engine's player state block ([[$7E05]]--[[$8036]],
+  inside [[MIU1_CODE_A]]) holds the live character data; both are
+  carved in the next rounds.
 \end{itemize}
 
 <<miu1 defines>>=
-OVERLAY_ENTRY   EQU $8956       ; mode overlays load and run here
-@ %def OVERLAY_ENTRY
+RESET_VEC       EQU $03F2       ; ProDOS soft-reset vector (+2: check)
+MON_HOME        EQU $FC58       ; monitor: clear the text screen
+MON_RESET       EQU $FF59       ; monitor cold entry (placeholder)
+@
 
 <<miu1 entry>>=
         ORG $7000
@@ -7308,13 +7311,14 @@ PUTCH
         BCC CHAR_OUT
         BEQ NEWLINE
         CMP #$7E
-        BEQ .nl_col1
+        BEQ PUTCH_NL_COL1
         CMP #$7D
         BNE PUTCH_RTS
+PUTCH_NL_COND
         LDA MON_CH
         CMP #$02
         BCC .col1
-.nl_col1
+PUTCH_NL_COL1
         JSR NEWLINE
 .col1   LDA #$01
         STA MON_CH
@@ -7458,7 +7462,8 @@ MSG_PRINT
         PHA
         RTS
 @ %def MSG_GETC STR_GETC MSG_PTR STR_PTR PRINT_HEX PRINT_DIGIT CHAR_OUT
-@ %def PUTCH_RTS PUTCH NEWLINE_ALT NEWLINE CR WIN_SHRINK STR_NTH_CAP
+@ %def PUTCH_RTS PUTCH PUTCH_NL_COND PUTCH_NL_COL1 NEWLINE_ALT NEWLINE CR
+@ %def WIN_SHRINK STR_NTH_CAP
 @ %def STR_FIRST STR_NTH MSG_AT MSG_PRINT
 
 \section{Screen layout: the frame}
@@ -7474,6 +7479,14 @@ advances the cursor).
 
 <<miu1 engine defines>>=
 KBDSTRB         EQU $C010       ; clear keyboard strobe
+TXTPAGE2        EQU $C055       ; display page 2
+HGR2            EQU $4000       ; hi-res page 2
+MLIB_BLOAD      EQU $B703       ; file library: BLOAD, inline path
+MLIB_PARSE_PATH_P EQU $B736     ; file library: parse path pointer
+ZP_PX           EQU $06         ; STUPH: pixel column (PLOT/LINE)
+ZP_PY           EQU $07         ; STUPH: pixel row
+ZP_HGR_PTR      EQU $26         ; STUPH: screen pointer
+ZP_PAGE_TGL     EQU $80         ; STUPH: page-flip toggle mask
 ; --- STUPH zero page and tables shared by the engine ---
 ZP_TXT_PTR      EQU $28         ; scanline pointer (CURSOR_TO_TEXT)
 ZP_BCD          EQU $62         ; BIN2BCD: 6-digit BCD result (3 bytes)
@@ -7486,24 +7499,66 @@ HGR_ROW_LO      EQU $1200       ; STUPH: scanline address table, low
 HGR_ROW_HI      EQU $12C0       ; STUPH: scanline address table, high
 ; --- String tables inside MIU1_STRINGS (labeled when carved) ---
 STR_COMMANDS    EQU $75CB       ; command names, X-indexed
-STR_WEAPONS     EQU $74D4       ; weapon names, X-indexed
+STR_SPELLS      EQU $74D4       ; spell names, X-indexed
+; --- More STUPH state and zero page ---
+SOUND_ON        EQU $1580       ; STUPH: master sound flag
+SFX_ON          EQU $1581       ; STUPH: sound-effects flag
+ZP_LIST         EQU $67         ; MENU_PICK: owned-array pointer
+ZP_ROWS         EQU $69         ; alias: MENU_PICK row count
+ZP_ITEM         EQU $6C         ; current item index (menus, lines)
+; --- String tables inside MIU1_STRINGS (labeled when carved) ---
+STR_RACES       EQU $73AF       ; race names, X-indexed
+STR_WEAPONS     EQU $73C8       ; weapon names, X-indexed (15)
+STR_STATS       EQU $748E       ; stat names (hits + 6 attributes)
+STR_ARMOUR      EQU $7520       ; armour names, X-indexed (5)
+STR_CLASSES     EQU $755D       ; class names, X-indexed
+STR_TRANSPORT   EQU $757C       ; transport names, X-indexed (10)
+STR_ITEMS       EQU $7687       ; special-item names (4)
 ; --- Player and engine state (inside the $7Exx state block) ---
+DISK_PROMPT     EQU $7DCC       ; "Put in the Ultima disk" retry
+PAGE1_LOCK      EQU $7E05       ; end double-buffering, settle pg 1
+LOC_NAME        EQU $7E16       ; current location name; +4n: the
+                                ;   GEN/OUT/DNG/TWN/CAS/SPA/TM table
 WIN_SAVE_BUF    EQU $7E31       ; 6-byte window-variable save area
+SAVE_PAGE_TGL   EQU $7E4D       ; ZP_PAGE_TGL save across popups
+HILITE_IDX      EQU $7E4E       ; item index to mark as readied
+PLR_SOUND       EQU $7E71       ; saved copy of SOUND_ON
+PLR_SFX         EQU $7E72       ; saved copy of SFX_ON
+OWNED_ITEMS     EQU $7E75       ; special-item counts (4)
+READY_WEAPON    EQU $7E7A       ; readied weapon index
+READY_ARMOUR    EQU $7E7B       ; readied armour index
+READY_TRANSPORT EQU $7E7C       ; current transport index
+OWNED_ARMOUR    EQU $7E7D       ; armour counts (1..5)
+OWNED_WEAPONS   EQU $7E83       ; weapon counts (1..15)
+OWNED_SPELLS    EQU $7E93       ; spell counts (1..10)
+OWNED_TRANSPORT EQU $7E9E       ; transport counts (1..10)
+PLR_VESSELS     EQU $7EB6       ; captured enemy vessels (space)
+PLR_SEX         EQU $7EB7       ; 0 = male, else female
+PLR_NAME        EQU $7EB8       ; player name, zero-terminated
 TICK_FOOD       EQU $7E4F       ; TICK: food cost (BCD fraction)
 TICK_MOVE       EQU $7E50       ; TICK: move-counter increment
 DIR_STR_PTR     EQU $7E51       ; alternate direction-name table, or 0
 CMD_KEYS        EQU $7E53       ; the 26 command key codes
-READY_WEAPON    EQU $7E79       ; readied weapon index
-PLR_HITS        EQU $7EC6       ; hit points, 16-bit binary
+READY_SPELL     EQU $7E79       ; readied spell index
+PLR_HITS        EQU $7EC6       ; hit points, 16-bit binary; +2Y:
+                                ;   the six attribute pairs follow
 PLR_COIN        EQU $7ED4       ; coin, 16-bit binary
+PLR_RACE        EQU $7ED6       ; race index (STR_RACES)
+PLR_CLASS       EQU $7ED8       ; class index (STR_CLASSES)
 MOVE_CNT        EQU $7EDA       ; move counter, multi-byte BCD
 FOOD_FRAC       EQU $7EE4       ; food, BCD hundredths
 PLR_FOOD        EQU $7EE5       ; food, 16-bit binary
 PLR_EXP         EQU $7EE7       ; experience, 16-bit binary
-@ %def ZP_TXT_PTR ZP_BCD ZP_BIN ZP_RND_TMP STR_COMMANDS STR_WEAPONS
+@ %def ZP_TXT_PTR ZP_BCD ZP_BIN ZP_RND_TMP STR_COMMANDS STR_SPELLS
 @ %def WIN_SAVE_BUF TICK_FOOD TICK_MOVE DIR_STR_PTR CMD_KEYS
-@ %def READY_WEAPON PLR_HITS PLR_COIN MOVE_CNT FOOD_FRAC PLR_FOOD
-@ %def PLR_EXP
+@ %def READY_SPELL PLR_HITS PLR_COIN MOVE_CNT FOOD_FRAC PLR_FOOD
+@ %def PLR_EXP ZP_LIST ZP_ROWS ZP_ITEM STR_RACES STR_WEAPONS
+@ %def STR_STATS STR_ARMOUR STR_CLASSES STR_TRANSPORT STR_ITEMS
+@ %def DISK_PROMPT PAGE1_LOCK LOC_NAME SAVE_PAGE_TGL HILITE_IDX
+@ %def PLR_SOUND PLR_SFX OWNED_ITEMS READY_WEAPON READY_ARMOUR
+@ %def READY_TRANSPORT OWNED_ARMOUR OWNED_WEAPONS OWNED_SPELLS
+@ %def OWNED_TRANSPORT PLR_VESSELS PLR_SEX PLR_NAME PLR_RACE
+@ %def PLR_CLASS
 
 <<miu1 char repeat>>=
         ORG $8144
@@ -8078,8 +8133,8 @@ WIN_SAVE
 
 \section{Feedback}
 
-Small replies to the player. [[PRINT_WEAPON]] names the readied
-weapon (the \emph{Attack with what?} echo). [[CURSOR_TO_TEXT]]
+Small replies to the player. [[PRINT_SPELL]] names the readied
+spell (the \emph{Cast} echo). [[CURSOR_TO_TEXT]]
 backs the cursor up to just past the last drawn character ---
 it walks a row's bottom scanline leftward through the hi-res
 pointer until it finds ink --- so [[QUERY_MARK]] can append a
@@ -8091,16 +8146,17 @@ neither replay buffered keys nor play stale sounds.
 
 <<miu1 feedback>>=
         ORG $83BF
-PRINT_WEAPON
+PRINT_SPELL
         SUBROUTINE
-        ; Print the readied weapon's name.
+        ; Print the readied spell's name.
         ;
         ; Behavior:
-        ;   STR_NTH from the weapon-name table, indexed by
-        ;   READY_WEAPON.
-        LDX READY_WEAPON
+        ;   STR_NTH from the spell-name table, indexed by
+        ;   READY_SPELL. (The Ready command's argument layout
+        ;   proves these tables out: spells are the 10-entry list.)
+        LDX READY_SPELL
         JSR STR_NTH
-        DC.W STR_WEAPONS
+        DC.W STR_SPELLS
         RTS
 CURSOR_TO_TEXT
         SUBROUTINE
@@ -8163,196 +8219,936 @@ KBD_CLEAR
         STA ZP_SFX_CNT
         STA ZP_KEY_CNT
         RTS
-@ %def PRINT_WEAPON CURSOR_TO_TEXT NO_EFFECT_MSG BEEP_CMD QUERY_MARK
+@ %def PRINT_SPELL CURSOR_TO_TEXT NO_EFFECT_MSG BEEP_CMD QUERY_MARK
 @ %def BEEP_HUH KBD_CLEAR
 
-\section{Engine code: high stub}
+\section{Popup frames}
 
-<<miu1 code high stub>>=
+[[POPUP_FRAME]] opens the engine's standard popup: save the window,
+set a box in the upper screen, clear it, and draw a blue pixel
+rectangle around it with the library's line primitives ---
+\emph{directly on the visible page}. [[PAGE_SWAP]] flips
+[[ZP_PAGE_XOR]] to the other buffer; the frame swaps, draws, and
+falls through into the same swap to restore. The matching teardown
+is [[POPUP_END]]/[[POPUP_CLOSE]] further down.
+
+<<miu1 popup frame>>=
         ORG $841E
-MIU1_CODE_B
-        ; STUB -- not yet disassembled (engine code, second part)
-        HEX 20 b4 83 a9 04 85 22 85
-        HEX 20 a9 10 85 23 a9 20 85
-        HEX 21 20 9b 15 20 7e 80 a9
-        HEX 06 20 d4 15 20 5f 84 a2
-        HEX 12 a0 12 86 06 84 07 a2
-        HEX eb 20 da 15 a6 06 a0 6d
-        HEX 20 da 15 a2 12 a4 07 20
-        HEX da 15 a6 06 a0 12 20 da
-        HEX 15 a5 7f 45 80 85 7f 60
-        HEX 48 a9 07 85 24 68 a2 03
-        HEX dd 8b 84 f0 03 ca d0 f8
-        HEX 8a 0a a8 b9 90 84 48 b9
-        HEX 8f 84 48 20 b8 80 c4 84
-        HEX 20 98 15 e6 24 60 53 57
-        HEX 41 8a 84 96 84 a5 84 b4
-        HEX 84 ad 79 7e 20 df 84 0a
-        HEX 93 7e d4 74 8d 79 7e 60
-        HEX ad 7a 7e 20 df 84 0f 83
-        HEX 7e c8 73 8d 7a 7e 60 ad
-        HEX 7b 7e 20 df 84 05 7d 7e
-        HEX 20 75 8d 7b 7e 60 6e 6f
-        HEX 74 68 69 6e e7 73 70 65
-        HEX 6c 6c ba 77 65 61 70 6f
-        HEX 6e ba 61 72 6d 6f 75 72
-        HEX ba 85 6c 68 8d 40 80 68
-        HEX 8d 41 80 20 37 80 8d a1
-        HEX 85 20 37 80 85 67 20 37
-        HEX 80 85 68 20 37 80 8d 9d
-        HEX 85 20 37 80 8d 9e 85 ad
-        HEX 41 80 48 ad 40 80 48 20
-        HEX b4 83 20 a7 15 a2 0e a0
-        HEX 00 a5 80 8d 4d 7e 84 80
-        HEX 20 15 81 0e 20 52 65 61
-        HEX 64 79 20 18 00 20 9b 15
-        HEX ac a1 85 a2 01 b1 67 f0
-        HEX 01 e8 88 d0 f8 86 69 38
-        HEX a9 14 e5 69 4a 85 25 a9
-        HEX 61 8d 55 85 a0 00 98 48
-        HEX a9 0d 85 24 20 19 81 61
-        HEX 29 20 00 68 20 98 85 a8
-        HEX e6 25 cc a1 85 b0 0a ee
-        HEX 55 85 c8 b1 67 d0 df f0
-        HEX f1 20 a9 83 ad 4d 7e 85
-        HEX 80 20 ad 15 20 bf 15 48
-        HEX 20 6c 87 38 68 e9 41 f0
-        HEX 11 30 0c cd a1 85 90 02
-        HEX d0 05 a8 b1 67 d0 02 a4
-        HEX 6c 98 aa 48 20 b1 80 00
-        HEX 00 68 60 0a 20 aa 15 20
-        HEX b4 83 20 a7 15 20 a1 80
-        HEX a2 0c a0 00 8c 49 82 a5
-        HEX 80 8d 4d 7e 84 80 20 15
-        HEX 81 0e 20 49 6e 76 65 6e
-        HEX 74 6f 72 79 20 18 7c 7c
-        HEX 50 6c 61 79 65 72 3a 20
-        HEX 00 20 37 88 20 19 81 7c
-        HEX 41 20 6c 65 76 65 6c 20
-        HEX 00 ae e7 7e ad e8 7e 20
-        HEX ad 81 a5 63 4a 4a 4a 4a
-        HEX 18 69 01 20 0d 82 e6 24
-        HEX ad b7 7e f0 06 20 19 81
-        HEX 66 65 00 20 19 81 6d 61
-        HEX 6c 65 20 00 ae d6 7e 20
-        HEX b8 80 af 73 e6 24 ae d8
-        HEX 7e 20 b8 80 5d 75 20 a6
-        HEX 87 c6 25 a2 00 8e 4e 7e
-        HEX 86 6c 8a 0a a8 be c6 7e
-        HEX b9 c7 7e d0 04 e0 00 f0
-        HEX 05 20 bb 87 8e 74 a6 6c
-        HEX e8 e0 07 90 e3 ae d4 7e
-        HEX ad d5 7e 20 ad 81 a5 62
-        HEX 29 0f f0 1c 20 72 87 20
-        HEX 19 81 43 6f 70 70 65 72
-        HEX 20 70 65 6e 63 65 2e 2e
-        HEX 2e 2e 00 a5 62 20 58 80
-        HEX a5 62 4a 4a 4a 4a f0 1c
-        HEX 48 20 72 87 20 19 81 53
-        HEX 69 6c 76 65 72 20 70 69
-        HEX 65 63 65 73 2e 2e 2e 00
-        HEX 68 20 58 80 a5 63 f0 39
-        HEX 20 72 87 20 19 81 47 6f
-        HEX 6c 64 20 43 72 6f 77 6e
-        HEX 73 2e 2e 2e 2e 00 a5 63
-        HEX c9 10 b0 1a a9 2e 20 62
-        HEX 80 a5 63 20 58 80 4c d7
-        HEX 86 45 6e 65 6d 79 20 76
-        HEX 65 73 73 65 6c f3 20 4f
-        HEX 80 ad b6 7e f0 09 a2 00
-        HEX 86 6c 20 b8 87 c7 86 ad
-        HEX 7b 7e 8d 4e 7e a2 01 86
-        HEX 6c bd 7d 7e f0 05 20 b8
-        HEX 87 20 75 a6 6c e8 e0 06
-        HEX 90 ed ad 7c 7e 8d 4e 7e
-        HEX a2 01 86 6c bd 9e 7e f0
-        HEX 05 20 b8 87 7c 75 a6 6c
-        HEX e8 e0 0b 90 ed a2 00 8e
-        HEX 4e 7e 86 6c bd 75 7e f0
-        HEX 05 20 b8 87 87 76 a6 6c
-        HEX e8 e0 04 90 ed ad 7a 7e
-        HEX 8d 4e 7e a2 01 86 6c bd
-        HEX 83 7e f0 05 20 b8 87 c8
-        HEX 73 a6 6c e8 e0 10 90 ed
-        HEX ad 79 7e 8d 4e 7e a2 01
-        HEX 86 6c bd 93 7e f0 05 20
-        HEX b8 87 d4 74 a6 6c e8 e0
-        HEX 0b 90 ed 20 ec 87 20 51
-        HEX 81 4c a9 83 a2 00 86 24
-        HEX a4 25 c8 c0 12 90 0e a4
-        HEX 22 a9 12 85 21 65 20 c9
-        HEX 26 b0 05 85 20 84 25 60
-        HEX a2 0d a0 12 20 15 81 6d
-        HEX 6f 72 65 00 20 ec 87 a9
-        HEX 00 85 80 e6 24 20 b4 83
-        HEX a9 05 85 22 4a 85 20 a9
-        HEX 24 85 21 a9 13 85 23 4c
-        HEX 9b 15 aa a9 00 48 8a 48
-        HEX 20 72 87 a9 03 85 24 a2
-        HEX 09 a9 2e 8d 49 82 20 44
-        HEX 81 68 aa 68 20 07 82 20
-        HEX 9c 80 a6 6c ad 4e 7e f0
-        HEX 0a ec 4e 7e d0 05 a9 1b
-        HEX 20 62 80 4c b1 80 ad 4d
-        HEX 7e 85 80 20 ad 15 20 8f
-        HEX 15 20 a9 83 20 19 81 7d
-        HEX 50 72 65 73 73 20 53 70
-        HEX 61 63 65 20 74 6f 20 63
-        HEX 6f 6e 74 69 6e 75 65 3a
-        HEX 20 00 20 14 84 20 bf 15
-        HEX c9 0d f0 08 c9 1b f0 04
-        HEX c9 20 d0 f1 20 95 15 e6
-        HEX 24 c6 25 20 14 84 4c b4
-        HEX 83 a2 00 bd b8 7e f0 06
-        HEX 20 62 80 e8 d0 f5 60 ad
-        HEX 80 15 49 ff 20 e0 15 8d
-        HEX 71 7e d0 16 20 19 81 20
-        HEX 6f 66 66 00 60 ad 81 15
-        HEX 49 ff 8d 81 15 8d 72 7e
-        HEX f0 ea 20 19 81 20 6f 6e
-        HEX 00 60 20 78 80 20 37 88
-        HEX 20 19 81 2c 20 74 68 6f
-        HEX 75 20 61 72 74 20 64 65
-        HEX 61 64 2e 00 20 8f 15 a9
-        HEX 00 8d d4 7e 8d d5 7e 8d
-        HEX e5 7e 8d e6 7e 8d c6 7e
-        HEX 8d c7 7e a4 80 8c 4d 7e
-        HEX 85 80 20 6e 83 20 aa 15
-        HEX a9 02 8d d1 88 a9 70 8d
-        HEX d2 88 a2 20 bd 00 12 85
-        HEX 26 bd c0 12 45 7f 85 27
-        HEX a0 0f ee d1 88 d0 03 ee
-        HEX d2 88 ad 03 70 10 02 11
-        HEX 26 91 26 c8 c0 19 90 ea
-        HEX e8 e0 7e 90 d7 a9 02 20
-        HEX ce 15 a9 02 20 ce 15 ad
-        HEX 4d 7e 85 80 20 ad 15 4c
-        HEX 14 84 20 70 88 a9 04 a2
-        HEX ff 9a c9 19 b0 03 aa d0
-        HEX 0c 20 03 b7 47 45 4e 00
-        HEX b0 f7 4c 56 89 a0 00 bd
-        HEX 16 7e 99 16 7e e8 c8 0a
-        HEX d0 f5 20 14 84 20 36 b7
-        HEX 16 7e 20 89 15 20 cc 7d
-        HEX b0 f0 20 05 7e 20 31 83
-        HEX 20 51 81 20 a9 83 4c 56
-        HEX 89 20 86 15 ad 54 89 8d
-        HEX f2 03 ad 55 89 8d f3 03
-        HEX 49 a5 8d f4 03 4c 59 ff
-        HEX 78 a2 ff 9a ad f2 03 8d
-        HEX 54 89 ad f3 03 8d 55 89
-        HEX a9 3f 8d f2 03 a9 89 8d
-        HEX f3 03 49 a5 8d f4 03 20
-        HEX 03 b7 53 54 55 50 48 00
-        HEX b0 f5 a9 00 a2 40 8e 8e
-        HEX 89 8e 91 89 a0 78 99 00
-        HEX 40 99 80 40 c8 10 f7 e8
-        HEX e0 60 90 ea 20 9e 15 20
-        HEX 58 fc 20 83 15 a9 60 85
-        HEX 7f 85 80 20 ad 15 20 05
-        HEX 7e 2c 55 c0 ad 80 15 20
-        HEX e0 15 a9 00 4c fd 88
-@ %def MIU1_CODE_B
+POPUP_FRAME
+        SUBROUTINE
+        ; Open the standard popup box, framed in blue.
+        ;
+        ; Behavior:
+        ;   Save the window; window := rows 4-15, cols 4-35; clear
+        ;   it; then draw a rectangle (pixels 18..235 x 18..109)
+        ;   in color 6 on the displayed page (swap, draw, swap
+        ;   back via the PAGE_SWAP fall-through).
+        ;
+        ; Modifies:
+        ;   WIN_SAVE_BUF, window variables, ZP_PX/ZP_PY
+        ; Clobbers: A, X, Y
+        JSR WIN_SAVE
+        LDA #$04
+        STA MON_WNDTOP
+        STA MON_WNDLFT
+        LDA #$10
+        STA MON_WNDBTM
+        LDA #$20
+        STA MON_WNDWDTH
+        JSR CLR_WINDOW
+        JSR PUTCH_NL_COL1
+        LDA #$06
+        JSR COLOR_SET                   ; blue
+        JSR PAGE_SWAP                   ; draw on the visible page
+        LDX #$12
+        LDY #$12
+        STX ZP_PX
+        STY ZP_PY
+        LDX #$EB
+        JSR LINE_TO                     ; top edge
+        LDX ZP_PX
+        LDY #$6D
+        JSR LINE_TO                     ; right edge
+        LDX #$12
+        LDY ZP_PY
+        JSR LINE_TO                     ; bottom edge
+        LDX ZP_PX
+        LDY #$12
+        JSR LINE_TO                     ; left edge, and fall through
+PAGE_SWAP
+        ; Toggle the draw page (ZP_PAGE_XOR ^= ZP_PAGE_TGL).
+        LDA ZP_PAGE_XOR
+        EOR ZP_PAGE_TGL
+        STA ZP_PAGE_XOR
+        RTS
+@ %def POPUP_FRAME PAGE_SWAP
+
+\section{The Ready command}
+
+\emph{R}eady asks for a second letter --- \emph{S}pell, \emph{W}eapon
+or \emph{A}rmour --- echoes the class name, and dispatches through an
+address-minus-one table to a handler that runs the generic
+[[MENU_PICK]] over the right item list. Any other letter lands on
+index 0, prints ``nothing'', and dispatches to a bare [[RTS]].
+This is where the three \emph{readied} state bytes get written, and
+it nails down which is which: [[READY_SPELL]] picks from the
+10-entry spell list, [[READY_WEAPON]] from the 15 weapons,
+[[READY_ARMOUR]] from the 5 armours.
+
+<<miu1 ready command>>=
+        ORG $8466
+READY_CMD
+        SUBROUTINE
+        ; The R-eady command: pick what to ready.
+        ;
+        ; Inputs:
+        ;   A       -- the follow-up key (S, W or A)
+        ;
+        ; Behavior:
+        ;   Match against READY_KEYS (no match = entry 0,
+        ;   "nothing"); push the handler address from READY_VEC;
+        ;   echo the class name; RTS-dispatch to the handler.
+        ;
+        ; Clobbers: A, X, Y
+        PHA
+        LDA #$07
+        STA MON_CH
+        PLA
+        LDX #$03
+.find   CMP READY_KEYS-1,X
+        BEQ .got
+        DEX
+        BNE .find
+.got    TXA
+        ASL
+        TAY
+        LDA READY_VEC+1,Y
+        PHA
+        LDA READY_VEC,Y
+        PHA
+        JSR STR_NTH                     ; echo "nothing/spell/..."
+        DC.W READY_CLASSES
+        JSR CLR_EOL
+        INC MON_CH
+.none   RTS                             ; entry 0 dispatches here
+READY_KEYS
+        DC.B "SWA"
+READY_VEC
+        DC.W .none-1                    ; 0: not a class: "nothing"
+        DC.W READY_S-1
+        DC.W READY_W-1
+        DC.W READY_A-1
+READY_S ; pick a spell
+        LDA READY_SPELL
+        JSR MENU_PICK
+        DC.B $0A                        ; 10 spells
+        DC.W OWNED_SPELLS
+        DC.W STR_SPELLS
+        STA READY_SPELL
+        RTS
+READY_W ; pick a weapon
+        LDA READY_WEAPON
+        JSR MENU_PICK
+        DC.B $0F                        ; 15 weapons
+        DC.W OWNED_WEAPONS
+        DC.W STR_WEAPONS
+        STA READY_WEAPON
+        RTS
+READY_A ; pick an armour
+        LDA READY_ARMOUR
+        JSR MENU_PICK
+        DC.B $05                        ; 5 armours
+        DC.W OWNED_ARMOUR
+        DC.W STR_ARMOUR
+        STA READY_ARMOUR
+        RTS
+READY_CLASSES
+        ; packed string table: last char of each has the high bit
+        DC.B "nothin",$E7               ; "nothing"
+        DC.B "spell",$BA                ; "spell:"
+        DC.B "weapon",$BA               ; "weapon:"
+        DC.B "armour",$BA               ; "armour:"
+@ %def READY_CMD READY_KEYS READY_VEC READY_S READY_W READY_A
+@ %def READY_CLASSES
+
+\section{The item picker}
+
+[[MENU_PICK]] is the engine's generic chooser, used by the Ready
+handlers above (and callable from overlays): five inline argument
+bytes give the item count, a pointer to the \emph{owned-counts}
+array, and a pointer to the name table. It lists the owned items as
+\texttt{a) Name} lines, vertically centered in the viewport and
+drawn on the visible page, waits for a letter, validates it (item 0
+--- ``nothing''/bare hands --- is always allowed; otherwise the item
+must exist and be owned, else the old selection stands), echoes the
+chosen name, and returns the new index in A and X.
+
+The letters map to item \emph{indexes}, not display rows --- unowned
+items are skipped on screen but their letters are skipped too, so
+\texttt{c)} is always item 2.
+
+<<miu1 menu pick>>=
+        ORG $84DF
+MENU_PICK
+        SUBROUTINE
+        ; Choose an item from an owned-items list.
+        ;
+        ; Inputs:
+        ;   A       -- current selection index
+        ;   inline  -- count.b, owned-array ptr.w, name-table ptr.w
+        ;
+        ; Behavior:
+        ;   Read the inline args (via the MSG_GETC pointer, fixing
+        ;   the return address); list owned items lettered by index
+        ;   on the visible page; KEY_WAIT; validate the letter;
+        ;   close the popup; echo and return the selection.
+        ;
+        ; Outputs:
+        ;   A = X = the selected index (unchanged if invalid key).
+        ;
+        ; Modifies:
+        ;   ZP_ITEM, ZP_LIST, MENU_CNT, MENU_TBL, SAVE_PAGE_TGL
+        STA ZP_ITEM
+        PLA
+        STA MSG_PTR
+        PLA
+        STA MSG_PTR+1
+        JSR MSG_GETC
+        STA MENU_CNT
+        JSR MSG_GETC
+        STA ZP_LIST
+        JSR MSG_GETC
+        STA ZP_LIST+1
+        JSR MSG_GETC
+        STA MENU_TBL
+        JSR MSG_GETC
+        STA MENU_TBL+1
+        LDA MSG_PTR+1                   ; return past the arguments
+        PHA
+        LDA MSG_PTR
+        PHA
+        JSR WIN_SAVE
+        JSR WIN_VIEW
+        LDX #$0E
+        LDY #$00
+        LDA ZP_PAGE_TGL
+        STA SAVE_PAGE_TGL
+        STY ZP_PAGE_TGL                 ; draw on the visible page
+        JSR MSG_AT
+        DC.B $0E," Ready ",$18,$00
+        JSR CLR_WINDOW
+        LDY MENU_CNT                    ; count the owned items
+        LDX #$01
+.count  LDA (ZP_LIST),Y
+        BEQ .skip0
+        INX
+.skip0  DEY
+        BNE .count
+        STX ZP_ROWS
+        SEC
+        LDA #$14
+        SBC ZP_ROWS
+        LSR
+        STA MON_CV                      ; center the list vertically
+        LDA #$61
+        STA .letter                     ; .letter <- 'a'
+        LDY #$00
+.item   TYA
+        PHA
+        LDA #$0D
+        STA MON_CH
+        JSR MSG_PRINT
+.letter = *
+        DC.B "a) ",$00                  ; (the letter is patched)
+        PLA
+        JSR MENU_NAME                   ; item Y's name; A = Y
+        TAY
+        INC MON_CV
+.next   CPY MENU_CNT
+        BCS .pick
+        INC .letter                     ; letters track the index,
+        INY                             ;   shown or not
+        LDA (ZP_LIST),Y
+        BNE .item                       ; owned: list it
+        BEQ .next
+.pick   JSR WIN_RESTORE
+        LDA SAVE_PAGE_TGL
+        STA ZP_PAGE_TGL
+        JSR PAGE_FLIP
+        JSR KEY_WAIT
+        PHA
+        JSR POPUP_CLOSE
+        SEC
+        PLA
+        SBC #$41                        ; letter -> item index
+        BEQ MENU_NAME                   ; item 0: always allowed
+        BMI .keep
+        CMP MENU_CNT
+        BCC .own
+        BNE .keep
+.own    TAY
+        LDA (ZP_LIST),Y                 ; owned?
+        BNE .sel
+.keep   LDY ZP_ITEM                     ; invalid: keep the old one
+.sel    TYA
+MENU_NAME
+        ; Print item A's name, capitalized, from the patched
+        ; table; preserves A (X := A).
+        TAX
+        PHA
+        JSR STR_NTH_CAP
+MENU_TBL = *
+        DC.W $0000                      ; (patched: the name table)
+        PLA
+        RTS
+MENU_CNT
+        DC.B $0A                        ; item count (stale value)
+@ %def MENU_PICK MENU_NAME MENU_TBL MENU_CNT
+
+\section{The Inventory display}
+
+The Z-tats screen: a full-viewport popup listing the player ---
+name, level (experience over 1000, plus one), sex, race and class
+--- then the seven 16-bit stat pairs, the coin purse, and every
+owned item with its count, the readied one marked with glyph
+[[$1B]]. It is the engine's biggest consumer of the two-column
+layout machinery that follows it.
+
+Two details worth noting for a port: the \emph{level} is not stored
+anywhere --- it is recomputed as $\lfloor exp/1000\rfloor + 1$ from
+the BCD conversion's middle byte; and the coin purse is one 16-bit
+number displayed as three currencies --- pence is its ones digit,
+silver its tens digit, and Gold Crowns the value over 100.
+
+<<miu1 inventory>>=
+        ORG $85A2
+INVENTORY
+        SUBROUTINE
+        ; The Z-tats / inventory popup.
+        ;
+        ; Behavior:
+        ;   Clear the viewport; header, name, level (exp/1000+1),
+        ;   sex, race, class; then in two-column item-line format:
+        ;   the seven stat pairs, the three coin denominations,
+        ;   enemy vessels (space mode), and the armour, transport,
+        ;   item, weapon and spell lists with readied-item markers.
+        ;   Ends with POPUP_END (press Space) and a frame redraw.
+        ;
+        ; Modifies:
+        ;   SAVE_PAGE_TGL, HILITE_IDX, ZP_ITEM, NUM_PAD, window
+        ; Clobbers: A, X, Y
+        JSR VIEW_CLEAR
+        JSR WIN_SAVE
+        JSR WIN_VIEW
+        JSR WIN_SHRINK
+        LDX #$0C
+        LDY #$00
+        STY NUM_PAD
+        LDA ZP_PAGE_TGL
+        STA SAVE_PAGE_TGL
+        STY ZP_PAGE_TGL                 ; draw on the visible page
+        JSR MSG_AT
+        DC.B $0E," Inventory ",$18,"||Player: ",$00
+        JSR PRINT_NAME
+        JSR MSG_PRINT
+        DC.B "|A level ",$00
+        LDX PLR_EXP
+        LDA PLR_EXP+1
+        JSR BIN2BCD
+        LDA ZP_BCD+1
+        LSR
+        LSR
+        LSR
+        LSR                             ; the thousands digit
+        CLC
+        ADC #$01
+        JSR PRINT_NUM8                  ; level = exp/1000 + 1
+        INC MON_CH
+        LDA PLR_SEX
+        BEQ .male
+        JSR MSG_PRINT
+        DC.B "fe",$00
+.male   JSR MSG_PRINT
+        DC.B "male ",$00
+        LDX PLR_RACE
+        JSR STR_NTH
+        DC.W STR_RACES
+        INC MON_CH
+        LDX PLR_CLASS
+        JSR STR_NTH
+        DC.W STR_CLASSES
+        JSR ITEMWIN_SET
+        DEC MON_CV
+        ; --- the seven stat pairs (hits + six attributes) ---
+        LDX #$00
+        STX HILITE_IDX                  ; no marker on stats
+.stat   STX ZP_ITEM
+        TXA
+        ASL
+        TAY
+        LDX PLR_HITS,Y                  ; 16-bit pair Y/2
+        LDA PLR_HITS+1,Y
+        BNE .show
+        CPX #$00
+        BEQ .zstat                      ; zero: leave it out
+.show   JSR ITEM_LINE
+        DC.W STR_STATS
+.zstat  LDX ZP_ITEM
+        INX
+        CPX #$07
+        BCC .stat
+        ; --- the coin purse, in three denominations ---
+        LDX PLR_COIN
+        LDA PLR_COIN+1
+        JSR BIN2BCD
+        LDA ZP_BCD
+        AND #$0F                        ; the ones digit
+        BEQ .silver
+        JSR COL_ADVANCE
+        JSR MSG_PRINT
+        DC.B "Copper pence....",$00
+        LDA ZP_BCD
+        JSR PRINT_DIGIT
+.silver LDA ZP_BCD
+        LSR
+        LSR
+        LSR
+        LSR                             ; the tens digit
+        BEQ .gold
+        PHA
+        JSR COL_ADVANCE
+        JSR MSG_PRINT
+        DC.B "Silver pieces...",$00
+        PLA
+        JSR PRINT_DIGIT
+.gold   LDA ZP_BCD+1                    ; the value over 100
+        BEQ .vessel
+        JSR COL_ADVANCE
+        JSR MSG_PRINT
+        DC.B "Gold Crowns....",$00
+        LDA ZP_BCD+1
+        CMP #$10
+        BCS .gold2
+        LDA #$2E                        ; one digit: pad with a dot
+        JSR CHAR_OUT
+        LDA ZP_BCD+1
+        JSR PRINT_DIGIT
+        JMP .vessel
+.gtext  DC.B "Enemy vessel",$F3         ; one-entry table: "vessels"
+.gold2  JSR PRINT_HEX                   ; two BCD digits
+.vessel LDA PLR_VESSELS
+        BEQ .armour
+        LDX #$00
+        STX ZP_ITEM
+        JSR ITEM_LINE_A
+        DC.W .gtext
+        ; --- the item lists ---
+.armour LDA READY_ARMOUR
+        STA HILITE_IDX
+        LDX #$01
+.arm    STX ZP_ITEM
+        LDA OWNED_ARMOUR,X
+        BEQ .arm1
+        JSR ITEM_LINE_A
+        DC.W STR_ARMOUR
+.arm1   LDX ZP_ITEM
+        INX
+        CPX #$06
+        BCC .arm
+        LDA READY_TRANSPORT
+        STA HILITE_IDX
+        LDX #$01
+.veh    STX ZP_ITEM
+        LDA OWNED_TRANSPORT,X
+        BEQ .veh1
+        JSR ITEM_LINE_A
+        DC.W STR_TRANSPORT
+.veh1   LDX ZP_ITEM
+        INX
+        CPX #$0B
+        BCC .veh
+        LDX #$00
+        STX HILITE_IDX
+.itm    STX ZP_ITEM
+        LDA OWNED_ITEMS,X
+        BEQ .itm1
+        JSR ITEM_LINE_A
+        DC.W STR_ITEMS
+.itm1   LDX ZP_ITEM
+        INX
+        CPX #$04
+        BCC .itm
+        LDA READY_WEAPON
+        STA HILITE_IDX
+        LDX #$01
+.wpn    STX ZP_ITEM
+        LDA OWNED_WEAPONS,X
+        BEQ .wpn1
+        JSR ITEM_LINE_A
+        DC.W STR_WEAPONS
+.wpn1   LDX ZP_ITEM
+        INX
+        CPX #$10
+        BCC .wpn
+        LDA READY_SPELL
+        STA HILITE_IDX
+        LDX #$01
+.spl    STX ZP_ITEM
+        LDA OWNED_SPELLS,X
+        BEQ .spl1
+        JSR ITEM_LINE_A
+        DC.W STR_SPELLS
+.spl1   LDX ZP_ITEM
+        INX
+        CPX #$0B
+        BCC .spl
+        JSR POPUP_END                   ; wait for Space
+POPUP_CLOSE
+        ; Tear down any popup: redraw the frame, restore the window.
+        JSR DRAW_BORDERS
+        JMP WIN_RESTORE
+@ %def INVENTORY POPUP_CLOSE
+
+\section{Two-column item lines}
+
+The layout engine under the inventory (and the shops in the
+overlays). [[COL_ADVANCE]] moves to the next row of an 18-column
+cell; at row 18 it starts a second column, and were a third needed
+it pauses with \emph{more} and resets the item window
+([[ITEMWIN_SET]], rows 5--18). [[ITEM_LINE]] prints one
+\texttt{Name......value} line: nine leader dots from column 3, the
+value with \emph{dot-padded} leading zeros, then back to column 0
+to print the name --- which simply overwrites the leftmost dots.
+The name table is the caller's inline argument: [[ITEM_LINE]] ends
+with a [[JMP]] to [[STR_NTH_CAP]], which finds the caller's return
+address (and so the inline table pointer) on the stack. Glyph
+[[$1B]] marks the line whose index [[ZP_ITEM]] equals
+[[HILITE_IDX]] --- the readied item.
+
+<<miu1 column layout>>=
+        ORG $8772
+COL_ADVANCE
+        SUBROUTINE
+        ; Advance to the next item-line cell.
+        ;
+        ; Behavior:
+        ;   Column 0 of the next row; past row 17, restart at the
+        ;   window top one 18-column cell to the right; past
+        ;   column 38, pause with "more" and reset the item window.
+        ;
+        ; Modifies:
+        ;   MON_CH, MON_CV, MON_WNDLFT, MON_WNDWDTH
+        LDX #$00
+        STX MON_CH
+        LDY MON_CV
+        INY
+        CPY #$12
+        BCC .store
+        LDY MON_WNDTOP                  ; next column
+        LDA #$12
+        STA MON_WNDWDTH
+        ADC MON_WNDLFT
+        CMP #$26
+        BCS .more
+        STA MON_WNDLFT
+.store  STY MON_CV
+        RTS
+.more   LDX #$0D                        ; out of room: page break
+        LDY #$12
+        JSR MSG_AT
+        DC.B "more",$00
+        JSR POPUP_END
+        LDA #$00
+        STA ZP_PAGE_TGL                 ; stay on the visible page
+        INC MON_CH
+        JSR WIN_SAVE
+ITEMWIN_SET
+        ; Window := the item area (rows 5-18, cols 2-37), cleared.
+        LDA #$05
+        STA MON_WNDTOP
+        LSR
+        STA MON_WNDLFT
+        LDA #$24
+        STA MON_WNDWDTH
+        LDA #$13
+        STA MON_WNDBTM
+        JMP CLR_WINDOW
+ITEM_LINE_A
+        SUBROUTINE
+        ; Print one "Name......value" line; the name table is the
+        ; CALLER's inline word argument (consumed by STR_NTH_CAP).
+        ;
+        ; Inputs:
+        ;   A (ITEM_LINE_A: 8-bit) or X/A lo/hi (ITEM_LINE)
+        ;   ZP_ITEM -- item index (name table entry, marker check)
+        ;   HILITE_IDX -- index to mark with glyph $1B, or 0
+        ;
+        ; Behavior:
+        ;   COL_ADVANCE; nine leader dots from column 3; the value
+        ;   dot-padded; then from column 0 the marker (if readied)
+        ;   and the capitalized name over the leftmost dots.
+        ;
+        ; Modifies:
+        ;   NUM_PAD ('.')
+        TAX
+        LDA #$00
+ITEM_LINE
+        PHA                             ; value hi
+        TXA
+        PHA                             ; value lo
+        JSR COL_ADVANCE
+        LDA #$03
+        STA MON_CH
+        LDX #$09
+        LDA #$2E
+        STA NUM_PAD                     ; pad zeros with dots too
+        JSR CHAR_REPEAT                 ; nine leader dots
+        PLA
+        TAX
+        PLA
+        JSR PRINT_NUM16
+        JSR CR
+        LDX ZP_ITEM
+        LDA HILITE_IDX
+        BEQ .name
+        CPX HILITE_IDX
+        BNE .name
+        LDA #$1B                        ; the "readied" marker glyph
+        JSR CHAR_OUT
+.name   JMP STR_NTH_CAP                 ; inline arg: the caller's
+                                        ;   name-table pointer
+@ %def COL_ADVANCE ITEMWIN_SET ITEM_LINE_A ITEM_LINE
+
+\section{Closing a popup}
+
+[[POPUP_END]] restores double-buffering, page-flips, copies the
+result to the back buffer, restores the window, and falls into
+[[PRESS_SPACE]] --- the \emph{Press Space to continue:} prompt that
+also accepts Return and Escape.
+
+<<miu1 popup end>>=
+        ORG $87EC
+POPUP_END
+        SUBROUTINE
+        ; Close a visible-page popup and wait for acknowledgement.
+        ;
+        ; Behavior:
+        ;   Restore ZP_PAGE_TGL from SAVE_PAGE_TGL; PAGE_FLIP;
+        ;   PAGE_COPY (so both buffers match); restore the window;
+        ;   fall into PRESS_SPACE.
+        LDA SAVE_PAGE_TGL
+        STA ZP_PAGE_TGL
+        JSR PAGE_FLIP
+        JSR PAGE_COPY
+        JSR WIN_RESTORE
+PRESS_SPACE
+        ; Prompt and wait for Space (or Return / Escape).
+        JSR MSG_PRINT
+        DC.B "}Press Space to continue: ",$00
+        JSR KBD_CLEAR
+.key    JSR KEY_WAIT
+        CMP #$0D
+        BEQ .ok
+        CMP #$1B
+        BEQ .ok
+        CMP #$20
+        BNE .key
+.ok     JSR CLR_ROW
+        INC MON_CH
+        DEC MON_CV
+        JSR KBD_CLEAR
+        JMP WIN_SAVE
+@ %def POPUP_END PRESS_SPACE
+
+\section{Name and sound toggles}
+
+<<miu1 print name>>=
+        ORG $8837
+PRINT_NAME
+        SUBROUTINE
+        ; Print the player's name.
+        ;
+        ; Behavior:
+        ;   Characters from PLR_NAME through CHAR_OUT until the
+        ;   zero terminator.
+        LDX #$00
+.next   LDA PLR_NAME,X
+        BEQ .done
+        JSR CHAR_OUT
+        INX
+        BNE .next
+.done   RTS
+@ %def PRINT_NAME
+
+The two sound commands toggle the library's flags and mirror the
+new values into the player state block ([[PLR_SOUND]]/[[PLR_SFX]],
+so they persist in the save file), then echo \emph{on} or
+\emph{off}.
+
+<<miu1 sound toggles>>=
+        ORG $8845
+SOUND_TOGGLE
+        SUBROUTINE
+        ; Toggle master sound; echo " on"/" off".
+        ;
+        ; Behavior:
+        ;   Invert SOUND_ON through SOUND_SET (which also sets the
+        ;   IIgs speed policy); mirror into PLR_SOUND.
+        LDA SOUND_ON
+        EOR #$FF
+        JSR SOUND_SET
+        STA PLR_SOUND
+        BNE .on
+.off    JSR MSG_PRINT
+        DC.B " off",$00
+        RTS
+SFX_TOGGLE
+        ; Toggle sound effects; echo " on"/" off".
+        LDA SFX_ON
+        EOR #$FF
+        STA SFX_ON
+        STA PLR_SFX
+        BEQ .off
+.on     JSR MSG_PRINT
+        DC.B " on",$00
+        RTS
+@ %def SOUND_TOGGLE SFX_TOGGLE
+
+\section{Death}
+
+\emph{<name>, thou art dead.} The stats are zeroed and repainted,
+the viewport cleared, and a 10-byte-wide, 94-scanline image ---
+stored at the very start of the file, in [[MIU1_TABLES]] --- is
+blitted to the middle of the screen, drawn on the visible page.
+Bytes with the high bit set overwrite; others merge with [[ORA]].
+The death knell (effect 2) plays twice.
+
+<<miu1 death>>=
+        ORG $8870
+DEATH   SUBROUTINE
+        ; Announce death, zero the vitals, draw the death image.
+        ;
+        ; Behavior:
+        ;   Print "<name>, thou art dead."; PAGE_COPY; zero coin,
+        ;   food and hits; repaint the stats panel on the visible
+        ;   page; clear the viewport; blit the 10x94-byte image
+        ;   from MIU1_TABLES (bit 7 set: store; clear: ORA in);
+        ;   queue the death knell twice; flip and flush.
+        ;
+        ; Modifies:
+        ;   PLR_COIN, PLR_FOOD, PLR_HITS, SAVE_PAGE_TGL,
+        ;   ZP_HGR_PTR, the blit pointer below
+        ; Clobbers: A, X, Y
+        JSR PUTCH_NL_COND
+        JSR PRINT_NAME
+        JSR MSG_PRINT
+        DC.B ", thou art dead.",$00
+        JSR PAGE_COPY
+        LDA #$00
+        STA PLR_COIN
+        STA PLR_COIN+1
+        STA PLR_FOOD
+        STA PLR_FOOD+1
+        STA PLR_HITS
+        STA PLR_HITS+1
+        LDY ZP_PAGE_TGL
+        STY SAVE_PAGE_TGL
+        STA ZP_PAGE_TGL                 ; single-page mode
+        JSR STATS_VALUES
+        JSR VIEW_CLEAR
+        LDA #$02                        ; image source := one byte
+        STA .imgl                       ;   before MIU1_TABLES
+        LDA #$70                        ;   (pre-incremented below)
+        STA .imgh
+        LDX #$20                        ; scanlines $20..$7D
+.row    LDA HGR_ROW_LO,X
+        STA ZP_HGR_PTR
+        LDA HGR_ROW_HI,X
+        EOR ZP_PAGE_XOR
+        STA ZP_HGR_PTR+1
+        LDY #$0F                        ; screen bytes 15..24
+.col    INC .imgl
+        BNE .get
+        INC .imgh
+.imgl = *+1
+.imgh = *+2
+.get    LDA MIU1_TABLES
+        BPL .mix
+        ORA (ZP_HGR_PTR),Y
+.mix    STA (ZP_HGR_PTR),Y
+        INY
+        CPY #$19
+        BCC .col
+        INX
+        CPX #$7E
+        BCC .row
+        LDA #$02                        ; the death knell, twice
+        JSR SFX_QUEUE
+        LDA #$02
+        JSR SFX_QUEUE
+        LDA SAVE_PAGE_TGL
+        STA ZP_PAGE_TGL
+        JSR PAGE_FLIP
+        JMP KBD_CLEAR
+@ %def DEATH
+
+\section{Loading a location: respawn and the overlay switch}
+
+[[GAME_LOAD]] is how the game changes mode. The current location's
+overlay name lives at [[LOC_NAME]], the head of a table of all
+seven overlay names at fixed 4-byte offsets (\texttt{GEN OUT DNG
+TWN CAS SPA TM}). A caller jumps here --- the stack is reset, there
+is no return --- with A = the table offset of the destination: the
+name is copied down into the current-location slot, parsed, loaded
+through the RAM-disk cache (retrying through [[DISK_PROMPT]] ---
+\emph{Put in the Ultima disk} --- on errors), the screen furniture
+is redrawn, and control jumps to [[OVERLAY_ENTRY]] --- where the
+file just landed. A = 0 (or any offset past the table) skips all
+that and loads \texttt{GEN}, the character generator: the new-game
+path. [[RESPAWN]] is death's continuation: A = 4 is the
+\texttt{OUT} entry, so the slain player wakes outdoors.
+
+<<miu1 respawn>>=
+        ORG $88F8
+RESPAWN SUBROUTINE
+        ; Death, then resurrection outdoors.
+        ;
+        ; Behavior:
+        ;   DEATH, then GAME_LOAD with A = 4 -- the "OUT" entry of
+        ;   the location-name table.
+        JSR DEATH
+        LDA #$04
+GAME_LOAD
+        ; Switch to the overlay whose name is at LOC_NAME+A.
+        ; No return: the stack is reset.
+        LDX #$FF
+        TXS
+        CMP #$19
+        BCS .gen                        ; bad offset: start over
+        TAX
+        BNE .switch
+.gen    JSR MLIB_BLOAD                  ; new game: the character
+        DC.B "GEN",$00                  ;   generator overlay
+        BCS .gen
+        JMP OVERLAY_ENTRY
+.switch LDY #$00                        ; make it current: copy the
+.copy   LDA LOC_NAME,X                  ;   name down to LOC_NAME
+        STA LOC_NAME,Y
+        INX
+        INY
+        ASL
+        BNE .copy                       ; stop on $00 / high-bit char
+.load   JSR KBD_CLEAR
+        JSR MLIB_PARSE_PATH_P
+        DC.W LOC_NAME
+        JSR FILE_LOAD                   ; lands at OVERLAY_ENTRY
+        JSR DISK_PROMPT                 ; C set: prompted, retry
+        BCS .load
+        JSR PAGE1_LOCK
+        JSR STATS_DRAW
+        JSR DRAW_BORDERS
+        JSR WIN_RESTORE
+        JMP OVERLAY_ENTRY
+@ %def RESPAWN GAME_LOAD
+
+\section{Quit, and the bootstrap at the overlay address}
+
+A matched pair built around a lovely trick. At startup,
+[[OVERLAY_ENTRY]] saves ProDOS's reset vector \emph{into the
+operand of [[QUIT]]'s final [[JMP]]}, then points the reset vector
+at [[QUIT]]. From then on, pressing Reset --- or the Quit command
+--- shuts the library down, puts the saved vector back, and leaves
+through it. Until it is patched, the operand reads [[$FF59]], the
+monitor's cold entry, so a \texttt{QUIT} before startup still lands
+somewhere sane.
+
+<<miu1 quit>>=
+        ORG $893F
+QUIT    SUBROUTINE
+        ; Leave the game: restore the reset vector and exit
+        ; through it.
+        ;
+        ; Behavior:
+        ;   LIB_SHUTDOWN (text mode, mouse off, IIgs speed); put
+        ;   the saved ProDOS reset vector back at RESET_VEC (with
+        ;   the EOR #$A5 validation byte); jump through QUIT_VEC.
+        JSR LIB_SHUTDOWN
+        LDA QUIT_VEC
+        STA RESET_VEC
+        LDA QUIT_VEC+1
+        STA RESET_VEC+1
+        EOR #$A5
+        STA RESET_VEC+2
+QUIT_VEC = *+1
+        JMP MON_RESET                   ; (patched: ProDOS's vector)
+@ %def QUIT QUIT_VEC
+
+And the bootstrap itself. This code sits \emph{at} [[OVERLAY_ENTRY]]
+--- the address every mode overlay loads at --- so it runs exactly
+once: the moment \texttt{MI.U1} starts. It hooks Reset, loads
+\texttt{STUPH}, zeroes the undisplayed holes of hi-res page 2,
+initializes the machine layer, sets up double-buffering, restores
+the saved sound preference, and tail-calls [[GAME_LOAD]] with A = 0
+--- which loads the \texttt{GEN} overlay \emph{on top of this very
+code} and jumps back to [[OVERLAY_ENTRY]], now the entry point of
+the character generator.
+
+<<miu1 bootstrap>>=
+        ORG $8956
+OVERLAY_ENTRY
+        SUBROUTINE
+        ; One-shot startup code at the overlay load address.
+        ;
+        ; Behavior:
+        ;   Hook Reset through QUIT (saving ProDOS's vector in
+        ;   QUIT's JMP); load STUPH; clear hi-res page 2's hole
+        ;   bytes; LIB_INIT; enable double-buffering (draw page 2
+        ;   first); restore the saved sound flag; GAME_LOAD(0) --
+        ;   GEN replaces this code and is entered at this address.
+        SEI
+        LDX #$FF
+        TXS
+        LDA RESET_VEC
+        STA QUIT_VEC
+        LDA RESET_VEC+1
+        STA QUIT_VEC+1
+        LDA #<QUIT
+        STA RESET_VEC
+        LDA #>QUIT
+        STA RESET_VEC+1
+        EOR #$A5
+        STA RESET_VEC+2                 ; Reset now quits cleanly
+.stuph  JSR MLIB_BLOAD
+        DC.B "STUPH",$00
+        BCS .stuph
+        LDA #$00
+        LDX #$40                        ; hi-res page 2: zero the 8
+.page   STX .h1                         ;   undisplayed bytes of
+        STX .h2                         ;   each 128-byte half-page
+        LDY #$78
+.h1 = *+2
+.hole   STA HGR2,Y
+.h2 = *+2
+        STA HGR2+$80,Y
+        INY
+        BPL .hole
+        INX
+        CPX #$60
+        BCC .page
+        JSR WIN_FULL
+        JSR MON_HOME
+        JSR LIB_INIT
+        LDA #$60
+        STA ZP_PAGE_XOR                 ; draw on page 2 first,
+        STA ZP_PAGE_TGL                 ;   double-buffered
+        JSR PAGE_FLIP
+        JSR PAGE1_LOCK
+        BIT TXTPAGE2
+        LDA SOUND_ON
+        JSR SOUND_SET
+        LDA #$00                        ; new game: load GEN here
+        JMP GAME_LOAD
+@ %def OVERLAY_ENTRY
 
 <<miu1.asm>>=
         PROCESSOR 6502
@@ -8376,7 +9172,18 @@ MIU1_CODE_B
 <<miu1 tick>>
 <<miu1 stats panel>>
 <<miu1 feedback>>
-<<miu1 code high stub>>
+<<miu1 popup frame>>
+<<miu1 ready command>>
+<<miu1 menu pick>>
+<<miu1 inventory>>
+<<miu1 column layout>>
+<<miu1 popup end>>
+<<miu1 print name>>
+<<miu1 sound toggles>>
+<<miu1 death>>
+<<miu1 respawn>>
+<<miu1 quit>>
+<<miu1 bootstrap>>
 @
 
 

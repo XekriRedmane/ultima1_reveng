@@ -9,6 +9,38 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 8 (2026-06-12): MI.U1 engine code complete ($841E-$89BC)
+
+- The high stub is GONE -- all engine code $8037-$89BC annotated:
+  POPUP_FRAME (blue LINE_TO rectangle on the visible page),
+  READY_CMD (S/W/A dispatch; proves $7E79=readied SPELL, $7E7A=
+  weapon, $7E7B=armour -- round-7 names corrected), MENU_PICK
+  (generic picker: 5 inline arg bytes = count, owned-array ptr,
+  name-table ptr; letters track item indexes; item 0 always
+  allowed), INVENTORY (level = exp/1000+1 recomputed, coin purse =
+  one 16-bit number shown as pence/silver/gold = ones/tens/over-
+  100), COL_ADVANCE/ITEM_LINE (two-column dot-leader lines; name
+  table = caller's inline word consumed by STR_NTH_CAP through the
+  stack; $1B marker = readied), POPUP_END/PRESS_SPACE, PRINT_NAME,
+  SOUND/SFX_TOGGLE (mirrored to $7E71/72 for the save file),
+  DEATH (death image = 10x94 bytes at MIU1_TABLES $7003; render
+  it when carving masks), RESPAWN/GAME_LOAD (LOC_NAME $7E16 table
+  "GEN/OUT/DNG/TWN/CAS/SPA/TM" at 4-byte offsets; A=offset; A=0 ->
+  GEN/new game; death -> A=4 = OUT; loads land AT OVERLAY_ENTRY),
+  QUIT + OVERLAY_ENTRY bootstrap (saves ProDOS reset vector INTO
+  QUIT's JMP operand; hooks Reset; loads STUPH; the final
+  GAME_LOAD(0) overwrites the bootstrap itself with GEN and jumps
+  back into $8956).
+- Low-stub layout pinned: $7DCC disk prompt entry, $7E05
+  PAGE1_LOCK, $7E16 location-name table, $7E31 win-save, full
+  player state block to ~$7EFF (PLR_NAME "Glinda" default at
+  $7EB8). String table entry points EQU'd (STR_RACES $73AF,
+  STR_WEAPONS $73C8, STR_SPELLS $74D4, STR_STATS $748E,
+  STR_ARMOUR $7520, STR_CLASSES $755D, STR_TRANSPORT $757C,
+  STR_ITEMS $7687, STR_COMMANDS $75CB).
+- PDF 474 pages; 12 ORG stubs left (miu1 masks/strings/low-stub +
+  7 overlays + makeindata + tcmaps).
+
 ### Round 7 (2026-06-12): MI.U1 engine core services ($8144-$841D)
 
 - High stub front carved into 12 annotated chunks, byte-perfect on
@@ -161,24 +193,12 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [ ] Continue MIU1 high stub ($841E-$89BC): popup window + line
-      drawing $841E-$8465, R-eady command $8466 (S/W/A dispatch ->
-      $7E79/7A/7B setters), generic menu picker $84DF (5 inline
-      args; SMC into $8040/$85A1/$859D), inventory display $85A2-
-      $87F9 (two-column layout $8772, item-line printer $87B8/BB
-      with dot leaders + $1B marker on readied index $7E4E, item
-      arrays $7E75/7D/83/93/9E, gems/counters, name+level+race/
-      class header), press-space $87FA, name printer $8837 ($7EB8),
-      sound toggles $8845/$885B ($1580/$1581 -> $7E71/72), death
-      $8870 (zeroes stats, draws the $7003 bitmap via row tables,
-      sfx 2 twice), respawn $88F8 (MLIB_BLOAD "GEN", copies string
-      at $7E16+X, JSR $B736/$1589/$7DCC retry loop), QUIT $893F
-      (reset vector from $8954), OVERLAY_ENTRY $8956 (clears $4000
-      page, LIB_INIT, BLOADs "STUPH", single-page mode, JSR $7E05).
-- [ ] Decompose MIU1 low stub $7DCE-$8036: disk-prompt routine
-      $7DCC (!! the last 2 bytes of MIU1_STRINGS chunk are code --
-      move the boundary), page-show $8005, overlay name table
-      $8016 ("GEN/OUT/DNG/TWN/CAS/SPA/TM"), bytes $8032-$8036.
+- [ ] Round 9: carve the MIU1 low stub $7DCE-$8036: DISK_PROMPT
+      $7DCC-$7E04 (move the 2 code bytes out of MIU1_STRINGS),
+      PAGE1_LOCK $7E05-$7E15, LOC_NAME table $7E16-$7E31ish, then
+      the player state block through $8036 (defaults incl. name
+      "Glinda", stats, owned arrays -- turn the round-7/8 PLR_*/
+      OWNED_*/READY_* EQUs into labels).
 - [ ] Structure MIU1_STRINGS ($73AF-$7DCD): string tables at $73AF,
       $74D4 (weapons), $75CB (command names)... X-indexed,
       high-bit-terminated; map them via STR_NTH inline pointers.
