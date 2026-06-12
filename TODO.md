@@ -9,6 +9,17 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 3 (2026-06-12): NIF byte-perfect, rendered
+
+- `nif` 7680/7680 with rendered figure: it is the **endgame victory
+  screen** ("FIN" reversed) — calligraphic text about Mondain's death.
+  Format: line-sequential raster, 192 rows x 40 bytes, no interleave,
+  no screen holes. Renderer: .claude/scripts/render_nif.py.
+- MAPCHARS render attempted (2x8/2x16/1x8/1x16, row+column major) —
+  no hypothesis produced clearly-right tiles; deferred per the
+  don't-ship-broken-renders rule until the tile blitter in MI.U1/OUT
+  reveals the record format. Same for STUPH.
+
 ### Round 2 (2026-06-12): U1.INTRO byte-perfect
 
 - `u1intro` 2469/2469. The file is the attract-mode title animation:
@@ -73,10 +84,9 @@ plus this file — never by re-deriving history.
       overlays.
 - [ ] Overlays in order of size/value: out, cas, twn, gen, dng, spa, tm.
 - [ ] makeindata (initial game state builder at $1E00).
-- [ ] Data targets with graphics rendering (standing rule): mapchars
-      (tiles, likely 1024 B = shapes), stuph (shapes), nif (hi-res
-      image — render early, probably the title picture), tcmaps (maps —
-      render as map images; contains shop-sign text like "ARMOUR").
+- [ ] Data targets remaining: mapchars (tiles — format TBD from the
+      blitter; tile 0 looks like dithered water), stuph (shapes),
+      tcmaps (maps; render once mapchars is decoded).
 - [ ] Synthesis chapters once MI.U1 + first overlay are understood.
 
 ## Structural
