@@ -615,6 +615,222 @@ read the map cell at the player's position plus the slot's signed offset,
 and blit that cell's glyph. Keeping world/grid coordinates and viewport
 coordinates distinct is the one thing a port must not conflate.
 
+\chapter{Algorithm descriptions}
+\label{ch:algorithms}
+
+This chapter collects the game's non-trivial mechanics as
+platform-independent pseudocode plus the design intent behind each. These
+are the parts a porter cannot recover by translating instructions one for
+one: the formulas are spread across the assembly, encoded in tables, and
+tangled with 6502 idioms. Here each is stated as an algorithm, with the
+assembly routines named for drill-down. The data structures they operate
+on are in chapter~\ref{ch:datastructures}.
+
+\section{The random-number generators}
+
+The game uses \emph{two} pseudo-random sources, and the distinction
+matters for reproducibility.
+
+\textbf{The library PRNG} ([[RND]] in \texttt{STUPH}) is a 16-byte lagged
+additive generator, reseeded from the timing of the cursor flash --- so it
+is genuinely unpredictable from run to run. It supplies the
+``atmospheric'' randomness: which flavour name a shopkeeper has, whether a
+container is a chest or a coffin, idle-animation jitter, combat damage
+spread.
+
+\textbf{The maze PRNG} ([[SEED_RND]] in \texttt{DNG}) is a deterministic
+two-byte Fibonacci-style generator used only to build dungeons:
+
+\begin{verbatim}
+    seed_step(A, B):            // SEED_RND
+        A' = (A + B + 9) mod 256
+        B' = A
+        return (A, B) = (A', B')   // the new A is the random byte
+\end{verbatim}
+
+Because its seed is a pure function of \emph{where} the dungeon is and
+\emph{how deep} the player has gone, the same dungeon level always
+generates identically (next section). This is the key trick that lets the
+game ship ten-level dungeons under every entrance without storing a single
+dungeon map.
+
+\section{The turn economy: food and time}
+
+Every action that takes game-time calls the engine's [[TICK]] routine with
+two parameters: a food cost and a move-counter increment. [[TICK]]
+maintains the hunger clock and the move odometer:
+
+\begin{verbatim}
+    tick(food_cost, move_delta):           // TICK / TICK_SND
+        food_fraction -= food_cost         // BCD hundredths of a food unit
+        if borrow:
+            if food > 0: food -= 1         // 16-bit binary, clamp at 0
+        move_count += move_delta           // multi-byte BCD odometer
+\end{verbatim}
+
+Food is therefore spent in \emph{hundredths}: [[FOOD_FRAC]] is a fraction
+that, when it underflows, costs one whole unit of [[PLR_FOOD]]. Different
+activities tick at different rates --- and, importantly, faster transports
+cost \emph{less} food and \emph{less} time per step than walking, which is
+the whole point of owning a horse or a ship. The per-step costs are small
+tables in each overlay. A port keeps food as a fixed-point value (the
+hundredths are just two decimal places) and the move count as a plain
+integer; the BCD is only so the Apple~II can print the odometer without a
+binary-to-decimal conversion every turn.
+
+Running out of food does not immediately kill; it begins starvation
+damage, applied by the overlays' end-of-turn tick.
+
+\section{Procedural dungeon generation}
+
+No dungeon map exists on disk. Entering a dungeon, or moving between its
+levels, rebuilds the current level from scratch with [[DNG_GEN]]. The seed
+is derived entirely from fixed facts about the location:
+
+\begin{verbatim}
+    seed_A = (8 * place) XOR outdoor_x XOR level
+    seed_B = (4 * outdoor_y) XOR continent
+\end{verbatim}
+
+so revisiting the same level of the same dungeon always yields the same
+maze. Generation then runs five passes over a fresh template (a
+$11 \times 11$ grid: solid border, with a lattice of pillars at every
+even-column/even-row cell). All structural rolls come from the maze PRNG;
+only container type and monsters use the library PRNG.
+
+\begin{verbatim}
+    generate_level(level):                 // DNG_GEN
+      map = copy(DNG_TEMPLATE)             // border + even/even pillars
+
+      // pass 1: edges -- the lattice openings between pillars
+      for each edge cell (even col,odd row) or (odd col,even row):
+          r = maze_rand() mod 20
+          map[cell] = pick(r): open (6/20), secret door (6/20), door (8/20)
+
+      // pass 2: walls and force fields
+      repeat (2*level + 1) times:
+          pos = WALL_POS[ maze_rand() ]    // transposed on odd levels
+          map[pos] = (maze_rand() < 96/256) ? force_field : wall
+
+      // pass 3: containers (the only library-RNG structural roll)
+      repeat (level) times:
+          pos = random edge cell
+          map[pos] = (lib_rand() even) ? chest : coffin
+
+      // pass 4: fixed cells
+      map[(1,2)] = open                     // never face a wall on arrival
+      place ladders at (7,3) and (3,7)      // up/down swapped by parity
+      if level == 10: delete the down ladder    // no level 11
+      if level == 1:  arrival up-ladder at (1,1), delete the (7,3) up
+
+      // pass 5: populate monsters (see below), then return
+\end{verbatim}
+
+A cell byte packs two fields: the low nibble is the \textbf{feature}
+(0~open, 1~wall, 2~trapdoor, 3~secret door, 4~door, 5~chest, 6~coffin,
+7~ladder~down, 8~ladder~up, 9~revealed trapdoor, \texttt{C}~force field)
+and the high nibble is a \textbf{monster slot} occupying the cell. A cell
+blocks movement when its feature is a wall (1), a secret door (3), or a
+force field (any value $\ge$ \texttt{A}).
+
+The ``secret door'' weighting hides a vestige: the edge-feature table
+actually lists trapdoor codes, which a later override rewrites to secret
+doors --- evidence the design once put trapdoors on the lattice and
+changed its mind. A faithful port can collapse this to the three outcomes
+above.
+
+\section{The dungeon view: ray marching}
+
+The first-person dungeon view is drawn by [[DNG_DRAW]], a \textbf{ray
+marcher}. There is no stored 3-D model; the renderer walks the maze cell
+by cell straight ahead and draws the wireframe in converging perspective
+until it hits something solid:
+
+\begin{verbatim}
+    draw_view():                           // DNG_DRAW / DNG_MARCH
+      cell = player_cell
+      for depth in 1 .. VIEW_DEPTH:        // up to ~10 cells ahead
+          cell += facing                   // step one cell forward
+          ahead = feature_at(cell)
+          // the two side cells: rotate facing +/-90 degrees
+          left  = feature_at(cell + rot_left(facing))
+          right = feature_at(cell + rot_right(facing))
+          draw_slice(depth, ahead, left, right)   // walls/doors/openings
+          if solid(ahead): break           // the view is blocked
+\end{verbatim}
+
+Rotating the facing vector is exact integer arithmetic: if facing is
+$(dx, dy)$, then left is $(dy, -dx)$ and right is $(-dy, dx)$. The
+\emph{perspective} is entirely in a table, not the code: [[DNG_GEOM]] is a
+packed pool of converging screen coordinates --- ten entries (depths
+1--10) for each box edge --- and each of the dozen drawing primitives
+(left wall, right wall, ahead wall, door, ladder, force field, the 3-D
+coffin box) reads its line endpoints from that table at the current depth
+and strokes them. Drawing the same feature ``smaller and further in''
+across depths is just indexing deeper into [[DNG_GEOM]].
+
+Monsters and items in view are drawn by [[SHAPE_DRAW]], a scaled
+vector-stroke interpreter. A shape is a list of $(x, y, \mathit{flag})$
+vertex triples ($x$ relative to a centre, $y$ to a baseline, flag~0 =
+move, nonzero = draw a line); a $(0,0)$ triple terminates. The shape is
+scaled down by halving its coordinates once per unit of depth (a
+sign-preserving shift), so the same monster outline shrinks with distance.
+The 25 monster/object outlines are rendered as a figure in the dungeon
+chapter.
+
+\section{Shop pricing and haggling}
+
+Every shop transaction prices an item as a base cost scaled by a
+\textbf{charisma factor}, so a charismatic buyer pays less and sells for
+more --- the game's only ``skill check'' on a social stat.
+
+\begin{verbatim}
+    price(item_index):                     // PRICE_MUL and callers
+        base   = ITEM_COST[item_index]     // = item_index^2 (a squares table)
+        factor = haggle_factor(charisma, wisdom, intelligence)
+        return base * factor               // formed by repeated addition
+\end{verbatim}
+
+The base cost is the \emph{square} of the item's index --- later, better
+items in each shop's list cost quadratically more --- read from a small
+precomputed squares table ([[ITEM_COST]]) rather than multiplied at run
+time. The charisma-derived factor discounts purchases and inflates sale
+proceeds; charisma, wisdom, and intelligence all feed it. A port computes
+$\mathit{index}^2 \times \mathit{factor}$ directly; the repeated-addition
+multiply and the lookup table are 6502 conveniences.
+
+The six shop classes (armour, grocery, weapons, magic, pub, transport)
+share this pricing and a common buy/sell skeleton, differing only in which
+owned-item array they touch and their flavour text. The transport shop is
+special: a purchased craft is written into the world as an object record
+(chapter~\ref{ch:datastructures}) at a free cell beside the shop, to be
+boarded outdoors.
+
+\section{Monster spawning and pursuit}
+
+Outdoors, monsters are spawned into the object-record table by an
+end-of-turn check gated on \textbf{difficulty}: each monster kind has a
+\emph{tier} 0--10 ([[MON_TIER]]), and a kind can spawn only when its tier
+is at or below a rising difficulty bar (so tougher monsters appear as the
+player progresses). A spawned monster's hit points and the experience it
+grants both scale from its tier ($\mathit{tier\_hp} = 10 \times
+\mathit{tier}$). Spawn position respects terrain class --- sea monsters in
+water, land monsters on land.
+
+Pursuit is greedy distance-closing. Each turn an active monster steps to
+reduce its distance to the player, where distance is an integer square
+root of the squared coordinate differences (an explicit
+integer-square-root routine appears in several overlays). Four monster
+kinds are ranged attackers that fire instead of closing when in line.
+Melee resolution rolls to hit against the defender's armour (plus charisma
+for NPCs) and applies damage to the target's hit points; a monster reduced
+to zero frees its object-record slot and grants its tier-scaled
+experience.
+
+Towns and castles use the same pursuit and melee logic on their 16-slot
+NPC table, with the kind code selecting hostile (home and attack) versus
+peaceful (wander, trade, or perform) behaviour.
+
 \chapter{Disk layout and boot chain}
 
 \section{Disk image format}

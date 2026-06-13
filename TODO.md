@@ -9,6 +9,35 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 28 (2026-06-13): Synthesis -- the Algorithm descriptions chapter
+
+- Third synthesis chapter: \chapter{Algorithm descriptions}
+  (label ch:algorithms), after the Data-structure reference. Collects the
+  non-trivial mechanics as platform-independent pseudocode + design
+  intent -- the parts a porter cannot recover by translating instructions:
+  (1) the TWO PRNGs (library lagged-additive = atmospheric/unpredictable;
+  the DNG Fibonacci seed_step A'=A+B+9,B'=A = deterministic mazes);
+  (2) the turn economy (TICK: food spent in BCD hundredths, faster
+  transports cost less food AND time); (3) PROCEDURAL DUNGEON GENERATION
+  (seed = 8*place^outdoor_x^level / 4*outdoor_y^continent; the five
+  passes: edges 6/6/8, walls+fields 2*level+1, containers, fixed cells +
+  ladders by parity, monsters; the cell-byte nibble packing + blocking
+  rule); (4) the dungeon RAY MARCHER (walk facing, inspect ahead+2 sides
+  via exact +/-90 vector rotation, perspective entirely in DNG_GEOM;
+  SHAPE_DRAW vector shapes scaled by depth-halving); (5) shop pricing
+  (base = index^2 squares table * charisma/wis/int haggle factor);
+  (6) monster spawn (tier-gated on a rising difficulty bar, hp/exp =
+  10*tier) + greedy integer-sqrt pursuit + melee-vs-armour.
+- Prose-only; all 16 targets byte-perfect; hygiene green; PDF 997 pages,
+  0 errors, 0 undefined refs. verbatim pseudocode blocks exempt from
+  address-wrapping.
+- NEXT synthesis gaps: a Rendering-pipeline chapter (tile blit + the two
+  wireframe engines + double-buffering + the hi-res layout: what is
+  Apple-II-specific vs portable), then Porting notes per subsystem (the
+  6502 idioms a port must replace: patched-JSR dispatch, SMC operands,
+  softswitches, cycle timing). Then the SPA flight model + chargen math
+  could get their own algorithm sections. Optionally TM CRAFT_GFX render.
+
 ### Round 27 (2026-06-13): Synthesis -- the Data-structure reference chapter
 
 - Second synthesis chapter: \chapter{Data-structure reference}
