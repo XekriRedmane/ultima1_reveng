@@ -9,6 +9,52 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 14 (2026-06-13): DNG decomposed (everything but the renderer)
+
+- DNG ($8956-$B098, 10051 bytes) is now decomposed into 84
+  annotated chunks across 22 sections; byte-perfect. Only three
+  honest stubs remain, all in the renderer band: DNG_GEOM ($9E42,
+  perspective tables + wireframe primitives), SHAPE_DRAW ($A449,
+  scaled vector-shape renderer), and the monster shape art
+  MON_SHAPES. Next DNG round = the wireframe renderer.
+- LEVEL GENERATOR pinned (DNG_GEN $8C5D). No dungeon map is stored
+  anywhere -- the maze is a pure function of a 2-byte seed:
+  SEED_A = 8*PLR_PLACE ^ PLR_OUT_X ^ level, SEED_B = 4*PLR_OUT_Y ^
+  PLR_CONT. SEED_RND ($A3F3) is a Fibonacci swap-add (A' = A+B+9,
+  B' = A). Five passes over DNG_TEMPLATE (border + even-even
+  pillar lattice): (1) edge features via EDGE_PICK -- open/secret-
+  door/door weighted 6/6/8 on a d20 (trapdoor codes 2,9 in
+  EDGE_FEATURE are overridden to secret doors -- vestige of an
+  earlier design); (2) 2*level+1 walls/force-fields from
+  WALL_POS_A/B (transposed on odd levels, field prob 96/256);
+  (3) `level` containers (chest/coffin -- the ONLY non-seeded
+  roll, uses library RND); (4) fixed cells: clear (1,2), ladders
+  at (7,3)/(3,7) dir by level parity, level 10 drops its down
+  ladder, level 1 forces the arrival up-ladder at (1,1); (5) fall
+  into LEVEL_INIT -- pick 5 monster kinds, release 3.
+- CELL_WRITE ($A3xx): DNG_MAP[X + 11*Y] := A (row-major 11x11).
+  AHEAD_XY = cell one step along facing. NEGATE = two's-comp.
+- Map access + the distance root section documents how monsters
+  home on the player; Inform/search, the ten Cast spells
+  (Open/Unlock incantations APERTUS!/PECUNIA!, missile, ladder-
+  blink), K-limb (ladders, re-gen on level change), Open, Quit,
+  Ready, Unlock, Ztats all annotated. Monsters: SIX fixed slots,
+  turn walker counts DNG_MON_TIMER 5..0, approach logic homes via
+  the distance root.
+- DNG reuses the engine API EQU block (MI.U1 services + STUPH
+  vectors) as its defines template, exactly as planned. STALE_FFFF
+  EQU documents the on-disk stale dispatch operand.
+- Fixed a pre-existing dangling \ref: added \label{ch:overlays}
+  to the Mode overlays chapter (MI.U1 prose forward-referenced
+  it). PDF now 614 pages, zero undefined references, zero LaTeX
+  errors. All 16 targets byte-perfect. Hygiene: 0 EQU stubs,
+  0 raw-hex operands, 0 missing plates, 0 placement violations,
+  1 TODO-SYM (intro art, resolves with makeindata). ORG stubs:
+  11 (twn, cas, 3 DNG renderer stubs, spa, gen, tm, makeindata,
+  tcmaps).
+- Next session: DNG renderer (DNG_GEOM/SHAPE_DRAW/MON_SHAPES --
+  the wireframe geometry, monsters 21-45 shapes), then TWN/CAS.
+
 ### Round 13 (2026-06-13): DNG scouted end to end
 
 - DNG ($8956-$B098, 10051 bytes) is the first-person wireframe
@@ -322,11 +368,14 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [ ] DNG next: full skeleton scouted (see Round 13). Decompose
-      in file order; dungeon
-      spells 1,2,4-9 and monsters 21-45 should light up here).
-      Reuse OUT's defines block as the template; watch for the
-      shared-source routines (TGT_CELL_PTR, SPAWN_AT_*).
+- [ ] DNG renderer: the last 3 DNG stubs (DNG_GEOM $9E42 =
+      perspective tables + wireframe wall/door/ladder/field/
+      chest/coffin painters that DNG_DRAW sequences; SHAPE_DRAW
+      $A449 = scaled vector-shape renderer; MON_SHAPES = the
+      dungeon-monster shape art, monsters 21-45). The geometry
+      tables at the file tail ($AFxx-$B098) are coordinate-list
+      shaped. Render the monster shapes once SHAPE_DRAW's format
+      is known. Everything else in DNG is already decomposed.
 - [ ] TWN/CAS pair: pins the TCMAPS map format, the COURT_CELLS
       writer, QUEST_FLAGS assignment (kings), TM_REVEAL setter
       (princess rescue?), shops vs OWNED_* arrays.

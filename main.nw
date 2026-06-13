@@ -9124,6 +9124,8 @@ file just landed. A = 0 (or any offset past the table) skips all
 that and loads \texttt{GEN}, the character generator: the new-game
 path. [[RESPAWN]] is death's continuation: A = 4 is the
 \texttt{OUT} entry, so the slain player wakes outdoors.
+[[EXIT_TO_OUT]] is the same path minus the dying --- it is how a
+dungeon climb-out (see [[KLIMB_CMD]]) returns to the overworld.
 
 <<miu1 respawn>>=
         ORG $88F8
@@ -9134,6 +9136,9 @@ RESPAWN SUBROUTINE
         ;   DEATH, then GAME_LOAD with A = 4 -- the "OUT" entry of
         ;   the location-name table.
         JSR DEATH
+EXIT_TO_OUT
+        ; the no-death exit: leaving a dungeon (or any mode
+        ; that returns to the overworld) re-enters here
         LDA #$04
 GAME_LOAD
         ; Switch to the overlay whose name is at LOC_NAME+A.
@@ -9166,7 +9171,7 @@ GAME_LOAD
         JSR DRAW_BORDERS
         JSR WIN_RESTORE
         JMP OVERLAY_ENTRY
-@ %def RESPAWN GAME_LOAD
+@ %def RESPAWN EXIT_TO_OUT GAME_LOAD
 
 \section{Quit, and the bootstrap at the overlay address}
 
@@ -9307,14 +9312,16 @@ OVERLAY_ENTRY
 
 
 \chapter{Mode overlays}
+\label{ch:overlays}
 
 The seven play-mode overlays all load at [[OVERLAY_ENTRY]] and are
 entered at their first byte. They share the engine API, the player
 state block, and (visibly, from common code shapes and even
 unreferenced leftover routines) a common ancestral source file.
 \texttt{OUT} is fully decomposed below and serves as the reference
-for the conventions; the remaining six are stub regions pending
-their own rounds.
+for the conventions; \texttt{DNG} follows it (all but its
+wireframe renderer, which has its own round); the remaining five
+are stub regions pending their own rounds.
 
 \section{OUT: the outdoors overlay}
 
@@ -14251,1277 +14258,3700 @@ CAS_BLOB
 <<cas blob>>
 @
 
-\section{DNG}
+\section{DNG: the dungeon overlay}
 
-\texttt{DNG} --- dungeon overlay, 10051 bytes at [[$8956]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
+\texttt{DNG} is the first-person dungeon: ten levels of wireframe
+corridors under every dungeon entrance on the world map. It is the
+largest overlay (10051 bytes at [[$8956]]--[[$B098]]) and the most
+self-contained --- it never touches the object-record arrays or the
+outdoor map. Its world is an 11$\times$11 byte grid per level,
+living in BSS just past the end of the file at [[DNG_MAP]], and
+that grid is \emph{procedurally generated}: nothing about any
+dungeon's layout is stored on disk.
 
-<<dng blob>>=
+The headline discovery, confirmed in this chapter: every dungeon in
+the game is generated, deterministically, from four bytes of player
+state --- the place index, the outdoor position, the continent, and
+the level number ([[DNG_GEN]]). Walk into the same dungeon twice
+and the same maze comes back; walk one level down and a different
+but equally reproducible maze is laid out. Only the perishables
+differ from visit to visit: which lattice cells hold a chest versus
+a coffin is rolled on the real random generator, and monsters are
+placed fresh each time.
+
+A map cell is one byte: low nibble = \emph{feature}, high nibble =
+\emph{monster slot}. The features:
+
+\begin{center}
+\small
+\begin{tabular}{cll}
+code & feature & notes \\
+\hline
+0 & open floor & \\
+1 & wall & blocks walking and sight \\
+2 & hidden trapdoor & walk on it and fall (see [[MOVE_FWD]]) \\
+3 & hidden secret door & drawn as wall; Inform reveals it \\
+4 & door & passable; drawn with a frame \\
+5 & chest & opened by Unlock (trapped!) \\
+6 & coffin & opened by Open (occupied!) \\
+7 & ladder down & K-limb descends \\
+8 & ladder up & K-limb ascends \\
+9 & revealed trapdoor & K-limb descends \\
+\texttt{\$C} & force field & blocks everything; Create/Destroy \\
+\end{tabular}
+\end{center}
+
+Movement treats codes 1 and 3 and everything at or above
+[[$A]] as solid; everything else can be walked onto ---
+including chests, coffins and ladders, which is why the Open,
+Unlock and K-limb commands act on the cell the player is
+\emph{standing on}.
+
+Monsters use a completely different scheme from the outdoors: there
+are exactly \emph{five} of them per level, in fixed slots 1--5 of
+six parallel arrays ([[MON_FREE]], [[MON_X]], [[MON_Y]],
+[[MON_HP]]). The slot number doubles as the monster's \emph{kind}:
+name index = slot $+$ [[MON_BASE]], where [[LEVEL_INIT]] sets
+[[MON_BASE]] $= 5\lfloor(\mathrm{level}-1)/2\rfloor + 20$. So
+levels 1--2 field monsters 21--25 of [[STR_MONSTERS]] (ranger,
+skeleton, thief, giant rat, bat), levels 3--4 field 26--30 (giant
+spider, viper, orc, cyclops, gelatinous cube), and so on down to
+the level 9--10 roster of 41--45 (invisible seeker, mind whipper,
+zorn, daemon, balron). A cell's high nibble holds the slot of the
+monster standing there; slot 0 means none.
+
+Four of the kinds are special-cased by name index in the code: the
+\emph{thief} of levels 1--2 ($21+2$, index 23) steals weapons, the
+\emph{gelatinous cube} (30) destroys armour and is transparent to
+the renderer, the \emph{gremlin} (37) halves the food supply, the
+\emph{invisible seeker} (41) is never drawn at all, and the
+\emph{mind whipper} (42) attacks the intelligence stat. The
+slot-5 monster of each pair of levels (gelatinous cube, carrion
+creeper, lich, balron) is quest material --- see [[MON_KILLED]].
+
+The overlay shares the engine API and player state with
+\texttt{OUT}; everything external is declared here, exactly as in
+the previous chapter.
+
+<<dng defines>>=
+; --- resident library (STUPH) vectors ---
+PAGE_COPY       EQU $158F       ; copy visible page to draw page
+WIN_FULL        EQU $159E       ; text window := full screen
+WIN_TEXT        EQU $15A4       ; window := message area
+VIEW_CLEAR      EQU $15AA       ; clear the map viewport
+PAGE_FLIP       EQU $15AD       ; show the draw page
+FONT_DRAW       EQU $15B0       ; draw glyph A at the cursor
+RND             EQU $15B9       ; random byte
+KEY_GET         EQU $15C2       ; poll once; A := key or 0
+SFX_PLAY        EQU $15CB       ; play sound effect A now
+SFX_QUEUE       EQU $15CE       ; queue sound effect A
+SFX_DRAIN       EQU $15D1       ; play one queued effect
+COLOR_SET       EQU $15D4       ; set hi-res drawing color
+LINE_AGAIN      EQU $15DD       ; line (ZP_PX,ZP_PY)-(ZP_LX2,ZP_LY2)
+@
+
+<<dng defines>>=
+; --- the MI.U1 engine API ---
+CHAR_OUT        EQU $8062       ; print character in A
+PUTCH_NL_COL1   EQU $807E       ; newline, column 1
+CURSOR_COL1     EQU $8081       ; column 1, no newline
+STR_NTH_CAP     EQU $80B1       ; print Nth string, capitalized
+STR_NTH         EQU $80B8       ; print Nth string (X = index)
+MSG_AT          EQU $8115       ; print inline text at X=col,Y=row
+MSG_PRINT       EQU $8119       ; print inline text
+DRAW_BORDERS    EQU $8151       ; redraw the screen frame
+PRINT_NUM16     EQU $8207       ; print 16-bit number A:X
+PRINT_NUM8      EQU $820D       ; print 8-bit number
+NUM_PAD         EQU $8249       ; leading-zero pad character
+RND_MOD         EQU $8254       ; A := random in 0..A-1
+GET_COMMAND     EQU $82A2       ; read+echo command, X = 2*index
+TICK_SND        EQU $82E4       ; food -= Y/100, moves += A, thump
+STATS_VALUES    EQU $836E       ; redraw the stats values
+WIN_RESTORE     EQU $83A9       ; restore the saved window
+WIN_SAVE        EQU $83B4       ; save the text window
+QUERY_MARK      EQU $8407       ; append "?" + error blat
+BEEP_HUH        EQU $840F       ; error blat + flush
+READY_CMD       EQU $8466       ; the Ready command (key in A)
+INVENTORY       EQU $85A2       ; the Ztats display
+PRESS_SPACE     EQU $87FA       ; "(Press Space)" + wait
+SOUND_TOGGLE    EQU $8845       ; ctrl-A: master sound on/off
+SFX_TOGGLE      EQU $885B       ; Noise: effects on/off
+RESPAWN         EQU $88F8       ; death, then reload OUT
+EXIT_TO_OUT     EQU $88FB       ; reload OUT, no death sequence
+STALE_FFFF      EQU $FFFF       ; stale on-disk operand of the
+                                ;   patched dispatch JSR/JMPs
+@
+
+<<dng defines>>=
+; --- string tables in MI.U1 ---
+STR_WEAPONS     EQU $73C8       ; 16 weapon names
+STR_WEAPONS_S   EQU $7438       ; 16 short weapon names
+STR_SPELLS      EQU $74D4       ; 11 spell names ("Prayer" at 0)
+STR_MONSTERS    EQU $76D6       ; 46 monster names
+; --- the player state block ---
+DIR_STR_PTR     EQU $7E51       ; movement-name table override
+PLR_HITS        EQU $7EC6       ; hit points, 16-bit binary
+PLR_STR         EQU $7EC8       ; the six attribute pairs
+PLR_AGI         EQU $7ECA
+PLR_STA         EQU $7ECC
+PLR_INT         EQU $7ED2
+PLR_COIN        EQU $7ED4
+PLR_CLASS       EQU $7ED8
+PLR_FOOD        EQU $7EE5       ; food, 16-bit binary
+PLR_EXP         EQU $7EE7       ; experience, 16-bit binary
+PLR_PLACE       EQU $7EED       ; index of the place the player
+                                ;   is at -- the dungeon's identity
+PLR_CONT        EQU $7E6F       ; continent index (0-3)
+PLR_OUT_X       EQU $7E73       ; saved outdoor position
+PLR_OUT_Y       EQU $7E74
+READY_SPELL     EQU $7E79
+READY_WEAPON    EQU $7E7A
+READY_ARMOUR    EQU $7E7B
+OWNED_WEAPONS   EQU $7E83       ; weapon counts (0..15)
+OWNED_SPELLS    EQU $7E93       ; spell counts (0..10)
+OWNED_ARMOUR    EQU $7E7D       ; armour counts (0..5)
+QUEST_FLAGS     EQU $7EA9       ; 8 quest slots
+; --- zero page ---
+ZP_PX           EQU $06         ; line start (STUPH PLOT pen)
+ZP_PY           EQU $07
+ZP_LX2          EQU $08         ; line end
+ZP_LY2          EQU $09
+MON_CH          EQU $24         ; text cursor column (Monitor CH)
+MON_CV          EQU $25         ; text cursor row (Monitor CV)
+ZP_GAIN         EQU $65         ; 16-bit scratch: hit-point gain
+ZP_PAGE_XOR     EQU $7F         ; draw-page XOR (STUPH)
+ZP_PAGE_TGL     EQU $80         ; page toggle mask (STUPH)
+; --- the level map, past the end of the file ---
+DNG_MAP         EQU $B099       ; 11x11 cells, row-major
+@
+
+\section{DNG: arrival}
+
+The engine's [[GAME_LOAD]] jumps to the overlay's first byte with
+nothing set up. Entry points the command echo's movement names at
+[[DIR_STRS]] --- in the dungeon the four arrows read
+\emph{Forward}, \emph{Turn around}, \emph{Turn right}, \emph{Turn
+left} --- then plants the player at cell $(1,1)$ of level 1,
+facing $+y$ (south), generates the level, and turns
+double-buffering on for the wireframe animation.
+
+There is no saved dungeon position: leaving and re-entering a
+dungeon always starts back at $(1,1)$, level 1, and dying inside
+one respawns outdoors. The position pair [[DNG_X]]/[[DNG_Y]] and
+facing vector [[DNG_DX]]/[[DNG_DY]] live in the overlay's own BSS
+([[DNG_X]] is a column 0--10, [[DNG_Y]] a row; the facing vector
+is one of $(0,\pm1)$/$(\pm1,0)$).
+
+<<dng entry>>=
         ORG $8956
-DNG_BLOB
-        ; STUB — not yet disassembled (dungeon overlay)
-        HEX a9 38 8d 51 7e a9 a5 8d
-        HEX 52 7e a9 01 8d e8 a4 8d
-        HEX e9 a4 8d ed a4 8d 06 a5
-        HEX a9 00 8d ec a4 20 5d 8c
-        HEX a9 60 85 80 85 7f 20 8f
-        HEX 15 4c e6 8d 20 aa 15 20
-        HEX b4 83 20 9e 15 a0 00 a2
-        HEX 0e 20 15 81 0e 20 4c 65
-        HEX 76 65 6c 20 00 a2 00 8e
-        HEX 49 82 ad 06 a5 20 0d 82
-        HEX a9 20 20 62 80 a9 18 20
-        HEX 62 80 a9 04 20 62 80 a0
-        HEX 13 a2 0f ad ed a4 f0 22
-        HEX 30 10 20 15 81 0e 20 53
-        HEX 6f 75 74 68 20 18 00 4c
-        HEX 02 8a 20 15 81 0e 20 4e
-        HEX 6f 72 74 68 20 18 00 4c
-        HEX 02 8a ad ec a4 10 10 20
-        HEX 15 81 0e 20 57 65 73 74
-        HEX 20 18 06 00 4c 02 8a 20
-        HEX 15 81 0e 20 45 61 73 74
-        HEX 20 18 06 00 20 a9 83 a9
-        HEX 00 8d f7 a4 8d 2b a5 ae
-        HEX e8 a4 ac e9 a4 20 32 9d
-        HEX c9 03 f0 08 c9 01 f0 04
-        HEX c9 04 d0 2c 20 38 a4 20
-        HEX 32 9d c9 01 d0 22 8d 2b
-        HEX a5 a9 00 85 06 a9 ff 85
-        HEX 08 a9 7f 85 07 85 09 20
-        HEX dd 15 a9 00 85 08 85 07
-        HEX 85 09 20 dd 15 4c 4f 8c
-        HEX ad 27 a5 8d 29 a5 ad 28
-        HEX a5 8d 2a a5 a9 07 20 d4
-        HEX 15 ad e8 a4 ae f7 a4 f0
-        HEX 08 18 6d ec a4 ca 4c 65
-        HEX 8a 8d ee a4 ad e9 a4 ae
-        HEX f7 a4 f0 08 18 6d ed a4
-        HEX ca 4c 78 8a 8d ef a4 a8
-        HEX ae ee a4 20 32 9d 48 4a
-        HEX 4a 4a 4a 8d fe a4 68 29
-        HEX 0f 8d 26 a5 ad ee a4 18
-        HEX 6d ed a4 aa ad ef a4 38
-        HEX ed ec a4 a8 20 43 9d 8d
-        HEX 27 a5 ad ee a4 38 ed ed
-        HEX a4 aa ad ef a4 18 6d ec
-        HEX a4 a8 20 43 9d 8d 28 a5
-        HEX ad 26 a5 c9 01 f0 08 c9
-        HEX 03 f0 04 c9 04 d0 03 20
-        HEX af a2 ad 26 a5 c9 01 f0
-        HEX 09 c9 03 d0 0d ad f7 a4
-        HEX f0 0f a9 01 8d 2b a5 4c
-        HEX fa 8b ad 26 a5 c9 04 d0
-        HEX 0b 20 47 a3 ad f7 a4 d0
-        HEX e9 4c fa 8b ad 26 a5 c9
-        HEX 06 d0 15 20 04 9f 20 a4
-        HEX 15 a2 00 a0 17 20 15 81
-        HEX 7e 43 6f 66 66 69 6e 00
-        HEX ad 26 a5 c9 0c d0 03 20
-        HEX ae a0 ad 27 a5 c9 01 f0
-        HEX 08 c9 03 f0 04 c9 04 d0
-        HEX 03 20 49 a2 ad 28 a5 c9
+DNG_ENTRY
+        SUBROUTINE
+        ; Overlay entry: dungeon mode from square one.
+        ;
+        ; Behavior:
+        ;   Movement names := DIR_STRS, position := (1,1) facing
+        ;   south, level := 1, generate the level, enable double
+        ;   buffering, enter the main loop.
+        LDA #<DIR_STRS                  ; arrows echo as Forward /
+        STA DIR_STR_PTR                 ;   Turn around / right /
+        LDA #>DIR_STRS                  ;   left
+        STA DIR_STR_PTR+1
+        LDA #$01
+        STA DNG_X                       ; DNG_X <- #$01
+        STA DNG_Y                       ; DNG_Y <- #$01
+        STA DNG_DY                      ; facing south (+y)
+        STA DNG_LEVEL                   ; topmost level
+        LDA #$00
+        STA DNG_DX
+        JSR DNG_GEN                     ; lay out level 1
+        LDA #$60                        ; double-buffering on
+        STA ZP_PAGE_TGL
+        STA ZP_PAGE_XOR
+        JSR PAGE_COPY
+        JMP DNG_MAIN
+@ %def DNG_ENTRY
+
+\section{DNG: the first-person view}
+
+[[DNG_DRAW]] redraws the whole screen for the current position and
+facing: the status line (level number and compass direction), then
+the wireframe corridor, walking the cells ahead of the player to
+the first wall and drawing wall edges, doors, ladders, chests,
+coffins, fields and monster shapes at each depth with the
+[[LINE_AGAIN]] primitives and the perspective tables at
+[[DNG_GEOM]]. It is decomposed together with those tables and the
+shape-drawing code in the next round; the call interface is fixed
+(no arguments, draws to the back page, flips).
+
+<<dng view stub>>=
+        ORG $8982
+DNG_DRAW
+        ; STUB -- not yet disassembled (the view renderer:
+        ; status line + wireframe corridor walk)
+<<dng view stub hex>>
+@ %def DNG_DRAW
+
+\section{DNG: the level generator}
+
+[[DNG_GEN]] is why no dungeon map is stored anywhere on the disk.
+The maze is rebuilt from scratch on every entry and every level
+change, from a two-byte seed derived purely from \emph{where the
+dungeon is} and \emph{how deep the player is}:
+
+\begin{quote}
+[[SEED_A]] $=$ 8$\cdot$[[PLR_PLACE]] $\oplus$ [[PLR_OUT_X]]
+$\oplus$ level \\
+[[SEED_B]] $=$ 4$\cdot$[[PLR_OUT_Y]] $\oplus$ [[PLR_CONT]]
+\end{quote}
+
+[[SEED_RND]] steps this state with a Fibonacci-style swap-add
+([[SEED_A]]$'$ $=$ [[SEED_A]] $+$ [[SEED_B]] $+ 9$, [[SEED_B]]$'$
+$=$ [[SEED_A]]), so the sequence --- and therefore the maze --- is
+a pure function of the seed. Every structural decision draws from
+it. Only two things are \emph{not} deterministic: whether each
+container cell is a chest or a coffin (rolled on the library
+[[RND]]), and everything about monsters.
+
+Generation is five passes over the fresh [[DNG_TEMPLATE]] copy
+(border walls and a lattice of pillars at even-even cells):
+
+\begin{enumerate}
+\item \textbf{Edges.} Every lattice edge --- the cells at
+(even column, odd row) and (odd column, even row) --- gets a
+feature from [[EDGE_PICK]]: open, secret door, or door, weighted
+6/6/8 on a d20.
+\item \textbf{Walls and fields.} $2\cdot\mathrm{level}+1$ times:
+one of the 16 positions listed in [[WALL_POS_A]]/[[WALL_POS_B]]
+(transposed on odd levels) becomes a wall, or --- with probability
+96/256 --- a force field.
+\item \textbf{Containers.} level times: a random lattice edge
+becomes a chest or a coffin (the one non-seeded roll).
+\item \textbf{Fixed cells.} $(1,2)$ is cleared so the entrance
+never faces an immediate wall; ladders go in at $(7,3)$ and
+$(3,7)$ --- down/up on even levels, up/down on odd. Level 10
+deletes its down ladder (there is no level 11), and level 1
+overrides $(1,1)$ with the up ladder the player arrived on and
+deletes the other up ladder at $(7,3)$.
+\item \textbf{Monsters.} Falls into [[LEVEL_INIT]] below: pick
+the level's five kinds and release three of them.
+\end{enumerate}
+
+<<dng generator>>=
+        ORG $8C5D
+DNG_GEN SUBROUTINE
+        ; Generate the current dungeon level into DNG_MAP.
+        ;
+        ; Inputs:
+        ;   PLR_PLACE/PLR_OUT_X/PLR_OUT_Y/PLR_CONT -- the dungeon's
+        ;     world identity (seed material)
+        ;   DNG_LEVEL -- depth, 1-10
+        ;
+        ; Behavior:
+        ;   Seed the deterministic generator, copy the 11x11
+        ;   template, strew edge features, walls, fields and
+        ;   containers, place the ladders, then fall into
+        ;   LEVEL_INIT for the monsters.
+        ;
+        ; Modifies:
+        ;   DNG_MAP, SEED_A/SEED_B, WORK_X/WORK_Y, ACC
+        ; Clobbers: A, X, Y
+        LDA PLR_PLACE                   ; seed A: place*8 ^ outdoor
+        ASL                             ;   x ^ level
+        ASL
+        ASL
+        EOR PLR_OUT_X
+        EOR DNG_LEVEL
+        STA SEED_A
+        LDA PLR_OUT_Y                   ; seed B: outdoor y*4
+        ASL                             ;   ^ continent
+        ASL
+        EOR PLR_CONT
+        STA SEED_B
+        LDY #$78                        ; copy the 121-byte
+.copy   LDA DNG_TEMPLATE,Y              ;   template over the map
+        STA DNG_MAP,Y
+        DEY
+        BPL .copy
+        ; --- pass 1: a feature on every lattice edge ---
+        LDA #$08                        ; even columns 8,6,4,2
+        STA WORK_X
+.col    LDA #$09                        ; odd rows 9,7,5,3,1
+        STA WORK_Y
+.row    JSR EDGE_PICK                   ; (even,odd) edge
+        LDX WORK_X
+        LDY WORK_Y
+        JSR CELL_WRITE
+        JSR EDGE_PICK                   ; (odd,even) edge,
+        LDX WORK_Y                      ;   transposed
+        LDY WORK_X
+        JSR CELL_WRITE
+        DEC WORK_Y
+        DEC WORK_Y
+        BPL .row
+        DEC WORK_X
+        DEC WORK_X
+        BNE .col
+        ; --- pass 2: 2*level+1 walls / force fields ---
+        LDA DNG_LEVEL
+        ASL
+        STA ACC                         ; pass counter
+.wall   JSR SEED_RND
+        LDX #$01                        ; wall...
+        CMP #$A0
+        BCC .solid
+        LDX #$0C                        ; ...or field, 96/256
+.solid  STX ACC_HI                      ; feature to place
+        JSR SEED_RND
+        AND #$0F                        ; one of 16 listed spots,
+        TAX
+        LDA DNG_LEVEL                   ;   transposed on odd
+        AND #$01                        ;   levels
+        BEQ .even
+        LDA WALL_POS_B,X
+        TAY
+        LDA WALL_POS_A,X
+        TAX
+        JMP .place
+.even   LDA WALL_POS_A,X
+        TAY
+        LDA WALL_POS_B,X
+        TAX
+.place  LDA ACC_HI
+        JSR CELL_WRITE
+        DEC ACC
+        BPL .wall
+        ; --- pass 3: level chests/coffins on random edges ---
+        LDA DNG_LEVEL
+        STA ACC
+.chest  JSR SEED_RND                    ; even coordinate 2..8
+        AND #$03
+        CLC
+        ADC #$01
+        ASL
+        STA WORK_X
+        JSR SEED_RND                    ; second even coordinate
+        AND #$03
+        CLC
+        ADC #$01
+        ASL
+        STA WORK_Y
+        JSR SEED_RND                    ; nudge one axis odd:
+        BMI .odd_x                      ;   lands on an edge
+        INC WORK_Y
+        JMP .roll
+.odd_x  INC WORK_X
+.roll   JSR RND                         ; the one true-random
+        AND #$01                        ;   call: chest (5) or
+        CLC                             ;   coffin (6)
+        ADC #$05
+        LDX WORK_X
+        LDY WORK_Y
+        JSR CELL_WRITE
+        DEC ACC
+        BNE .chest
+        ; --- pass 4: the fixed cells ---
+        LDA #$00                        ; the cell ahead of the
+        LDX #$01                        ;   entrance is always
+        LDY #$02                        ;   clear
+        JSR CELL_WRITE
+        LDA DNG_LEVEL                   ; ladders at (7,3)/(3,7):
+        AND #$01                        ;   down/up on even
+        BNE .odd_lvl                    ;   levels, up/down on odd
+        LDA #$07
+        LDX #$07
+        LDY #$03
+        JSR CELL_WRITE
+        LDA #$08
+        LDX #$03
+        LDY #$07
+        JSR CELL_WRITE
+        JMP .fixups
+.odd_lvl
+        LDA #$08
+        LDX #$07
+        LDY #$03
+        JSR CELL_WRITE
+        LDA #$07
+        LDX #$03
+        LDY #$07
+        JSR CELL_WRITE
+.fixups LDA DNG_LEVEL                   ; level 10: no level below,
+        CMP #$0A                        ;   delete the down ladder
+        BNE .not10
+        LDA #$00
+        LDX #$07
+        LDY #$03
+        JSR CELL_WRITE
+.not10  LDA DNG_LEVEL                   ; level 1: the entry ladder
+        CMP #$01                        ;   at (1,1) is the only
+        BNE .done                       ;   way up
+        LDA #$08
+        LDX #$01
+        LDY #$01
+        JSR CELL_WRITE
+        LDA #$00
+        LDX #$07
+        LDY #$03
+        JSR CELL_WRITE
+.done   JMP LEVEL_INIT
+@ %def DNG_GEN
+
+\section{DNG: the main loop}
+
+The turn loop has the same skeleton as \texttt{OUT} --- prompt,
+poll, dispatch through a table by patching a \texttt{JSR} --- with
+two dungeon twists. First, the whole view is redrawn at the top of
+every turn ([[DNG_DRAW]]), because almost any command can change
+what the corridor looks like. Second, the idle turn is cheaper
+than outdoors: food burns at $0.01$ and the clock at $0.10$ per
+idle beat (versus $0.05$/$0.50$), so standing around in a dungeon
+is slow-motion --- but the monsters still get their turn
+([[MON_TURNS]]) every beat.
+
+[[DNG_PROMPT]] also watches [[FIGHT_FLAG]]: [[MON_STRIKE]] sets it
+whenever a monster reaches the player, and the prompt reprints
+itself after combat messages so the command echo never lands
+mid-sentence.
+
+<<dng prompt>>=
+        ORG $8D99
+DNG_PROMPT
+        SUBROUTINE
+        ; Prompt and poll until a key arrives, idling the world.
+        ;
+        ; Behavior:
+        ;   Print the prompt glyph at (0,23). Poll briefly; on
+        ;   timeout charge an idle tick (food 0.01, time 0.10),
+        ;   run the monsters, and repeat -- reprinting the prompt
+        ;   if combat messages scrolled it. On a key, GET_COMMAND;
+        ;   "Huh?" re-prompts at no cost.
+        ;
+        ; Outputs:
+        ;   X = 2 * command index (from GET_COMMAND)
+        ;
+        ; Modifies:
+        ;   FIGHT_FLAG, MON_CV
+        ; Clobbers: A, X, Y
+        LDX #$00
+        LDY #$17
+        JSR MSG_AT
+        DC.B "|",$0E,$00                ; the prompt glyph
+.idle   JSR STATS_VALUES
+        JSR KEY_SHORT
+        BNE .key
+        LDA #$00
+        STA FIGHT_FLAG
+        JSR CURSOR_COL1                 ; wipe the cursor box
+        LDA #$20
+        JSR CHAR_OUT
+        JSR MON_TURNS                   ; the monsters move
+        LDY #$01                        ; idle: food -= 0.01,
+        LDA #$10                        ;   time += 0.10
+        JSR TICK_SND
+        JSR SFX_DRAIN
+        LDA FIGHT_FLAG                  ; combat messages? full
+        BNE DNG_PROMPT                  ;   re-prompt
+        LDA #$17                        ; otherwise just go back
+        STA MON_CV                      ;   to the prompt row
+        JSR CURSOR_COL1
+        JMP .idle
+.key    JSR GET_COMMAND
+        BCS DNG_PROMPT                  ; "Huh?" costs nothing
+        RTS
+KEY_SHORT
+        SUBROUTINE
+        ; Poll the keyboard up to 128 times.
+        ;
+        ; Behavior:
+        ;   A short busy-poll so the idle loop ticks the world
+        ;   at a steady rate between keys.
+        ;
+        ; Outputs:
+        ;   A = X = key, or 0 if the poll timed out (Z set)
+        LDX #$80
+.poll   JSR KEY_GET
+        BNE .got
+        DEX
+        BNE .poll
+.got    TAX
+        RTS
+@ %def DNG_PROMPT KEY_SHORT
+
+The loop proper: redraw, check for death by wounds or starvation,
+take a command, dispatch it, then give the monsters their turn.
+The dispatch is the overlay idiom seen in \texttt{OUT}: the
+handler's address is patched into the operand of a \texttt{JSR}
+(stale [[$FFFF]] on disk). Unsupported commands point at the
+engine's [[QUERY_MARK]]; \emph{ctrl-A} and \emph{Noise} go
+straight to the engine toggles.
+
+<<dng main loop>>=
+        ORG $8DE6
+DNG_MAIN
+        SUBROUTINE
+        ; The turn loop. No return.
+        ;
+        ; Behavior:
+        ;   DNG_DRAW, die at zero hits or food, prompt for a
+        ;   command, dispatch via DNG_CMDS through the patched
+        ;   JSR, run the monsters, repeat.
+        JSR DNG_DRAW
+        LDA PLR_HITS                    ; dead?
+        ORA PLR_HITS+1
+        BNE .alive
+.dead   JMP DNG_DEATH
+.alive  LDA PLR_FOOD                    ; starved?
+        ORA PLR_FOOD+1
+        BEQ .dead
+        JSR DNG_PROMPT
+        LDA DNG_CMDS,X                  ; patch the JSR below with
+        STA DNG_VEC                ;   the handler's address
+        LDA DNG_CMDS+1,X
+        STA DNG_VEC+1
+DNG_VEC = *+1
+        JSR STALE_FFFF                  ; (self-modified)
+        JSR MON_TURNS
+        JMP DNG_MAIN
+DNG_CMDS
+        DC.W MOVE_FWD                   ;  0 up      Forward
+        DC.W TURN_BACK                  ;  1 down    Turn around
+        DC.W TURN_RIGHT                 ;  2 right
+        DC.W TURN_LEFT                  ;  3 left
+        DC.W PASS_CMD                   ;  4 space   Pass
+        DC.W SOUND_TOGGLE               ;  5 ctrl-A
+        DC.W ATTACK_CMD                 ;  6 Attack
+        DC.W QUERY_MARK                 ;  7 Board
+        DC.W CAST_CMD                   ;  8 Cast
+        DC.W QUERY_MARK                 ;  9 Drop
+        DC.W QUERY_MARK                 ; 10 Enter
+        DC.W QUERY_MARK                 ; 11 Fire
+        DC.W QUERY_MARK                 ; 12 Get
+        DC.W QUERY_MARK                 ; 13 HyperJump
+        DC.W INFORM_CMD                 ; 14 Inform & search
+        DC.W KLIMB_CMD                  ; 15 K-limb
+        DC.W SFX_TOGGLE                 ; 16 Noise
+        DC.W OPEN_CMD                   ; 17 Open
+        DC.W QUIT_CMD                   ; 18 Quit (refused here)
+        DC.W READY_DNG                  ; 19 Ready
+        DC.W QUERY_MARK                 ; 20 Steal
+        DC.W QUERY_MARK                 ; 21 Transact
+        DC.W UNLOCK_CMD                 ; 22 Unlock
+        DC.W QUERY_MARK                 ; 23 View
+        DC.W QUERY_MARK                 ; 24 X-it
+        DC.W ZTATS_CMD                  ; 25 Ztats
+@ %def DNG_MAIN DNG_VEC DNG_CMDS
+
+\section{DNG: turning and walking}
+
+Turning is pure vector arithmetic on the facing pair
+([[DNG_DX]],\,[[DNG_DY]]): \emph{Turn around} negates both;
+\emph{Turn right} maps $(dx,0)\to(0,dx)$ and $(0,dy)\to(-dy,0)$;
+\emph{Turn left} is the inverse. No time passes and nothing is
+checked --- the redraw at the top of the loop does the rest.
+
+<<dng turning>>=
+        ORG $8E48
+TURN_BACK
+        SUBROUTINE
+        ; Turn around.
+        ;
+        ; Behavior:
+        ;   Negate both components of the facing vector.
+        LDA DNG_DX
+        JSR NEGATE
+        STA DNG_DX
+        LDA DNG_DY
+        JSR NEGATE
+        STA DNG_DY
+        RTS
+TURN_RIGHT
+        SUBROUTINE
+        ; Turn right.
+        ;
+        ; Behavior:
+        ;   Rotate the facing vector a quarter turn clockwise:
+        ;   (dx,0) -> (0,dx), (0,dy) -> (-dy,0).
+        LDA DNG_DX
+        BEQ .from_y
+        STA DNG_DY                      ; (dx,0) -> (0,dx)
+        LDA #$00
+        STA DNG_DX
+        RTS
+.from_y LDA DNG_DY                      ; (0,dy) -> (-dy,0)
+        JSR NEGATE
+        STA DNG_DX
+        LDA #$00
+        STA DNG_DY
+        RTS
+TURN_LEFT
+        SUBROUTINE
+        ; Turn left.
+        ;
+        ; Behavior:
+        ;   Rotate the facing vector a quarter turn
+        ;   anticlockwise: (dx,0) -> (0,-dx), (0,dy) -> (dy,0).
+        LDA DNG_DX
+        BEQ .from_y
+        JSR NEGATE                      ; (dx,0) -> (0,-dx)
+        STA DNG_DY
+        LDA #$00
+        STA DNG_DX
+        RTS
+.from_y LDA DNG_DY                      ; (0,dy) -> (dy,0)
+        STA DNG_DX
+        LDA #$00
+        STA DNG_DY
+        RTS
+@ %def TURN_BACK TURN_RIGHT TURN_LEFT
+
+\emph{Forward} is the only movement. A wall, a secret door
+(undetected, so it blocks like a wall) or anything at code
+[[$A]]-plus stops the step; everything else is walked onto. The
+sting is feature 2, the hidden trapdoor: stepping on one springs
+it --- unless a \emph{rope \& spikes} is in the pack (one is
+consumed), the player takes $2\cdot\mathrm{level}$ damage and
+falls through to the next level down ([[GO_DOWN]] regenerates the
+maze one level deeper).
+
+<<dng forward>>=
+        ORG $8E95
+MOVE_FWD
+        SUBROUTINE
+        ; Walk one cell in the facing direction.
+        ;
+        ; Behavior:
+        ;   Walls (1), undetected secret doors (3) and codes >=
+        ;   $A block. Otherwise commit the move; a hidden
+        ;   trapdoor (2) is sprung: rope & spikes saves (and is
+        ;   consumed), else 2*level damage and fall through to
+        ;   the level below.
+        JSR AHEAD_XY
+        JSR CELL_READ
+        CMP #$01
+        BEQ .blocked
+        CMP #$03
+        BEQ .blocked
+        CMP #$0A
+        BCC .step
+.blocked
+        JSR MSG_PRINT
+        DC.B " - path blocked!",$00
+        JMP BEEP_HUH
+.step   PHA                             ; the feature stepped on
+        JSR AHEAD_XY
+        STX DNG_X
+        STY DNG_Y
+        PLA
+        CMP #$02                        ; hidden trapdoor?
+        BEQ .trap
+        RTS
+.trap   LDA OWNED_WEAPONS+4             ; rope & spikes in the
+        BEQ .fall                       ;   pack? spend one
+        DEC OWNED_WEAPONS+4
+        JSR MSG_PRINT
+        DC.B "~Thy rope and spikes saved"
+        DC.B "~thee from a trap!",$00
+        RTS
+.fall   JSR MSG_PRINT
+        DC.B " - a trap!",$00
+        LDA #$02                        ; the hurt sound
+        JSR SFX_PLAY
+        LDA DNG_LEVEL                   ; damage = 2 * level
+        ASL
+        STA ACC
+        LDA PLR_HITS
+        SEC
+        SBC ACC
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC #$00
+        STA PLR_HITS+1
+        BCC .dead
+        ORA PLR_HITS
+        BEQ .dead
+        JSR STATS_VALUES
+        JMP GO_DOWN                     ; fall a level deeper
+.dead   JMP DNG_DEATH
+@ %def MOVE_FWD
+
+Two fragments follow that nothing in \texttt{DNG} calls: a stray
+[[JMP]] to the death exit, and a complete \texttt{TWN}-style
+walker that moves by a caller-supplied $(dx,dy)$, prints
+\emph{Blocked} on failure, and charges the move tick. They are
+more shared ancestral source (the towns move with four arrows on
+this very pattern); the bytes are kept byte-perfect here.
+
+<<dng leftover move>>=
+        ORG $8F43
+DEAD_HOOK
+        ; unreferenced in DNG
+        JMP DNG_DEATH
+MOVE_XY SUBROUTINE
+        ; Unreferenced in DNG: arrow-move by (X,Y) offsets, the
+        ; town/castle movement idiom.
+        ;
+        ; Inputs:
+        ;   X, Y -- signed cell offsets to walk
+        ;
+        ; Behavior:
+        ;   Try the cell, commit or print "Blocked" with a thunk,
+        ;   then tick and redraw stats. The BCS expects a
+        ;   passable/blocked carry from the sibling overlays'
+        ;   cell-read; DNG's CELL_READ leaves carry set only for
+        ;   row 0 -- more proof this walker is not DNG's code.
+        TXA
+        CLC
+        ADC DNG_X
+        STA TGT_X
+        TAX
+        TYA
+        CLC
+        ADC DNG_Y
+        STA TGT_Y
+        TAY
+        JSR CELL_READ
+        BCS .ok
+        LDA #$0E                        ; the bump sound
+        JSR SFX_PLAY
+        JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "Blocked",$00
+        JMP .tick
+.ok     LDX TGT_X
+        STX DNG_X
+        LDY TGT_Y
+        STY DNG_Y
+.tick   LDY #$01                        ; food -= 0.01,
+        LDA #$10                        ;   time += 0.10
+        JSR TICK_SND
+        JSR SFX_DRAIN
+        JMP STATS_VALUES
+@ %def DEAD_HOOK MOVE_XY
+
+<<dng cmd pass>>=
+        ORG $8F8C
+PASS_CMD
+        ; Pass: stand still for one move tick.
+        LDY #$01
+        LDA #$10
+        JSR TICK_SND
+        JMP SFX_DRAIN
+@ %def PASS_CMD
+
+\section{DNG: the Attack command}
+
+Attacking is always along the facing line --- there is no
+direction prompt in a corridor. The readied weapon contributes
+three numbers: its \emph{reach} from [[WPN_RANGE]] (1 for hand
+weapons, 5 for the bow, pistol, phazor and friends), its index as
+a damage bonus, and an outright veto --- the rope \& spikes (4)
+and the three magic implements (amulet 8, wand 9, staff 10) cannot
+swing at all; the implements instead multiply the Magic Missile
+spell below.
+
+The projectile walk steps cell by cell up to the reach: walls,
+doors and force fields stop it dead (\emph{Nothing}); the first
+monster nibble takes the shot. To hit, $\mathrm{rnd} <
+\mathrm{agility} + 128$; damage is rejection-sampled to
+$1\ldots(\mathrm{strength} + 3\cdot\mathrm{weapon})$ and taken off
+the slot's 16-bit [[MON_HP]]. A kill announces itself and falls
+into the [[MON_KILLED]] machinery.
+
+<<dng cmd attack>>=
+        ORG $8F96
+ATTACK_CMD
+        SUBROUTINE
+        ; Attack with the readied weapon along the facing line.
+        ;
+        ; Behavior:
+        ;   Print the weapon; refuse rope & spikes and the three
+        ;   magic implements. Walk the shot up to WPN_RANGE cells:
+        ;   solid features stop it, a monster takes a to-hit roll
+        ;   (rnd < agility + 128) and rejection-sampled damage
+        ;   1..(strength + 3*weapon).
+        JSR MSG_PRINT
+        DC.B "with ",$00
+        LDX READY_WEAPON
+        JSR STR_NTH                     ; short weapon name
+        DC.W STR_WEAPONS_S
+        LDX READY_WEAPON
+        CPX #$04                        ; rope & spikes: no
+        BEQ .refuse
+        CPX #$08                        ; amulet/wand/staff are
+        BCC .armed                      ;   spell gear, not arms
+        CPX #$0B
+        BCS .armed
+.refuse JMP QUERY_MARK
+ATK_NOTHING
+        JSR MSG_PRINT
+        DC.B "Nothing",$00
+        RTS
+.armed  JSR MSG_PRINT
+        DC.B "~",$00
+        LDX READY_WEAPON
+        LDA WPN_RANGE,X
+        STA RANGE_CNT
+        LDA DNG_X                       ; walk from the player...
+        STA TGT_X
+        LDA DNG_Y
+        STA TGT_Y
+.walk   LDA TGT_X                       ; ...one facing step at
+        CLC                             ;   a time
+        ADC DNG_DX
+        STA TGT_X
+        TAX
+        LDA TGT_Y
+        CLC
+        ADC DNG_DY
+        STA TGT_Y
+        TAY
+        JSR CELL_READ
+        CMP #$01                        ; walls, doors and fields
+        BEQ ATK_NOTHING                 ;   soak the shot
+        CMP #$03
+        BEQ ATK_NOTHING
+        CMP #$04
+        BEQ ATK_NOTHING
+        CMP #$0C
+        BEQ ATK_NOTHING
+        CMP #$10                        ; a monster!
+        BCS .target
+        DEC RANGE_CNT
+        BNE .walk
+        JMP ATK_NOTHING                 ; out of reach
+ATK_MISS
+        LDA #$06                        ; the swing sound
+        JSR SFX_PLAY
+        JSR MSG_PRINT
+        DC.B "Missed!",$00
+        RTS
+.target LSR                             ; monster slot from the
+        LSR                             ;   cell's high nibble
+        LSR
+        LSR
+        STA ACC
+        LDX ACC
+        LDA #$80                        ; hit if rnd < agi + 128
+        CLC
+        ADC PLR_AGI
+        STA ACC_HI
+        JSR RND
+        CMP ACC_HI
+        BCS ATK_MISS
+        LDA #$06
+        JSR SFX_PLAY
+        LDA PLR_STR                     ; damage limit: strength
+        CLC                             ;   + 3 * weapon index
+        ADC READY_WEAPON
+        ADC READY_WEAPON
+        ADC READY_WEAPON
+        STA ACC_HI
+.roll   JSR RND                         ; rejection-sample
+        CMP #$00                        ;   damage 1..limit
+        BEQ .roll
+        CMP ACC_HI
+        BCS .roll
+        STA ACC_HI                      ; damage, low
+        LDA #$00
+        STA TMP_CNT                     ; damage, high
+        LDA #$02
+        JSR SFX_PLAY
+ATK_HIT JSR MSG_PRINT
+        DC.B "Hit! ",$00
+        LDX ACC                         ; MON_HP[slot] -= damage
+        LDA MON_HP,X
+        SEC
+        SBC ACC_HI
+        STA MON_HP,X
+        LDA MON_HP_HI,X
+        SBC TMP_CNT
+        STA MON_HP_HI,X
+        BCC .killed
+        LDA TMP_CNT                     ; survived: report the
+        LDX ACC_HI                      ;   number
+        LDY #$00
+        STY NUM_PAD
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " damage",$00
+        RTS
+.killed LDA ACC                         ; name = slot + the
+        CLC                             ;   level's roster base
+        ADC MON_BASE
+        TAX
+        JSR STR_NTH_CAP
+        DC.W STR_MONSTERS
+        JSR MSG_PRINT
+        DC.B " killed!",$00
+        JMP MON_KILLED
+@ %def ATTACK_CMD ATK_NOTHING ATK_MISS ATK_HIT
+
+\section{DNG: Cast and the ten spells}
+
+The dungeon is where magic happens --- outdoors only Prayer works,
+but here all ten spells of [[STR_SPELLS]] are implemented, each
+with its own Latin incantation from [[STR_INCANT]]. The readied
+spell is consumed from [[OWNED_SPELLS]] and, unless the player is
+class 2 (the cleric), may simply fizzle: failure if $\mathrm{rnd}
+\ge \mathrm{intelligence} + 128$.
+
+Spell 0, Prayer, is the wildcard: its stock is never checked (a
+[[OWNED_SPELLS]] charge is decremented all the same), it cannot
+fizzle, it shouts \emph{``POTENTIS-LAUDIS!''}, and it casts a
+uniformly random spell 1--10 in place of a chosen one. The chosen ones dispatch through
+[[SPELL_TBL]] by the same patched-\texttt{JMP} idiom as the
+command table:
+
+\begin{center}
+\small
+\begin{tabular}{cllp{5.2cm}}
+\# & spell & incantation & effect \\
+\hline
+1 & Open & APERTUS! & open the coffin underfoot \\
+2 & Unlock & PECUNIA! & open the chest underfoot \\
+3 & Magic Missile & VASTO! & ranged damage, see below \\
+4 & Steal & NUDO! & always fails (town magic) \\
+5 & Ladder Down & INFERUS & conjure feature 7 underfoot \\
+6 & Ladder Up & ASCENDO & conjure feature 8 underfoot \\
+7 & Blink & DUCIS-EDUCO! & teleport within the level \\
+8 & Create & STRUXI! & force field in the cell ahead \\
+9 & Destroy & DELIO! & remove the field ahead \\
+10 & Kill & INTERFICIO! & slay the monster ahead \\
+\end{tabular}
+\end{center}
+
+<<dng cmd cast>>=
+        ORG $90C5
+CAST_CMD
+        SUBROUTINE
+        ; Cast the readied spell.
+        ;
+        ; Behavior:
+        ;   Spend one OWNED_SPELLS charge (Prayer needs no stock
+        ;   check), roll failure (rnd >= int + 128, waived for
+        ;   class 2), print the incantation, then dispatch
+        ;   through SPELL_TBL via the patched JMP. Prayer picks
+        ;   a random spell 1-10 first.
+        LDX READY_SPELL
+        BEQ .stocked                    ; Prayer is always stocked
+        LDA OWNED_SPELLS,X
+        BNE .stocked
+        JSR MSG_PRINT
+        DC.B "~Thou hast used up that spell!",$00
+        LDA #$08                        ; the fizzle sound
+        JMP SFX_PLAY
+.stocked
+        DEC OWNED_SPELLS,X
+        JSR STR_NTH_CAP                 ; echo the spell name
+        DC.W STR_SPELLS
+        LDA READY_SPELL
+        BEQ .chant                      ; Prayer cannot fail
+        LDA PLR_CLASS
+        CMP #$02                        ; nor can the cleric
+        BEQ .chant
+        LDA #$80                        ; fail if rnd >= int + 128
+        CLC
+        ADC PLR_INT
+        STA ACC
+        JSR RND
+        CMP ACC
+        BCC .chant
+        JSR MSG_PRINT
+        DC.B " - failed!",$00
+        LDA #$08
+        JMP SFX_PLAY
+.chant  LDA READY_SPELL
+        BNE .chosen
+.pray   JSR RND                         ; Prayer: a random spell
+        AND #$0F                        ;   1..10
+        BEQ .pray
+        CMP #$0B
+        BCS .pray
+        PHA
+        JSR MSG_PRINT
+        DC.B "~",$22,"POTENTIS-LAUDIS!",$22,$00
+        JMP .cast
+.chosen PHA
+        JSR MSG_PRINT
+        DC.B "~",$00
+        PLA
+        PHA
+        TAX
+        DEX                             ; incantation index 0..9
+        JSR STR_NTH
+        DC.W STR_INCANT
+.cast   JSR MSG_PRINT
+        DC.B "~",$00
+        PLA
+        ASL                             ; X = 2 * (spell - 1)
+        TAX
+        DEX
+        DEX
+        LDA SPELL_TBL,X                 ; patch the JMP below
+        STA SPELL_VEC
+        LDA SPELL_TBL+1,X
+        STA SPELL_VEC+1
+SPELL_VEC = *+1
+        JMP STALE_FFFF                  ; (self-modified)
+SPELL_TBL
+        DC.W SP_OPEN                    ;  1 Open
+        DC.W SP_UNLOCK                  ;  2 Unlock
+        DC.W SP_MISSILE                 ;  3 Magic Missile
+        DC.W SP_STEAL                   ;  4 Steal
+        DC.W SP_LADDER_DN               ;  5 Ladder Down
+        DC.W SP_LADDER_UP               ;  6 Ladder Up
+        DC.W SP_BLINK                   ;  7 Blink
+        DC.W SP_CREATE                  ;  8 Create
+        DC.W SP_DESTROY                 ;  9 Destroy
+        DC.W SP_KILL                    ; 10 Kill
+@ %def CAST_CMD SPELL_VEC SPELL_TBL
+
+Open and Unlock act on the cell underfoot, like their command
+namesakes but with none of the risks: no coffin monster, no chest
+trap --- the spell versions go straight to the payout. The shared
+failure exit [[SPELL_FAIL]] serves every spell that finds the
+wrong feature in its target cell.
+
+<<dng spell open unlock>>=
+        ORG $9195
+SP_OPEN SUBROUTINE
+        ; Open (APERTUS): open the coffin underfoot, risk-free.
+        ;
+        ; Behavior:
+        ;   Requires feature 6 underfoot, else SPELL_FAIL; clear
+        ;   the cell and pay TREASURE through SP_OPENED.
+        LDX DNG_X
+        LDY DNG_Y
+        JSR CELL_READ
+        CMP #$06                        ; standing on a coffin?
+        BNE SPELL_FAIL
+        JSR MSG_PRINT
+        DC.B "Coffin",$00
+SP_OPENED
+        JSR MSG_PRINT
+        DC.B " opened!",$00
+        LDA #$00                        ; the container is gone
+        LDX DNG_X
+        LDY DNG_Y
+        JSR CELL_WRITE
+        LDA #$0A                        ; the reward sound
+        JSR SFX_PLAY
+        JMP TREASURE
+SPELL_FAIL
+        JSR MSG_PRINT
+        DC.B "Failed!",$00
+        LDA #$08
+        JMP SFX_PLAY
+SP_UNLOCK
+        SUBROUTINE
+        ; Unlock (PECUNIA): open the chest underfoot, trap-free.
+        ;
+        ; Behavior:
+        ;   Requires feature 5 underfoot, else SPELL_FAIL; joins
+        ;   SP_OPENED for the payout.
+        LDX DNG_X
+        LDY DNG_Y
+        JSR CELL_READ
+        CMP #$05                        ; standing on a chest?
+        BNE SPELL_FAIL
+        JSR MSG_PRINT
+        DC.B "Chest",$00
+        JMP SP_OPENED
+@ %def SP_OPEN SP_OPENED SPELL_FAIL SP_UNLOCK
+
+Magic Missile is the casters' ranged attack: a 5-cell walk down
+the facing line that passes over chests and ladders, stops at
+walls and doors (\emph{Failed!}), and strikes the first monster.
+Base damage is rejection-sampled to $1\ldots\mathrm{intelligence}$
+--- and then the readied weapon multiplies it. This is what the
+three unswingable implements are for: the amulet adds half again,
+the wand doubles, and the staff (or the triangle) triples. The
+result funnels into the weapon attack's [[ATK_HIT]].
+
+<<dng spell missile>>=
+        ORG $91F4
+SP_MISSILE
+        SUBROUTINE
+        ; Magic Missile (VASTO): strike the first monster within
+        ; 5 cells along the facing line.
+        ;
+        ; Behavior:
+        ;   Walk 5 cells: features 1-4 stop the spell, 0 and 5-9
+        ;   are passed over. Damage = rnd(1..int), then * 1.5
+        ;   (amulet), * 2 (wand), * 3 (staff/triangle).
+        LDA #$05
+        STA ACC                         ; reach countdown
+        LDA DNG_X
+        STA TGT_X
+        LDA DNG_Y
+        STA TGT_Y
+.walk   LDA TGT_X
+        CLC
+        ADC DNG_DX
+        STA TGT_X
+        TAX
+        LDA TGT_Y
+        CLC
+        ADC DNG_DY
+        STA TGT_Y
+        TAY
+        JSR CELL_READ
+        CMP #$10                        ; a monster!
+        BCC .feature
+        LSR                             ; slot from the high
+        LSR                             ;   nibble
+        LSR
+        LSR
+        STA ACC
+.roll   JSR RND                         ; base damage:
+        AND #$7F                        ;   rnd(1..int)
+        CMP PLR_INT
+        BCS .roll
+        CLC
+        ADC #$01
+        STA ACC_HI                      ; damage accumulator
+        STA ADDEND
+        LDA #$00
+        STA TMP_CNT
+        STA ADDEND_HI
+        LDA READY_WEAPON
+        CMP #$08                        ; amulet: x 1.5
+        BNE .wand
+        LSR ADDEND_HI
+        ROR ADDEND
+.add    LDA ACC_HI                      ; accumulator += addend
+        CLC
+        ADC ADDEND
+        STA ACC_HI
+        LDA TMP_CNT
+        ADC ADDEND_HI
+        STA TMP_CNT
+        JMP .strike
+.wand   CMP #$09                        ; wand: x 2
+        BNE .staff
+        ASL ACC_HI
+        ROL TMP_CNT
+        JMP .strike
+.staff  CMP #$0A                        ; staff or triangle: x 3
+        BEQ .triple
+        CMP #$0B
+        BNE .strike
+.triple ASL ACC_HI
+        ROL TMP_CNT
+        JMP .add
+.strike LDA #$0A
+        JSR SFX_PLAY
+        JMP ATK_HIT
+.feature
+        CMP #$00                        ; floor and walk-on
+        BEQ .pass                       ;   features pass the
+        CMP #$05                        ;   missile through;
+        BCS .pass                       ;   walls/doors eat it
+        JMP SPELL_FAIL
+.pass   DEC ACC
+        BEQ .spent
+        JMP .walk
+.spent  JMP SPELL_FAIL
+SP_STEAL
+        ; Steal (NUDO) is town magic; in the dungeon it just
+        ; fails.
+        JMP SPELL_FAIL
+@ %def SP_MISSILE SP_STEAL
+
+The ladder spells conjure permanent geometry: a feature 7 or 8 in
+the player's own cell, ready to K-limb. Ladder Down is refused on
+level 10 (there is no deeper maze); Ladder Up needs no guard ---
+climbing up from level 1 is the normal way out. Blink rerolls the
+player's position to a uniformly random clear cell of the level.
+
+<<dng spell ladders blink>>=
+        ORG $92A6
+SP_LADDER_DN
+        SUBROUTINE
+        ; Ladder Down (INFERUS): conjure a down ladder underfoot.
+        ;
+        ; Behavior:
+        ;   Write feature 7 at the player's cell (refused on
+        ;   level 10 -- there is nothing below).
+        LDA DNG_LEVEL
+        CMP #$0A                        ; no level below 10
+        BNE .ok
+        JMP SPELL_FAIL
+.ok     LDA #$07
+LADDER_PUT
+        LDX DNG_X
+        LDY DNG_Y
+        JSR CELL_WRITE
+        JSR MSG_PRINT
+        DC.B "Ladder created!",$00
+        LDA #$0A
+        JMP SFX_PLAY
+SP_LADDER_UP
+        ; Ladder Up (ASCENDO): conjure an up ladder underfoot.
+        LDA #$08
+        JMP LADDER_PUT
+SP_BLINK
+        SUBROUTINE
+        ; Blink (DUCIS-EDUCO): teleport to a random clear cell.
+        ;
+        ; Behavior:
+        ;   Reroll random interior coordinates until they name a
+        ;   clear cell that is not the player's; move there.
+.reroll JSR RND_CELL                    ; random interior (x,y)
+        STA WORK_X
+        JSR RND_CELL
+        STA WORK_Y
+        TAY
+        LDX WORK_X
+        CPX DNG_X                       ; same spot: roll again
+        BNE .check
+        CPY DNG_Y
+        BEQ .reroll
+.check  JSR CELL_READ                   ; clear floor only
+        BNE .reroll
+        LDA WORK_Y
+        STA DNG_Y
+        LDA WORK_X
+        STA DNG_X
+        JSR MSG_PRINT
+        DC.B "Teleported!",$00
+        LDA #$0A
+        JMP SFX_PLAY
+@ %def SP_LADDER_DN LADDER_PUT SP_LADDER_UP SP_BLINK
+
+Create and Destroy manage force fields in the cell ahead ---
+the corridor-plugging trick every Ultima veteran knows. Kill is
+the assassin's version of Magic Missile: adjacent only, but no
+damage roll --- the monster ahead is simply erased through the
+[[MON_KILLED]] payout path (so it still yields experience, coin
+and quest credit).
+
+<<dng spell fields kill>>=
+        ORG $9317
+SP_CREATE
+        SUBROUTINE
+        ; Create (STRUXI): force field in the cell ahead.
+        ;
+        ; Behavior:
+        ;   The cell ahead must be clear floor; write feature $C.
+        JSR AHEAD_XY
+        JSR CELL_READ
+        BEQ .clear
+        JMP SPELL_FAIL
+.clear  JSR AHEAD_XY
+        LDA #$0C
+        JSR CELL_WRITE
+        JSR MSG_PRINT
+        DC.B "Field created!",$00
+        LDA #$0A
+        JMP SFX_PLAY
+SP_DESTROY
+        SUBROUTINE
+        ; Destroy (DELIO): remove the force field ahead.
+        ;
+        ; Behavior:
+        ;   The cell ahead must hold feature $C; clear it.
+        JSR AHEAD_XY
+        JSR CELL_READ
+        CMP #$0C
+        BEQ .field
+        JMP SPELL_FAIL
+.field  JSR AHEAD_XY
+        LDA #$00
+        JSR CELL_WRITE
+        JSR MSG_PRINT
+        DC.B "Field destroyed!",$00
+        LDA #$0A
+        JMP SFX_PLAY
+SP_KILL SUBROUTINE
+        ; Kill (INTERFICIO): erase the monster in the cell ahead.
+        ;
+        ; Behavior:
+        ;   The cell ahead must hold a monster; announce it and
+        ;   fall into MON_KILLED for the full payout.
+        JSR AHEAD_XY
+        STX TGT_X
+        STY TGT_Y
+        JSR CELL_READ
+        CMP #$10
+        BCS .victim
+        JMP SPELL_FAIL
+.victim LSR                             ; slot from the high
+        LSR                             ;   nibble
+        LSR
+        LSR
+        STA ACC
+        CLC
+        ADC MON_BASE
+        TAX
+        JSR STR_NTH_CAP
+        DC.W STR_MONSTERS
+        JSR MSG_PRINT
+        DC.B " destroyed!",$00
+        LDA #$0A
+        JSR SFX_PLAY
+@ %def SP_CREATE SP_DESTROY SP_KILL
+
+\section{DNG: kills, replacements and the quest check}
+
+Every monster death --- by weapon, missile or Kill spell ---
+lands here with the slot in [[ACC]] and the monster's cell in
+[[TGT_X]]/[[TGT_Y]]. The bookkeeping has a twist that keeps a
+dungeon level permanently dangerous: the dead monster's kind goes
+back in the [[MON_FREE]] pool and a \emph{replacement is spawned
+immediately}, fresh hit points and all, somewhere else on the
+level. There are always three live monsters.
+
+Experience is rejection-sampled to $1\ldots5\cdot\mathrm{slot}
+\cdot\mathrm{level}$, credited twice: once to [[PLR_EXP]] (capped
+at 9999 like every player 16-bit quantity) and once to
+[[WINNINGS]], the dungeon bank that pays out as hit points on the
+way up (see [[KLIMB_CMD]]).
+
+The quest check is the heart of the king-quest system: killing
+the \emph{slot-5} monster --- the toughest kind of the level pair
+--- on levels 3 and deeper completes an odd-numbered
+[[QUEST_FLAGS]] entry ($2t-1$ for tier $t = \lfloor(\mathrm{level}
+-1)/2\rfloor$): the gelatinous cube, carrion creeper, lich and
+balron quests. A flag must be \emph{assigned} (positive, set by a
+king in a castle) before it can complete (then [[$FF]]); the
+\texttt{TWN}/\texttt{CAS} round owns the other half of this
+protocol.
+
+<<dng monster killed>>=
+        ORG $93A7
+MON_KILLED
+        SUBROUTINE
+        ; A monster died: recycle it and pay the player.
+        ;
+        ; Inputs:
+        ;   ACC      -- the victim's slot (1-5)
+        ;   TGT_X/Y  -- the victim's cell
+        ;
+        ; Behavior:
+        ;   Return the kind to MON_FREE, strip the monster nibble
+        ;   off its cell, spawn a replacement monster elsewhere,
+        ;   award experience (and bank it in WINNINGS), check the
+        ;   slot-5 quest, then fall into TREASURE.
+        ;
+        ; Modifies:
+        ;   MON_FREE/MON_X/MON_Y/MON_HP, KILL_SLOT, WINNINGS,
+        ;   PLR_EXP, QUEST_FLAGS, DNG_MAP
+        ; Clobbers: A, X, Y
+        LDX ACC
+        STX KILL_SLOT
+        LDA #$01                        ; kind back in the pool
+        STA MON_FREE,X
+        LDX TGT_X                       ; strip the monster off
+        LDY TGT_Y                       ;   its cell, keep the
+        JSR CELL_READ                   ;   feature under it
+        AND #$0F
+        LDX TGT_X
+        LDY TGT_Y
+        JSR CELL_WRITE
+        ; --- spawn the replacement ---
+.kind   JSR RND                         ; a free kind 1..5
+        AND #$07
+        BEQ .kind
+        CMP #$06
+        BCS .kind
+        STA MON_SLOT
+        TAX
+        LDA MON_FREE,X
+        BEQ .kind
+        DEC MON_FREE,X                  ; now on the map
+        LDA #$0A                        ; hit points: 10 +
+        STA ACC                         ;   slot * rnd(level^2)
+        LDA #$00
+        STA ACC_HI
+        LDY DNG_LEVEL
+        LDA LEVEL_SQ,Y
+        CMP #$01
+        BEQ .one
+        JSR RND_MOD
+.one    LDY MON_SLOT
+        JSR MUL_ADD
+        LDX MON_SLOT
+        LDA ACC
+        STA MON_HP,X
+        LDA ACC_HI
+        STA MON_HP_HI,X
+.place  JSR RND_CELL                    ; a clear cell that is
+        LDX MON_SLOT                    ;   not the player's
+        STA MON_Y,X
+        JSR RND_CELL
+        LDX MON_SLOT
+        STA MON_X,X
+        LDY MON_Y,X
+        TAX
+        JSR CELL_READ
+        BNE .place
+        LDX MON_SLOT
+        LDA MON_X,X
+        CMP DNG_X
+        BNE .put
+        LDA MON_Y,X
+        CMP DNG_Y
+        BEQ .place
+.put    LDX MON_SLOT
+        JSR MON_XY
+        LDA MON_SLOT                    ; cell <- slot << 4
+        ASL
+        ASL
+        ASL
+        ASL
+        JSR CELL_WRITE
+        ; --- experience: rnd(1 .. 5*slot*level) ---
+        LDA #$00
+        LDX DNG_LEVEL
+.mul    CLC                             ; slot * level...
+        ADC KILL_SLOT
+        DEX
+        BNE .mul
+        STA ACC
+        ASL                             ; ... * 5
+        ASL
+        CLC
+        ADC ACC
+        STA ACC
+.roll   JSR RND
+        CMP ACC
+        BCS .roll
+        CLC
+        ADC #$01
+        STA ACC
+        LDA WINNINGS                    ; bank it for the climb
+        CLC                             ;   out...
+        ADC ACC
+        STA WINNINGS
+        LDA WINNINGS+1
+        ADC #$00
+        STA WINNINGS+1
+        LDA PLR_EXP                     ; ...and score it now
+        CLC
+        ADC ACC
+        STA PLR_EXP
+        LDA PLR_EXP+1
+        ADC #$00
+        STA PLR_EXP+1
+        LDA PLR_EXP                     ; cap at 9999
+        CMP #$0F
+        LDA PLR_EXP+1
+        SBC #$27
+        BCC .quest
+        LDA #$0F
+        STA PLR_EXP
+        LDA #$27
+        STA PLR_EXP+1
+.quest  LDA KILL_SLOT                   ; the slot-5 monster of
+        CMP #$05                        ;   tiers 1-4 is quest
+        BNE TREASURE                    ;   game
+        LDA DNG_LEVEL
+        SEC
+        SBC #$01
+        LSR                             ; tier 0-4
+        BEQ TREASURE
+        ASL
+        TAX
+        DEX                             ; quest slot 2*tier - 1
+        LDA QUEST_FLAGS,X
+        BEQ TREASURE                    ; not assigned by a king
+        BMI TREASURE                    ; already completed
+        LDA #$FF
+        STA QUEST_FLAGS,X
+        JSR MSG_PRINT
+        DC.B "~A quest is completed!",$00
+@ %def MON_KILLED
+
+\section{DNG: treasure}
+
+Kills, coffins and chests all pay through here. The amount is
+$9 + m\cdot(5\ldots12)$ coins, where $m = \mathrm{rnd}(\mathrm{
+level}^2)$ from the [[LEVEL_SQ]] table (a plain coin flip on
+level 1) --- deep dungeons pay quadratically better. The purse is
+capped at 9999 as ever.
+
+The announcement is this engine's signature flourish: the binary
+amount is read out as \emph{gold}, \emph{silver} and \emph{copper}
+pieces --- hundreds, tens and ones --- with full English comma-and
+itemization, down to ``and 3 copper!''.
+
+<<dng treasure>>=
+        ORG $94E0
+TREASURE
+        SUBROUTINE
+        ; Pay loot into the purse and read the amount out in
+        ; period coinage.
+        ;
+        ; Behavior:
+        ;   Amount = 9 + rnd(level^2) * (5..12) coins, capped at
+        ;   9999, announced as gold/silver/copper pieces
+        ;   (hundreds/tens/ones) with comma-and itemization.
+        ;
+        ; Modifies:
+        ;   PLR_COIN, ACC, ADDEND, TMP_CNT, NUM_PAD
+        ; Clobbers: A, X, Y
+        LDA #$09
+        STA ACC
+        LDA #$00
+        STA ACC_HI
+        LDY DNG_LEVEL
+        LDA LEVEL_SQ,Y
+        CMP #$01
+        BEQ .flip
+        JSR RND_MOD                     ; m = rnd(level^2)
+        JMP .scale
+.flip   JSR RND                         ; level 1: m = 0 or 1
+        AND #$01
+.scale  PHA
+        JSR RND                         ; m * (5..12), added to
+        AND #$07                        ;   the base 9
+        CLC
+        ADC #$05
+        TAY
+        PLA
+        JSR MUL_ADD
+        LDA PLR_COIN                    ; purse += amount,
+        CLC                             ;   capped at 9999
+        ADC ACC
+        STA PLR_COIN
+        LDA PLR_COIN+1
+        ADC ACC_HI
+        STA PLR_COIN+1
+        LDA PLR_COIN
+        CMP #$0F
+        LDA PLR_COIN+1
+        SBC #$27
+        BCC .announce
+        LDA #$0F
+        STA PLR_COIN
+        LDA #$27
+        STA PLR_COIN+1
+.announce
+        JSR MSG_PRINT
+        DC.B "~Thou dost find: ",$00
+        LDA #$00
+        STA NUM_PAD
+        STA TMP_CNT                     ; items printed so far
+        LDA #$00
+        STA ADDEND                      ; gold counter, 16-bit
+        STA ADDEND_HI
+.gold   LDA ACC                         ; whole hundreds are
+        CMP #$64                        ;   gold pieces
+        LDA ACC_HI
+        SBC #$00
+        BCC .saygold
+        STA ACC_HI
+        LDA ACC
+        SBC #$64
+        STA ACC
+        INC ADDEND
+        BNE .gold
+        INC ADDEND_HI
+        JMP .gold
+.saygold
+        LDA ADDEND
+        ORA ADDEND_HI
+        BEQ .silver
+        INC TMP_CNT
+        LDX ADDEND
+        LDA ADDEND_HI
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " gold",$00
+.silver LDX #$00                        ; whole tens are silver
+        LDA ACC
+.tens   CMP #$0A
+        BCC .saysilver
+        SEC
+        SBC #$0A
+        INX
+        BNE .tens
+.saysilver
+        STA ACC                         ; the leftover coppers
+        STX ADDEND
+        LDA ADDEND
+        BEQ .copper
+        LDA TMP_CNT                     ; punctuate after gold
+        BEQ .silv2
+        JSR MSG_PRINT
+        DC.B ",~",$00
+        LDA ACC
+        BNE .silv2
+        JSR MSG_PRINT                   ; silver is the last item
+        DC.B "and ",$00
+.silv2  INC TMP_CNT
+        LDX ADDEND
+        LDA ADDEND_HI
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " silver",$00
+.copper LDA ACC
+        BEQ .bang
+        LDA TMP_CNT
+        BEQ .saycopper
+        JSR MSG_PRINT
+        DC.B ", ",$00
+        LDA TMP_CNT
+        CMP #$01
+        BNE .and
+        JSR PUTCH_NL_COL1
+.and    JSR MSG_PRINT
+        DC.B "and ",$00
+.saycopper
+        LDA ACC
+        JSR PRINT_NUM8
+        JSR MSG_PRINT
+        DC.B " copper",$00
+.bang   LDA #$21                        ; "!"
+        JMP CHAR_OUT
+@ %def TREASURE
+
+\section{DNG: K-limb, and the way out}
+
+K-limb works the ladder or trapdoor underfoot: an up ladder (8)
+ascends, a down ladder (7) or a revealed trapdoor (9) descends.
+Ladders --- but not trapdoors --- demand that the player
+\emph{face} one ([[DNG_DY]] nonzero): the renderer only draws
+ladders on north/south walls, so the rule is really ``you must be
+able to see it''.
+
+Each level change re-runs [[DNG_GEN]] for the new depth ---
+descending and coming back up reproduces the upper maze exactly,
+seeds being what they are.
+
+Climbing up from level 1 is the exit, and the dungeon pays its
+exit bonus: [[WINNINGS]] --- the banked kill experience ---
+\emph{doubled} and added to the player's hit points (capped 9999).
+This is the actual hit-point economy of Ultima I: hit points are
+bought with dungeon crawls. Control returns to the engine at
+[[EXIT_TO_OUT]], the entry of [[GAME_LOAD]] that reloads
+\texttt{OUT} without the death sequence.
+
+<<dng cmd klimb>>=
+        ORG $961B
+KLIMB_CMD
+        SUBROUTINE
+        ; K-limb the ladder or trapdoor underfoot.
+        ;
+        ; Behavior:
+        ;   Feature 8 climbs up (level 0 = leave the dungeon,
+        ;   paying 2 * WINNINGS as hit points); 7 and 9 climb
+        ;   down. Ladders require facing north/south. The new
+        ;   level is regenerated by DNG_GEN.
+        LDX DNG_X
+        LDY DNG_Y
+        JSR CELL_READ
+        STA ACC
+        CMP #$07
+        BEQ .ladder
+        CMP #$08
+        BEQ .ladder
+        CMP #$09                        ; a sprung trapdoor needs
+        BEQ .climb                      ;   no facing
+        JSR MSG_PRINT
+        DC.B " what",$00
+        JMP QUERY_MARK
+.ladder LDA DNG_DY                      ; ladders are on the
+        BNE .climb                      ;   north/south walls
+        JSR MSG_PRINT
+        DC.B "~Thou must face the ladder!",$00
+        JMP BEEP_HUH
+.climb  LDA ACC
+        CMP #$08
+        BEQ .up
+        JMP GO_DOWN
+.up     DEC DNG_LEVEL
+        JSR MSG_PRINT
+        DC.B " up to level ",$00
+        LDA DNG_LEVEL
+        LDX #$00
+        STX NUM_PAD
+        JSR PRINT_NUM8
+        LDA DNG_LEVEL
+        BEQ .out                        ; level 0: daylight
+        JMP .regen
+.out    ASL WINNINGS                    ; the exit bonus: twice
+        ROL WINNINGS+1                  ;   the banked winnings,
+        LDA PLR_HITS                    ;   paid in hit points
+        STA ACC
+        LDA PLR_HITS+1
+        STA ACC_HI
+        LDA PLR_HITS
+        CLC
+        ADC WINNINGS
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        ADC WINNINGS+1
+        STA PLR_HITS+1
+        LDA PLR_HITS                    ; capped at 9999
+        CMP #$0F
+        LDA PLR_HITS+1
+        SBC #$27
+        BCC .gain
+        LDA #$0F
+        STA PLR_HITS
+        LDA #$27
+        STA PLR_HITS+1
+.gain   LDA PLR_HITS                    ; report the actual gain
+        SEC
+        SBC ACC
+        STA ZP_GAIN
+        LDA PLR_HITS+1
+        SBC ACC_HI
+        STA ZP_GAIN+1
+        ORA ZP_GAIN
+        BEQ .leave
+        JSR MSG_PRINT
+        DC.B "~Thou dost gain ",$00
+        LDA #$00
+        STA NUM_PAD
+        LDX ZP_GAIN
+        LDA ZP_GAIN+1
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " hit points",$00
+.leave  JSR STATS_VALUES
+        JSR WIN_SAVE
+        JSR DRAW_BORDERS
+        JSR WIN_RESTORE
+        JSR PAGE_COPY
+        JMP EXIT_TO_OUT                 ; back to the overworld
+.regen  JSR DNG_GEN
+        RTS
+GO_DOWN INC DNG_LEVEL
+        ; descend: regenerate one level deeper (also the
+        ; trapdoor-fall entry from MOVE_FWD)
+        JSR MSG_PRINT
+        DC.B " down to level ",$00
+        LDA DNG_LEVEL
+        LDX #$00
+        STX NUM_PAD
+        JSR PRINT_NUM8
+        JSR DNG_GEN
+        RTS
+FOOD_CLAMP
+        SUBROUTINE
+        ; Unreferenced in DNG: clamp PLR_FOOD at 9999.
+        ;
+        ; Behavior:
+        ;   The standard 16-bit 9999 cap; the sibling overlays
+        ;   cap food after purchases/boons with this.
+        LDA PLR_FOOD
+        CMP #$0F
+        LDA PLR_FOOD+1
+        SBC #$27
+        BCC .done
+        LDA #$0F
+        STA PLR_FOOD
+        LDA #$27
+        STA PLR_FOOD+1
+.done   RTS
+@ %def KLIMB_CMD GO_DOWN FOOD_CLAMP
+
+\section{DNG: Open, Quit, Ready, Unlock, Ztats}
+
+The Open \emph{command} (as opposed to the spell) opens the
+coffin underfoot the hard way: about half the time the occupant
+objects. If a kind is free in the pool and the cell ahead is
+clear, the coffin's monster materializes there with hit points
+$5\cdot\mathrm{level} + \mathrm{slot}$ and a \emph{Watch out!} ---
+and the coffin stays shut, free to try again. Otherwise the
+coffin empties through [[LOOT_CELL]] into [[TREASURE]].
+
+<<dng cmd open>>=
+        ORG $9768
+OPEN_CMD
+        SUBROUTINE
+        ; Open the coffin underfoot. Half the time the corpse
+        ; gets up first.
+        ;
+        ; Behavior:
+        ;   Requires feature 6 underfoot. Roll: on the unlucky
+        ;   half (and a free kind, and a clear cell ahead) spawn
+        ;   the occupant ahead with 5*level + slot hit points
+        ;   and leave the coffin. Otherwise clear the cell and
+        ;   pay TREASURE.
+        JSR MSG_PRINT
+        DC.B " coffin",$00
+        LDX DNG_X
+        LDY DNG_Y
+        JSR CELL_READ
+        CMP #$06
+        BEQ .coffin
+        JMP NONE_HERE
+.coffin JSR RND                         ; the (signed) luck roll
+        CMP #$68
+        BPL .loot
+        LDA MON_FREE                    ; any kind left to wake?
+        ORA MON_FREE+1
+        ORA MON_FREE+2
+        ORA MON_FREE+3
+        ORA MON_FREE+4
+        ORA MON_FREE+5
+        BEQ .loot
+        JSR AHEAD_XY                    ; somewhere to stand?
+        JSR CELL_READ
+        BEQ .wake
+.loot   JMP LOOT_CELL
+.wake   JSR RND                         ; pick a free kind
+        AND #$07
+        BEQ .wake
+        CMP #$06
+        BCS .wake
+        STA MON_SLOT
+        TAX
+        LDA MON_FREE,X
+        BEQ .wake
+        LDA #$00                        ; it walks the map now
+        STA MON_FREE,X
+        JSR MSG_PRINT
+        DC.B "~Watch out!",$00
+        JSR AHEAD_XY                    ; it stands in the cell
+        TXA                             ;   ahead
+        LDX MON_SLOT
+        STA MON_X,X
+        TYA
+        STA MON_Y,X
+        JSR AHEAD_XY
+        LDA MON_SLOT
+        ASL
+        ASL
+        ASL
+        ASL
+        JSR CELL_WRITE
+        LDA DNG_LEVEL                   ; hit points: 5 * level
+        ASL                             ;   + slot
+        ASL
+        CLC
+        ADC DNG_LEVEL
+        ADC MON_SLOT
+        LDX MON_SLOT
+        STA MON_HP,X
+        LDA #$00
+        STA MON_HP_HI,X
+        RTS
+@ %def OPEN_CMD
+
+Quit-and-save is an outdoor privilege --- the dungeon refuses it
+with a column-aligned snub. Ready is a thin shim over the
+engine's [[READY_CMD]] picker, redrawing the frame first because
+the picker pops a window over the wireframe.
+
+<<dng cmd quit ready>>=
+        ORG $9804
+QUIT_CMD
+        SUBROUTINE
+        ; Quit & save is refused underground.
+        ;
+        ; Behavior:
+        ;   Align the cursor after the echoed command name and
+        ;   scold; no time passes.
+        LDA #$12                        ; align after the echoed
+        STA MON_CH                      ;   "Quit & save"
+        JSR MSG_PRINT
+        DC.B " is~only allowed outdoors!",$00
+        JMP BEEP_HUH
+READY_DNG
+        SUBROUTINE
+        ; Ready: prompt S/W/A and hand off to the engine picker.
+        ;
+        ; Behavior:
+        ;   Any other key cancels. The frame is redrawn first
+        ;   because READY_CMD pops a window over the wireframe.
+        JSR KEY_SHORT
+        CMP #$53                        ; 'S'pell
+        BEQ .pick
+        CMP #$57                        ; 'W'eapon
+        BEQ .pick
+        CMP #$41                        ; 'A'rmour
+        BEQ .pick
+        RTS
+.pick   PHA
+        JSR WIN_SAVE                    ; the picker pops a
+        JSR DRAW_BORDERS                ;   window; clean the
+        JSR WIN_RESTORE                 ;   frame first
+        PLA
+        JSR READY_CMD
+        RTS
+@ %def QUIT_CMD READY_DNG
+
+Unlock opens the chest underfoot. Chests are trapped: any class
+but the thief (4) must beat $\mathrm{rnd} < \mathrm{agility} +
+128$ or take \emph{level} damage --- potentially fatal. Either
+way the chest then pays out normally; the trap is a toll, not a
+lock.
+
+<<dng cmd unlock>>=
+        ORG $9848
+UNLOCK_CMD
+        SUBROUTINE
+        ; Unlock the chest underfoot, springing its trap.
+        ;
+        ; Behavior:
+        ;   Requires feature 5 underfoot. Unless the class is
+        ;   thief (4) or rnd < agility + 128, the trap deals
+        ;   level damage (possibly fatal). Then LOOT_CELL pays
+        ;   out either way.
+        JSR MSG_PRINT
+        DC.B " chest",$00
+        LDX DNG_X
+        LDY DNG_Y
+        JSR CELL_READ
+        CMP #$05
+        BEQ .chest
+NONE_HERE
+        JSR MSG_PRINT
+        DC.B " - none here!",$00
+        JMP BEEP_HUH
+.chest  LDA PLR_CLASS
+        CMP #$04                        ; thieves disarm free
+        BEQ LOOT_CELL
+        LDA #$80                        ; dodge: rnd < agi + 128
+        CLC
+        ADC PLR_AGI
+        STA ACC
+        JSR RND
+        CMP ACC
+        BCC LOOT_CELL
+        JSR MSG_PRINT
+        DC.B "~Thou hast set off a trap!",$00
+        LDA #$02
+        JSR SFX_PLAY
+        LDA PLR_HITS                    ; trap damage = level
+        SEC
+        SBC DNG_LEVEL
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC #$00
+        STA PLR_HITS+1
+        BCC DNG_DEATH
+        RTS
+LOOT_CELL
+        ; empty the container underfoot into the purse
+        LDX DNG_X
+        LDY DNG_Y
+        LDA #$00
+        JSR CELL_WRITE
+        JMP TREASURE
+@ %def UNLOCK_CMD NONE_HERE LOOT_CELL
+
+<<dng cmd ztats death>>=
+        ORG $98D1
+ZTATS_CMD
+        ; Ztats: clean the frame, then the engine inventory.
+        JSR WIN_SAVE
+        JSR DRAW_BORDERS
+        JSR WIN_RESTORE
+        JMP INVENTORY
+DNG_DEATH
+        ; dead underground: tidy the screen and let the engine
+        ; run the death-and-respawn sequence (reloads OUT)
+        JSR WIN_SAVE
+        JSR DRAW_BORDERS
+        JSR WIN_RESTORE
+        JSR PAGE_COPY
+        JMP RESPAWN
+@ %def ZTATS_CMD DNG_DEATH
+
+\section{DNG: the monsters' turn}
+
+After every command and every idle beat, slots 5 down to 1 each
+get a move. The brain is simple but effective in a corridor maze:
+measure the true Euclidean distance to the player
+([[MON_DIST]] computes $\lfloor\sqrt{dx^2+dy^2}\rfloor$ with an
+odd-number square root --- remarkable trouble for a monster AI).
+At distance exactly 1 (orthogonally adjacent), strike. Beyond
+distance 4 (offscreen), sleep. In between, approach: step one
+cell along $x$ if that changes anything and is passable,
+otherwise along $y$. Monsters refuse walls, \emph{unsprung}
+trapdoors and force fields, but walk freely through doors and
+even undetected secret doors --- they live here, after all. A
+monster stepping onto a chest or ladder carries the feature in
+the low nibble of its cell and puts it back on leaving.
+
+<<dng monster turns>>=
+        ORG $98EC
+MON_TURNS
+        SUBROUTINE
+        ; One action for each live monster, slots 5 down to 1.
+        ;
+        ; Behavior:
+        ;   Skip pooled kinds. Distance 1: MON_STRIKE. Distance
+        ;   >= 4: sleep. Else step toward the player, x first
+        ;   then y, carrying any feature in the cell.
+        ;
+        ; Modifies:
+        ;   MON_SLOT, MON_X/MON_Y, DNG_MAP, STEP_X/STEP_Y,
+        ;   TGT_X/TGT_Y
+        ; Clobbers: A, X, Y
+        LDX #$05
+        STX MON_SLOT
+.slot   LDX MON_SLOT
+        LDA MON_FREE,X                  ; in the pool = not on
+        BEQ .alive                      ;   the map
+        JMP MON_NEXT
+.alive  JSR MON_DIST
+        BEQ .strike                     ; on top of us (cannot
+        CMP #$02                        ;   happen) -- strike
+        BCS .far
+        TXA                             ; distance 1 + remainder
+        BNE .far                        ;   = diagonal: approach
+.strike JMP MON_STRIKE
+.far    CMP #$04                        ; beyond 4: out of sight,
+        BCC .approach                   ;   sleep
+        JMP MON_NEXT
+.approach
+        LDY #$00                        ; STEP_X = sign(player.x
+        LDX MON_SLOT                    ;   - monster.x)
+        LDA DNG_X
+        CMP MON_X,X
+        BEQ .sgnx
+        BMI .negx
+        INY
+        BNE .sgnx
+.negx   DEY
+.sgnx   STY STEP_X
+        LDY #$00                        ; STEP_Y likewise
+        LDA DNG_Y
+        CMP MON_Y,X
+        BEQ .sgny
+        BMI .negy
+        INY
+        BNE .sgny
+.negy   DEY
+.sgny   STY STEP_Y
+        LDA MON_Y,X                     ; the diagonal target
+        CLC                             ;   cell
+        ADC STEP_Y
+        STA TGT_Y
+        TAY
+        LDA MON_X,X
+        TAX
+        CLC
+        ADC STEP_X
+        STA TGT_X
+        LDA TGT_X                       ; try the x step first:
+        LDX MON_SLOT                    ;   only if it moves
+        CMP MON_X,X
+        BEQ .try_y
+        LDY MON_Y,X
+        TAX
+        JSR CELL_READ                   ; (TGT_X, mon.y) passable?
+        CMP #$01                        ; walls, unsprung
+        BEQ .try_y                      ;   trapdoors and fields
+        CMP #$02                        ;   block monsters
+        BEQ .try_y
+        CMP #$0C
+        BCS .try_y
+        LDX MON_SLOT                    ; leave the old cell:
+        JSR MON_XY                      ;   put the feature back
+        JSR CELL_READ
+        PHA
+        LDX MON_SLOT
+        JSR MON_XY
+        PLA
+        AND #$0F
+        JSR CELL_WRITE
+        LDX MON_SLOT                    ; commit the x move
+        LDA TGT_X
+        STA MON_X,X
+        JSR MON_XY                      ; pick up the feature in
+        JSR CELL_READ                   ;   the new cell
+        STA ACC
+        LDX MON_SLOT
+        JSR MON_XY
+        LDA MON_SLOT
+        ASL
+        ASL
+        ASL
+        ASL
+        ORA ACC
+        JSR CELL_WRITE
+        JMP MON_NEXT
+.try_y  LDX MON_SLOT                    ; the y step, same dance
+        LDA MON_X,X
+        TAX
+        LDY TGT_Y
+        JSR CELL_READ
+        CMP #$01
+        BEQ MON_NEXT
+        CMP #$02
+        BEQ MON_NEXT
+        CMP #$0C
+        BCS MON_NEXT
+        LDX MON_SLOT
+        JSR MON_XY
+        JSR CELL_READ
+        PHA
+        LDX MON_SLOT
+        JSR MON_XY
+        PLA
+        AND #$0F
+        JSR CELL_WRITE
+        LDX MON_SLOT
+        LDA TGT_Y
+        STA MON_Y,X
+        JSR MON_XY
+        JSR CELL_READ
+        STA ACC
+        LDX MON_SLOT
+        JSR MON_XY
+        LDA MON_SLOT
+        ASL
+        ASL
+        ASL
+        ASL
+        ORA ACC
+        JSR CELL_WRITE
+MON_NEXT
+        DEC MON_SLOT
+        BEQ .done
+        JMP .slot
+.done   RTS
+@ %def MON_TURNS MON_NEXT
+
+An adjacent monster attacks. The to-hit roll is against the
+player's armour: $\mathrm{rnd} \ge \mathrm{stamina}/2 +
+8\cdot\mathrm{armour} + 56$ hits, so plate and high stamina
+genuinely tank. Four kinds skip the damage roll for signature
+moves --- the thief steals a spare weapon (with correct
+\emph{a/an} grammar for the axe and the amulet), the gelatinous
+cube eats the readied armour, the gremlin halves the food, and
+the mind whipper (half the time) whips the mind: intelligence
+$\leftarrow$ intelligence$/2 + 5$. Plain damage is
+rejection-sampled below $\mathrm{level} +
+\mathrm{slot}\cdot\mathrm{level}^2$, plus one. The sampler is
+\emph{built} for 16 bits --- a balron on level 10 has a 510-point
+limit --- but its high byte is initialized to zero and only
+re-rolled when already nonzero, so it never engages: actual
+damage caps at 256. A latent bug, kind to deep divers.
+
+<<dng monster strike>>=
+        ORG $9A0A
+MON_STRIKE
+        SUBROUTINE
+        ; The monster in MON_SLOT attacks the player.
+        ;
+        ; Behavior:
+        ;   Announce; set FIGHT_FLAG (the prompt reprints). Roll
+        ;   rnd >= sta/2 + 8*armour + 56 to hit. Specials by
+        ;   kind: thief steals, gelatinous cube strips armour,
+        ;   gremlin halves food, mind whipper drains int (50%).
+        ;   Else damage = rnd(1 .. level + slot*level^2) -- but
+        ;   the sample's high byte never engages (see prose), so
+        ;   at most 256.
+        LDA #$17                        ; messages at the bottom
+        STA MON_CV
+        JSR MSG_PRINT
+        DC.B "~Attacked by ",$00
+        LDA MON_SLOT
+        CLC
+        ADC MON_BASE
+        TAX
+        JSR STR_NTH_CAP
+        DC.W STR_MONSTERS
+        JSR MSG_PRINT
+        DC.B "!~",$00
+        LDA #$04                        ; the attack sound
+        JSR SFX_QUEUE
+        LDA PLR_STA                     ; defense: stamina/2
+        LSR                             ;   + 8*armour + 56
+        CLC
+        ADC READY_ARMOUR
+        ADC READY_ARMOUR
+        ADC READY_ARMOUR
+        ADC READY_ARMOUR
+        ADC READY_ARMOUR
+        ADC READY_ARMOUR
+        ADC READY_ARMOUR
+        ADC READY_ARMOUR
+        ADC #$38
+        STA ACC
+        STA FIGHT_FLAG                  ; nonzero: combat output
+        JSR RND
+        CMP ACC
+        BCS .hit
+        JSR MSG_PRINT
+        DC.B "Missed!",$00
+        JMP MON_NEXT
+.hit    LDA MON_SLOT                    ; the four specialists
+        CLC                             ;   dispatch by name
+        ADC MON_BASE                    ;   index
+        CMP #$17                        ; 23 = thief
+        BNE .not_thief
+        JMP .thief
+.not_thief
+        CMP #$1E                        ; 30 = gelatinous cube
+        BNE .not_cube
+        JMP .cube
+.not_cube
+        CMP #$25                        ; 37 = gremlin
+        BNE .not_grem
+        JMP .gremlin
+.not_grem
+        CMP #$2A                        ; 42 = mind whipper
+        BNE MON_DAMAGE
+        JMP .whip
+MON_DAMAGE
+        LDY DNG_LEVEL                   ; damage limit: level +
+        STY ACC                         ;   slot * level^2,
+        LDA #$00                        ;   16 bits of trouble
+        STA ACC_HI
+        STA ADDEND_HI
+        LDA LEVEL_SQ,Y
+        LDY MON_SLOT
+        JSR MUL_ADD
+.roll   JSR RND                         ; 16-bit rejection sample
+        STA ADDEND
+        LDA ADDEND_HI
+        BEQ .low
+        JSR RND
+        STA ADDEND_HI
+.low    LDA ADDEND
+        CMP ACC
+        LDA ADDEND_HI
+        SBC ACC_HI
+        BCS .roll
+        LDA ADDEND                      ; damage = sample + 1
+        CLC
+        ADC #$01
+        STA ACC
+        LDA ADDEND_HI
+        ADC #$00
+        STA ACC_HI
+        JSR MSG_PRINT
+        DC.B "Hit... ",$00
+        LDX #$00
+        STX NUM_PAD
+        LDA ACC_HI
+        LDX ACC
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " damage",$00
+        LDA #$02                        ; the hurt sound
+        JSR SFX_QUEUE
+        LDA PLR_HITS
+        SEC
+        SBC ACC
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC ACC_HI
+        STA PLR_HITS+1
+        BCC .dead
+        JMP MON_NEXT
+.dead   JMP DNG_DEATH
+.thief  JMP THIEF_STEAL
+.cube   JMP CUBE_ARMOUR
+.gremlin
+        JMP GREMLIN_FOOD
+.whip   JSR RND                         ; mind whipper: 50%
+        BMI .mental                     ;   mental attack
+        JMP MON_DAMAGE
+.mental JSR MSG_PRINT
+        DC.B "Mental attack!",$00
+        LDA PLR_INT                     ; int <- int/2 + 5
+        LSR
+        CLC
+        ADC #$05
+        STA PLR_INT
+        RTS
+THIEF_STEAL
+        SUBROUTINE
+        ; The thief's signature move.
+        ;
+        ; Behavior:
+        ;   Steal the first spare weapon (not readied, not
+        ;   hands), with a/an grammar; a bare pack falls back to
+        ;   plain MON_DAMAGE. A successful theft ends the whole
+        ;   monster phase (RTS, not MON_NEXT).
+        LDX #$01
+.scan   LDA OWNED_WEAPONS,X
+        BEQ .next
+        CPX READY_WEAPON
+        BEQ .next
+        DEC OWNED_WEAPONS,X
+        STX ACC
+        JSR MSG_PRINT
+        DC.B "Thief stole a",$00
+        LDA ACC
+        CMP #$03                        ; axe and amulet take
+        BEQ .an                         ;   "an"
+        CMP #$08
+        BNE .a
+.an     LDA #$6E                        ; "n"
+        JSR CHAR_OUT
+.a      LDA #$20
+        JSR CHAR_OUT
+        LDX ACC
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        LDA #$21                        ; "!"
+        JMP CHAR_OUT
+.next   INX
+        CPX #$10
+        BNE .scan
+        JMP MON_DAMAGE
+CUBE_ARMOUR
+        SUBROUTINE
+        ; The gelatinous cube's signature move.
+        ;
+        ; Behavior:
+        ;   Dissolve the readied armour (one count, unreadied);
+        ;   a player in skin takes plain MON_DAMAGE instead.
+        LDA READY_ARMOUR
+        BNE .melt
+        JMP MON_DAMAGE
+.melt   JSR MSG_PRINT
+        DC.B "Armour destroyed!",$00
+        LDX READY_ARMOUR
+        DEC OWNED_ARMOUR,X
+        LDA #$00
+        STA READY_ARMOUR
+        JMP MON_NEXT
+GREMLIN_FOOD
+        ; Halve the food supply (16-bit shift).
+        JSR MSG_PRINT
+        DC.B "A gremlin stole some food!",$00
+        LSR PLR_FOOD+1
+        ROR PLR_FOOD
+        JMP MON_NEXT
+@ %def MON_STRIKE MON_DAMAGE THIEF_STEAL CUBE_ARMOUR GREMLIN_FOOD
+
+\section{DNG: stocking a level with monsters}
+
+[[LEVEL_INIT]] runs at the tail of every [[DNG_GEN]]: pick the
+level pair's name base, mark all five kinds free, then release
+three of them at random clear cells with hit points
+$10 + \mathrm{slot}\cdot\mathrm{rnd}(\mathrm{level}^2)$ ---
+the same formula the kill-replacement spawner uses, so the
+population is uniform from entry to exit.
+
+<<dng level init>>=
+        ORG $9BED
+LEVEL_INIT
+        SUBROUTINE
+        ; Set the level's monster roster and release three.
+        ;
+        ; Behavior:
+        ;   MON_BASE = 5 * floor((level-1)/2) + 20; all kinds
+        ;   to the pool; spawn three at random clear cells.
+        ;
+        ; Modifies:
+        ;   MON_BASE, MON_FREE/MON_X/MON_Y/MON_HP, DNG_MAP
+        ; Clobbers: A, X, Y
+        LDA DNG_LEVEL                   ; the roster base for
+        SEC                             ;   this level pair
+        SBC #$01
+        LSR
+        STA ACC
+        ASL
+        ASL
+        CLC
+        ADC ACC
+        ADC #$14
+        STA MON_BASE
+        LDX #$05                        ; all five kinds free
+        LDA #$01
+.pool   STA MON_FREE,X
+        DEX
+        BNE .pool
+        LDA #$03                        ; release three
+        STA WORK_X
+.kind   JSR RND                         ; a free kind 1..5
+        AND #$07
+        BEQ .kind
+        CMP #$06
+        BCS .kind
+        STA MON_SLOT
+        TAX
+        LDA MON_FREE,X
+        BEQ .kind
+        DEC MON_FREE,X
+        LDA #$0A                        ; hit points: 10 +
+        STA ACC                         ;   slot * rnd(level^2)
+        LDA #$00
+        STA ACC_HI
+        LDY DNG_LEVEL
+        LDA LEVEL_SQ,Y
+        CMP #$01
+        BEQ .one
+        JSR RND_MOD
+.one    LDY MON_SLOT
+        JSR MUL_ADD
+        LDX MON_SLOT
+        LDA ACC
+        STA MON_HP,X
+        LDA ACC_HI
+        STA MON_HP_HI,X
+.place  JSR RND_CELL                    ; a clear cell that is
+        LDX MON_SLOT                    ;   not the player's
+        STA MON_Y,X
+        JSR RND_CELL
+        LDX MON_SLOT
+        STA MON_X,X
+        LDY MON_Y,X
+        TAX
+        JSR CELL_READ
+        BNE .place
+        LDX MON_SLOT
+        LDA MON_X,X
+        CMP DNG_X
+        BNE .put
+        LDA MON_Y,X
+        CMP DNG_Y
+        BEQ .place
+.put    LDX MON_SLOT
+        JSR MON_XY
+        LDA MON_SLOT
+        ASL
+        ASL
+        ASL
+        ASL
+        JSR CELL_WRITE
+        DEC WORK_X
+        BEQ .done
+        JMP .kind
+.done   RTS
+MON_XY  ; X/Y := MON_X/MON_Y of the monster in (6502) X
+        LDA MON_Y,X
+        TAY
+        LDA MON_X,X
+        TAX
+        RTS
+RND_CELL
+        SUBROUTINE
+        ; A := a random interior coordinate.
+        ;
+        ; Behavior:
+        ;   Rejection-roll 1..9; X and Y are preserved (callers
+        ;   use it once per axis).
+        STX ACC
+        STY ACC_HI
+.roll   JSR RND
+        AND #$0F
+        BEQ .roll
+        CMP #$0A
+        BCS .roll
+        LDX ACC
+        LDY ACC_HI
+        RTS
+MUL_ADD SUBROUTINE
+        ; ACC (16-bit) += A * Y, by repeated addition.
+        ;
+        ; Inputs:
+        ;   A -- addend; Y -- repeat count (>= 1)
+        ;
+        ; Behavior:
+        ;   The poor man's multiply behind hit points, damage
+        ;   limits and treasure amounts.
+        ;
+        ; Modifies:
+        ;   ACC/ACC_HI, ADDEND
+        STA ADDEND
+.add    LDA ACC
+        CLC
+        ADC ADDEND
+        STA ACC
+        BCC .next
+        INC ACC_HI
+.next   DEY
+        BNE .add
+        RTS
+@ %def LEVEL_INIT MON_XY RND_CELL MUL_ADD
+
+\section{DNG: Inform \& search}
+
+Inform examines the cell \emph{ahead} for the two hidden
+features: an unsprung trapdoor (2) becomes a visible, K-limbable
+hole (9), and a secret door (3) becomes a drawn, walkable door
+(4). Everything else --- including a wall that really is just a
+wall --- earns ``nothing.''
+
+<<dng cmd inform>>=
+        ORG $9CD2
+INFORM_CMD
+        SUBROUTINE
+        ; Inform & search: examine the cell ahead.
+        ;
+        ; Behavior:
+        ;   A hidden trapdoor (2) becomes a K-limbable hole (9);
+        ;   a secret door (3) becomes a drawn door (4);
+        ;   anything else is "nothing.".
+        JSR MSG_PRINT
+        DC.B "~Thou dost find ",$00
+        JSR AHEAD_XY
+        JSR CELL_READ
+        CMP #$02
+        BNE .door
+        JSR MSG_PRINT
+        DC.B "a trapdoor!",$00
+        JSR AHEAD_XY
+        LDA #$09                        ; sprung: K-limb works
+        JMP CELL_WRITE
+.door   CMP #$03
+        BNE .nothing
+        JSR MSG_PRINT
+        DC.B "a secret door!",$00
+        JSR AHEAD_XY
+        LDA #$04                        ; drawn and walkable
+        JMP CELL_WRITE
+.nothing
+        JSR MSG_PRINT
+        DC.B "nothing.",$00
+        RTS
+@ %def INFORM_CMD
+
+\section{DNG: map access and the distance root}
+
+The 11$\times$11 map is addressed by repeated addition --- no
+row table, just $+11$ per row. [[CELL_READ]]'s one quirk matters
+to [[MOVE_XY]] above: the carry is only meaningfully set for row
+0, so it is no passable flag. [[RND_STEP]] and [[MON_WANDER]] are
+the town walker's random-drift kit, unreferenced here.
+
+<<dng map helpers>>=
+        ORG $9D32
+CELL_READ
+        SUBROUTINE
+        ; A := the map cell at column X, row Y.
+        ;
+        ; Behavior:
+        ;   DNG_MAP[X + 11*Y], the row offset built by repeated
+        ;   addition; Z reflects the cell byte.
+        TXA
+        CPY #$00
+.row    BEQ .get
+        CLC
+        ADC #$0B
+        DEY
+        JMP .row
+.get    TAX
+        LDA DNG_MAP,X
+        RTS
+CELL_FEAT
+        ; A := the feature nibble at (X,Y)
+        JSR CELL_READ
+        AND #$0F
+        RTS
+RND_STEP
+        SUBROUTINE
+        ; A := a random drift step. (Unreferenced in DNG.)
+        ;
+        ; Behavior:
+        ;   -1, 0 or +1, one third each; the town walker's
+        ;   random-drift kit.
+        JSR RND
+        CMP #$55
+        BCS .third2
+        LDA #$FF
+        RTS
+.third2 CMP #$AA
+        BCS .third3
+        LDA #$00
+        RTS
+.third3 LDA #$01
+        RTS
+MON_WANDER
+        ; TGT := monster Y's cell plus a random step on each
+        ; axis. (Unreferenced in DNG: town-walker kit.)
+        JSR RND_STEP
+        CLC
+        ADC MON_X,Y
+        STA TGT_X
+        JSR RND_STEP
+        CLC
+        ADC MON_Y,Y
+        STA TGT_Y
+        RTS
+POPUP_NOTE
+        ; Unreferenced in DNG: message-window popup shell.
+        JSR WIN_TEXT
+        LDX #$00
+        LDY #$17
+        JSR MSG_AT
+        DC.B "~",$00
+        JMP PRESS_SPACE
+@ %def CELL_READ CELL_FEAT RND_STEP MON_WANDER POPUP_NOTE
+
+[[MON_DIST]] is the most mathematically earnest routine in the
+overlay: it squares $|dx|$ and $|dy|$ by summing ($n^2 =
+n + n + \cdots$, $n$ times), adds them in 16 bits, and extracts
+the integer square root by subtracting successive odd numbers
+($1+3+5+\cdots+(2k-1) = k^2$). The remainder distinguishes a true
+orthogonal neighbor ($d=1$ exactly) from a diagonal one
+($d^2=2$) --- that is how the walker knows when to strike versus
+sidestep.
+
+<<dng monster distance>>=
+        ORG $9D81
+MON_DIST
+        SUBROUTINE
+        ; A := the Euclidean distance from monster X to the
+        ; player.
+        ;
+        ; Behavior:
+        ;   floor(sqrt(dx^2 + dy^2)): squares by repeated
+        ;   addition, 16-bit sum, root by subtracting odd
+        ;   numbers.
+        ;
+        ; Inputs:
+        ;   X -- monster slot
+        ;
+        ; Outputs:
+        ;   A = Y = the distance; X = the remainder low byte
+        ;   (nonzero means the distance is not exact);
+        ;   DIST = distance. A coordinate of $FF returns $FF.
+        ;
+        ; Modifies:
+        ;   DIST, SQRT_STEP, NEG_TMP, SLOT_SAVE
+        ; Clobbers: A, X, Y
+        STX SLOT_SAVE
+        LDA MON_X,X
+        CMP #$FF                        ; unplaced sentinel
+        BEQ .inf
+        LDA DNG_X
+        CMP #$FF
+        BEQ .inf
+        SEC                             ; |dx|
+        SBC MON_X,X
+        BCS .sq1
+        STA NEG_TMP
+        SEC
+        LDA #$00
+        SBC NEG_TMP
+.sq1    LDY #$00                        ; dx^2 by repeated
+        STY DIST                        ;   addition
+        STY DIST+1
+        TAY
+        TAX
+        INX
+.add1   DEX
+        BEQ .dy
+        TYA
+        CLC
+        ADC DIST
+        STA DIST
+        BCC .add1
+        INC DIST+1
+        BCS .add1
+.dy     LDX SLOT_SAVE                   ; |dy|
+        LDA DNG_Y
+        SEC
+        SBC MON_Y,X
+        BCS .sq2
+        STA NEG_TMP
+        SEC
+        LDA #$00
+        SBC NEG_TMP
+.sq2    LDY #$00                        ; dy^2, accumulated
+        STY SQRT_STEP                   ;   separately
+        STY SQRT_STEP+1
+        TAY
+        TAX
+        INX
+.add2   DEX
+        BEQ .sum
+        TYA
+        CLC
+        ADC SQRT_STEP
+        STA SQRT_STEP
+        BCC .add2
+        INC SQRT_STEP+1
+        BCS .add2
+.sum    CLC                             ; DIST = dx^2 + dy^2
+        LDA SQRT_STEP
+        ADC DIST
+        STA DIST
+        LDA SQRT_STEP+1
+        ADC DIST+1
+        STA DIST+1
+        BCC .sqrt
+.inf    LDA #$FF                        ; overflow / sentinel:
+        STA DIST                        ;   infinitely far
+        RTS
+.sqrt   LDY #$01                        ; subtract odd numbers:
+        STY SQRT_STEP                   ;   1+3+5+...+(2k-1)=k^2
+        DEY
+        STY SQRT_STEP+1
+.odd    SEC
+        LDA DIST
+        TAX
+        SBC SQRT_STEP
+        STA DIST
+        LDA DIST+1
+        SBC SQRT_STEP+1
+        STA DIST+1
+        BCC .done
+        INY
+        LDA SQRT_STEP                   ; next odd (carry is set)
+        ADC #$01
+        STA SQRT_STEP
+        BCC .odd
+        INC SQRT_STEP+1
+        BCS .odd
+.done   STY DIST                        ; Y = root, X = remainder
+        STX DIST+1
+        TYA
+        RTS
+@ %def MON_DIST
+
+\section{DNG: the renderer (pending)}
+
+From here to [[SEED_RND]] live the perspective tables and the
+wireframe drawing primitives --- the wall, door, ladder, field,
+chest and coffin painters that [[DNG_DRAW]] sequences. They are
+the next round's subject, together with the monster shape art at
+[[MON_SHAPES]].
+
+<<dng renderer stub>>=
+        ORG $9E42
+DNG_GEOM
+        ; STUB -- not yet disassembled (perspective tables and
+        ; the wireframe drawing primitives)
+<<dng renderer stub hex>>
+@ %def DNG_GEOM
+
+The generator's own helpers sit just past the renderer. Note
+what [[EDGE_PICK]] does to its table: [[EDGE_FEATURE]] holds
+codes 2 and 9 (trapdoors), but they are intercepted and replaced
+by 3 --- the lattice edges get secret doors where an earlier
+design evidently put trapdoors.
+
+<<dng generator helpers>>=
+        ORG $A3F3
+SEED_RND
+        ; Step the deterministic maze generator: a Fibonacci-
+        ; style swap-add on (SEED_A, SEED_B). A := new SEED_A.
+        CLC
+        LDA SEED_A
+        ADC #$09
+        ADC SEED_B
+        LDX SEED_A
+        STA SEED_A
+        STX SEED_B
+        RTS
+EDGE_PICK
+        SUBROUTINE
+        ; A := a random lattice-edge feature.
+        ;
+        ; Behavior:
+        ;   A seeded d20 over EDGE_FEATURE: open (0), secret
+        ;   door (3) or door (4), weighted 6/6/8.
+        JSR SEED_RND
+        AND #$1F
+        CMP #$14                        ; a d20 from the d32
+        BCS EDGE_PICK
+        TAX
+        LDA EDGE_FEATURE,X
+        CMP #$09                        ; the trapdoor entries
+        BEQ .door                       ;   are overridden to
+        CMP #$02                        ;   secret doors
+        BEQ .door
+        RTS
+.door   LDA #$03
+        RTS
+CELL_WRITE
+        SUBROUTINE
+        ; Store A into the map cell at column X, row Y.
+        ;
+        ; Behavior:
+        ;   DNG_MAP[X + 11*Y] := A; X and A are preserved.
+        PHA
+        TXA
+        CPY #$00
+.row    BEQ .put
+        CLC
+        ADC #$0B
+        DEY
+        JMP .row
+.put    TAY
+        PLA
+        STA DNG_MAP,Y
+        RTS
+NEGATE  ; A := -A
+        EOR #$FF
+        CLC
+        ADC #$01
+        RTS
+AHEAD_XY
+        ; X/Y := the cell one step in the facing direction
+        LDA DNG_X
+        CLC
+        ADC DNG_DX
+        TAX
+        LDA DNG_Y
+        CLC
+        ADC DNG_DY
+        TAY
+        RTS
+@ %def SEED_RND EDGE_PICK CELL_WRITE NEGATE AHEAD_XY
+
+<<dng shape draw stub>>=
+        ORG $A449
+SHAPE_DRAW
+        ; STUB -- not yet disassembled (scaled vector-shape
+        ; renderer for monsters, chests and ladder cells)
+<<dng shape draw stub hex>>
+@ %def SHAPE_DRAW
+
+\section{DNG: state}
+
+The overlay's variables live inside the file image (all zero on
+disk) rather than in BSS proper --- only the map itself sits past
+the end. [[ACC]]/[[ACC_HI]] and friends are general scratch;
+they appear under one name each even where a routine borrows
+them for something else (the comments at each use tell the local
+story).
+
+<<dng state>>=
+        ORG $A4E8
+DNG_X   DC.B $00                        ; player column, 0-10
+DNG_Y   DC.B $00                        ; player row, 0-10
+TGT_X   DC.B $00                        ; target/probe cell
+TGT_Y   DC.B $00
+DNG_DX  DC.B $00                        ; facing vector: one of
+DNG_DY  DC.B $00                        ;   (0,+/-1), (+/-1,0)
+WORK_X  DC.B $00                        ; scratch coordinates
+WORK_Y  DC.B $00                        ;   (generator, Blink)
+ADDEND  DC.B $00                        ; MUL_ADD addend; damage
+ADDEND_HI
+        DC.B $00                        ;   sample (16-bit)
+ACC     DC.B $00                        ; 16-bit accumulator /
+ACC_HI  DC.B $00                        ;   general scratch
+TMP_CNT DC.B $00                        ; treasure item count;
+                                        ;   attack damage high
+SHAPE_SCALE
+        DC.B $00                        ; SHAPE_DRAW: halvings
+SLOT_SAVE
+        DC.B $00                        ; MON_DIST's saved slot
+VIEW_DEPTH
+        DC.B $00                        ; cells ahead being drawn
+DIST    DC.B $00                        ; dx^2+dy^2, then the
+        DC.B $00                        ;   root / remainder
+SQRT_STEP
+        DC.B $00                        ; odd-number subtractor
+        DC.B $00                        ;   (also dy^2)
+FIGHT_FLAG
+        DC.B $00                        ; combat printed: reprompt
+        DC.B $00                        ; (unused)
+MON_SLOT
+        DC.B $00                        ; slot being processed,
+                                        ;   1-5; also the view's
+                                        ;   monster nibble
+RANGE_CNT
+        DC.B $00                        ; attack reach countdown
+STEP_X  DC.B $00                        ; monster approach step,
+STEP_Y  DC.B $00                        ;   -1/0/+1 per axis
+        DC.B $00                        ; (unused)
+NEG_TMP DC.B $00                        ; MON_DIST negate scratch
+SEED_A  DC.B $00                        ; the deterministic maze
+SEED_B  DC.B $00                        ;   generator state
+DNG_LEVEL
+        DC.B $00                        ; depth, 1-10
+MON_BASE
+        DC.B $00                        ; STR_MONSTERS base for
+                                        ;   this level pair
+MON_FREE
+        HEX 00 00 00 00 00 00           ; 1 = kind in the pool
+                                        ;   (slot 0 unused)
+MON_X   HEX 00 00 00 00 00 00           ; monster columns
+MON_Y   HEX 00 00 00 00 00 00           ; monster rows
+MON_HP  HEX 00 00 00 00 00 00           ; hit points, low
+MON_HP_HI
+        HEX 00 00 00 00 00 00           ; hit points, high
+VIEW_CELL
+        DC.B $00                        ; feature at VIEW_DEPTH
+VIEW_L  DC.B $00                        ; features beside it
+VIEW_R  DC.B $00
+VIEW_L_PREV
+        DC.B $00                        ; same, previous depth
+VIEW_R_PREV
+        DC.B $00
+VIEW_BLOCKED
+        DC.B $00                        ; stop the corridor walk
+WINNINGS
+        DC.B $00,$00                    ; banked kill experience,
+                                        ;   doubled into hit
+                                        ;   points on exit
+KILL_SLOT
+        DC.B $00                        ; last kill's slot
+BOX_XFL DC.B $00                        ; coffin/chest box corner
+BOX_XNL DC.B $00                        ;   coordinates (renderer
+BOX_XNR DC.B $00                        ;   workspace; named in
+BOX_XFR DC.B $00                        ;   full next round)
+BOX_YA  DC.B $00
+BOX_YB  DC.B $00
+BOX_YC  DC.B $00
+BOX_YN  DC.B $00
+BOX_YF  DC.B $00
+@ %def DNG_X DNG_Y TGT_X TGT_Y DNG_DX DNG_DY WORK_X WORK_Y
+@ %def ADDEND ADDEND_HI ACC ACC_HI TMP_CNT SHAPE_SCALE SLOT_SAVE
+@ %def VIEW_DEPTH DIST SQRT_STEP FIGHT_FLAG MON_SLOT RANGE_CNT
+@ %def STEP_X STEP_Y NEG_TMP SEED_A SEED_B DNG_LEVEL MON_BASE
+@ %def MON_FREE MON_X MON_Y MON_HP MON_HP_HI VIEW_CELL VIEW_L
+@ %def VIEW_R VIEW_L_PREV VIEW_R_PREV VIEW_BLOCKED WINNINGS
+@ %def KILL_SLOT BOX_XFL BOX_XNL BOX_XNR BOX_XFR BOX_YA BOX_YB
+@ %def BOX_YC BOX_YN BOX_YF
+
+\section{DNG: text and tables}
+
+The packed strings: the four movement names that [[GET_COMMAND]]
+echoes for the arrow keys (installed by [[DNG_ENTRY]] via
+[[DIR_STR_PTR]]), and the ten Latin incantations, quotes
+included.
+
+<<dng strings>>=
+        ORG $A538
+DIR_STRS
+        DC.B "Forwar",$E4               ; 0: up arrow
+        DC.B "Turn aroun",$E4           ; 1: down arrow
+        DC.B "Turn righ",$F4            ; 2: right arrow
+        DC.B "Turn lef",$F4             ; 3: left arrow
+STR_INCANT
+        DC.B $22,"APERTUS!",$A2         ; 1: Open
+        DC.B $22,"PECUNIA!",$A2         ; 2: Unlock
+        DC.B $22,"VASTO!",$A2           ; 3: Magic Missile
+        DC.B $22,"NUDO!",$A2            ; 4: Steal
+        DC.B $22,"INFERUS",$A2          ; 5: Ladder Down
+        DC.B $22,"ASCENDO",$A2          ; 6: Ladder Up
+        DC.B $22,"DUCIS-EDUCO!",$A2     ; 7: Blink
+        DC.B $22,"STRUXI!",$A2          ; 8: Create
+        DC.B $22,"DELIO!",$A2           ; 9: Destroy
+        DC.B $22,"INTERFICIO!",$A2      ; 10: Kill
+@ %def DIR_STRS STR_INCANT
+
+The numeric tables. [[ROW_OFFS]] (multiples of 11) is the row
+table [[CELL_READ]] conspicuously does \emph{not} use ---
+presumably a leftover of a faster access path; nothing in the
+overlay references it.
+
+<<dng tables>>=
+        ORG $A5BE
+WALL_POS_A ; 16 candidate wall/field spots: one coordinate...
+        HEX 04 08 05 02 08 01 05 04
+        HEX 06 01 03 07 03 09 02 06
+WALL_POS_B ; ...and the other (transposed on odd levels)
+        HEX 01 01 02 03 03 04 04 05
+        HEX 05 06 06 06 08 08 09 09
+ROW_OFFS ; 11*row -- unreferenced
+        HEX 00 0b 16 21 2c 37 42 4d
+        HEX 58 63 6e
+WPN_RANGE ; attack reach per weapon: 5 for the bow (7),
+        ; amulet/wand/staff (8-10), pistol (12), phazor (14)
+        ; and blaster (15), 1 for everything hand-held
+        HEX 01 01 01 01 01 01 01 05
+        HEX 05 05 05 01 05 01 05 05
+EDGE_FEATURE ; d20 of lattice-edge features: 0 open, 3 secret
+        ; door (the 02/09 entries are remapped to 3), 4 door
+        HEX 00 00 02 09 00 00 03 03
+        HEX 03 03 00 00 04 04 04 04
+        HEX 04 04 04 04
+LEVEL_SQ ; level^2, the difficulty curve: damage limits,
+        ; hit-point rolls and treasure all scale on it
+        HEX 00 01 04 09 10 19 24 31
+        HEX 40 51 64 79
+@ %def WALL_POS_A WALL_POS_B ROW_OFFS WPN_RANGE EDGE_FEATURE
+@ %def LEVEL_SQ
+
+Every level starts from this template: a walled border, pillars
+on the even-even lattice, everything else open. The generator
+never writes the border or the pillars, so the maze is exactly
+this plus edge features.
+
+<<dng template>>=
+        ORG $A619
+DNG_TEMPLATE ; 11x11, row-major
+        HEX 01 01 01 01 01 01 01 01 01 01 01
+        HEX 01 00 00 00 00 00 00 00 00 00 01
+        HEX 01 00 01 00 01 00 01 00 01 00 01
+        HEX 01 00 00 00 00 00 00 00 00 00 01
+        HEX 01 00 01 00 01 00 01 00 01 00 01
+        HEX 01 00 00 00 00 00 00 00 00 00 01
+        HEX 01 00 01 00 01 00 01 00 01 00 01
+        HEX 01 00 00 00 00 00 00 00 00 00 01
+        HEX 01 00 01 00 01 00 01 00 01 00 01
+        HEX 01 00 00 00 00 00 00 00 00 00 01
+        HEX 01 01 01 01 01 01 01 01 01 01 01
+@ %def DNG_TEMPLATE
+
+<<dng shapes blob>>=
+        ORG $A692
+MON_SHAPES
+        ; STUB -- not yet disassembled: the 25 dungeon-monster
+        ; vector shapes (offset index + line lists), drawn by
+        ; SHAPE_DRAW
+<<dng shapes blob hex>>
+@ %def MON_SHAPES
+
+
+<<dng view stub hex>>=
+        HEX 20 aa 15 20 b4 83 20 9e
+        HEX 15 a0 00 a2 0e 20 15 81
+        HEX 0e 20 4c 65 76 65 6c 20
+        HEX 00 a2 00 8e 49 82 ad 06
+        HEX a5 20 0d 82 a9 20 20 62
+        HEX 80 a9 18 20 62 80 a9 04
+        HEX 20 62 80 a0 13 a2 0f ad
+        HEX ed a4 f0 22 30 10 20 15
+        HEX 81 0e 20 53 6f 75 74 68
+        HEX 20 18 00 4c 02 8a 20 15
+        HEX 81 0e 20 4e 6f 72 74 68
+        HEX 20 18 00 4c 02 8a ad ec
+        HEX a4 10 10 20 15 81 0e 20
+        HEX 57 65 73 74 20 18 06 00
+        HEX 4c 02 8a 20 15 81 0e 20
+        HEX 45 61 73 74 20 18 06 00
+        HEX 20 a9 83 a9 00 8d f7 a4
+        HEX 8d 2b a5 ae e8 a4 ac e9
+        HEX a4 20 32 9d c9 03 f0 08
+        HEX c9 01 f0 04 c9 04 d0 2c
+        HEX 20 38 a4 20 32 9d c9 01
+        HEX d0 22 8d 2b a5 a9 00 85
+        HEX 06 a9 ff 85 08 a9 7f 85
+        HEX 07 85 09 20 dd 15 a9 00
+        HEX 85 08 85 07 85 09 20 dd
+        HEX 15 4c 4f 8c ad 27 a5 8d
+        HEX 29 a5 ad 28 a5 8d 2a a5
+        HEX a9 07 20 d4 15 ad e8 a4
+        HEX ae f7 a4 f0 08 18 6d ec
+        HEX a4 ca 4c 65 8a 8d ee a4
+        HEX ad e9 a4 ae f7 a4 f0 08
+        HEX 18 6d ed a4 ca 4c 78 8a
+        HEX 8d ef a4 a8 ae ee a4 20
+        HEX 32 9d 48 4a 4a 4a 4a 8d
+        HEX fe a4 68 29 0f 8d 26 a5
+        HEX ad ee a4 18 6d ed a4 aa
+        HEX ad ef a4 38 ed ec a4 a8
+        HEX 20 43 9d 8d 27 a5 ad ee
+        HEX a4 38 ed ed a4 aa ad ef
+        HEX a4 18 6d ec a4 a8 20 43
+        HEX 9d 8d 28 a5 ad 26 a5 c9
         HEX 01 f0 08 c9 03 f0 04 c9
-        HEX 04 d0 03 20 7c a2 ad 27
-        HEX a5 c9 04 d0 0e ad f7 a4
-        HEX f0 06 20 8a a3 4c 61 8b
-        HEX 20 8a a3 ad 28 a5 c9 04
-        HEX d0 0e ad f7 a4 f0 06 20
-        HEX bc a3 4c 76 8b 20 bc a3
-        HEX ad 27 a5 c9 01 f0 0b c9
-        HEX 03 f0 07 c9 04 f0 03 20
-        HEX 7b a1 ad 28 a5 c9 01 f0
-        HEX 0b c9 03 f0 07 c9 04 f0
-        HEX 03 20 d7 a1 ad 26 a5 c9
-        HEX 07 f0 04 c9 09 d0 03 20
-        HEX f2 a0 ad 26 a5 c9 08 d0
-        HEX 03 20 32 a1 ad 26 a5 c9
-        HEX 07 f0 04 c9 08 d0 03 20
-        HEX 0f a0 ad 26 a5 c9 05 d0
-        HEX 33 ad fe a4 f0 0f 18 6d
-        HEX 07 a5 c9 1e f0 07 c9 29
-        HEX f0 03 4c fa 8b 20 a4 15
-        HEX a2 00 a0 17 20 15 81 7e
-        HEX 43 68 65 73 74 00 a9 0b
-        HEX ae f7 a4 ee f7 a4 20 49
-        HEX a4 ce f7 a4 ad fe a4 f0
-        HEX 50 18 6d 07 a5 48 20 a4
-        HEX 15 a2 00 a0 17 20 15 81
-        HEX 7e 00 68 48 aa c9 29 f0
-        HEX 15 c9 20 d0 0c 20 19 81
-        HEX 43 68 65 73 74 00 4c 2c
-        HEX 8c 20 b1 80 d6 76 68 c9
-        HEX 29 f0 1e 38 e9 15 ae f7
-        HEX a4 ca 20 49 a4 ad fe a4
-        HEX 18 6d 07 a5 c9 1e f0 09
-        HEX c9 20 f0 05 a9 01 8d 2b
-        HEX a5 ad 2b a5 f0 03 4c ad
-        HEX 15 ee f7 a4 4c 4e 8a ad
-        HEX ed 7e 0a 0a 0a 4d 73 7e
-        HEX 4d 06 a5 8d 04 a5 ad 74
-        HEX 7e 0a 0a 4d 6f 7e 8d 05
-        HEX a5 a0 78 b9 19 a6 99 99
-        HEX b0 88 10 f7 a9 08 8d ee
-        HEX a4 a9 09 8d ef a4 20 06
-        HEX a4 ae ee a4 ac ef a4 20
-        HEX 1f a4 20 06 a4 ae ef a4
-        HEX ac ee a4 20 1f a4 ce ef
-        HEX a4 ce ef a4 10 e0 ce ee
-        HEX a4 ce ee a4 d0 d3 ad 06
-        HEX a5 0a 8d f2 a4 20 f3 a3
-        HEX a2 01 c9 a0 90 02 a2 0c
-        HEX 8e f3 a4 20 f3 a3 29 0f
-        HEX aa ad 06 a5 29 01 f0 0b
-        HEX bd ce a5 a8 bd be a5 aa
-        HEX 4c e9 8c bd be a5 a8 bd
-        HEX ce a5 aa ad f3 a4 20 1f
-        HEX a4 ce f2 a4 10 c7 ad 06
-        HEX a5 8d f2 a4 20 f3 a3 29
-        HEX 03 18 69 01 0a 8d ee a4
-        HEX 20 f3 a3 29 03 18 69 01
-        HEX 0a 8d ef a4 20 f3 a3 30
-        HEX 06 ee ef a4 4c 20 8d ee
-        HEX ee a4 20 b9 15 29 01 18
-        HEX 69 05 ae ee a4 ac ef a4
-        HEX 20 1f a4 ce f2 a4 d0 c4
-        HEX a9 00 a2 01 a0 02 20 1f
-        HEX a4 ad 06 a5 29 01 d0 15
-        HEX a9 07 a2 07 a0 03 20 1f
-        HEX a4 a9 08 a2 03 a0 07 20
-        HEX 1f a4 4c 6d 8d a9 08 a2
-        HEX 07 a0 03 20 1f a4 a9 07
-        HEX a2 03 a0 07 20 1f a4 ad
-        HEX 06 a5 c9 0a d0 09 a9 00
-        HEX a2 07 a0 03 20 1f a4 ad
-        HEX 06 a5 c9 01 d0 12 a9 08
-        HEX a2 01 a0 01 20 1f a4 a9
-        HEX 00 a2 07 a0 03 20 1f a4
-        HEX 4c ed 9b a2 00 a0 17 20
-        HEX 15 81 7c 0e 00 20 6e 83
-        HEX 20 da 8d d0 29 a9 00 8d
-        HEX fc a4 20 81 80 a9 20 20
-        HEX 62 80 20 ec 98 a0 01 a9
-        HEX 10 20 e4 82 20 d1 15 ad
-        HEX fc a4 d0 cf a9 17 85 25
-        HEX 20 81 80 4c a3 8d 20 a2
-        HEX 82 b0 c0 60 a2 80 20 c2
-        HEX 15 d0 03 ca d0 f8 aa 60
-        HEX 20 82 89 ad c6 7e 0d c7
-        HEX 7e d0 03 4c dd 98 ad e5
-        HEX 7e 0d e6 7e f0 f5 20 99
-        HEX 8d bd 14 8e 8d 0c 8e bd
-        HEX 15 8e 8d 0d 8e 20 ff ff
-        HEX 20 ec 98 4c e6 8d 95 8e
-        HEX 48 8e 5b 8e 78 8e 8c 8f
-        HEX 45 88 96 8f 07 84 c5 90
-        HEX 07 84 07 84 07 84 07 84
-        HEX 07 84 d2 9c 1b 96 5b 88
-        HEX 68 97 04 98 29 98 07 84
-        HEX 07 84 48 98 07 84 07 84
-        HEX d1 98 ad ec a4 20 32 a4
-        HEX 8d ec a4 ad ed a4 20 32
-        HEX a4 8d ed a4 60 ad ec a4
-        HEX f0 09 8d ed a4 a9 00 8d
-        HEX ec a4 60 ad ed a4 20 32
-        HEX a4 8d ec a4 a9 00 8d ed
-        HEX a4 60 ad ec a4 f0 0c 20
-        HEX 32 a4 8d ed a4 a9 00 8d
-        HEX ec a4 60 ad ed a4 8d ec
-        HEX a4 a9 00 8d ed a4 60 20
-        HEX 38 a4 20 32 9d c9 01 f0
-        HEX 08 c9 03 f0 04 c9 0a 90
-        HEX 17 20 19 81 20 2d 20 70
-        HEX 61 74 68 20 62 6c 6f 63
-        HEX 6b 65 64 21 00 4c 0f 84
-        HEX 48 20 38 a4 8e e8 a4 8c
-        HEX e9 a4 68 c9 02 f0 01 60
-        HEX ad 87 7e f0 34 ce 87 7e
-        HEX 20 19 81 7e 54 68 79 20
-        HEX 72 6f 70 65 20 61 6e 64
-        HEX 20 73 70 69 6b 65 73 20
-        HEX 73 61 76 65 64 7e 74 68
-        HEX 65 65 20 66 72 6f 6d 20
-        HEX 61 20 74 72 61 70 21 00
-        HEX 60 20 19 81 20 2d 20 61
-        HEX 20 74 72 61 70 21 00 a9
-        HEX 02 20 cb 15 ad 06 a5 0a
-        HEX 8d f2 a4 ad c6 7e 38 ed
-        HEX f2 a4 8d c6 7e ad c7 7e
-        HEX e9 00 8d c7 7e 90 0b 0d
-        HEX c6 7e f0 06 20 6e 83 4c
-        HEX 2c 97 4c dd 98 4c dd 98
-        HEX 8a 18 6d e8 a4 8d ea a4
-        HEX aa 98 18 6d e9 a4 8d eb
-        HEX a4 a8 20 32 9d b0 16 a9
-        HEX 0e 20 cb 15 20 81 80 20
-        HEX 19 81 42 6c 6f 63 6b 65
-        HEX 64 00 4c 7f 8f ae ea a4
-        HEX 8e e8 a4 ac eb a4 8c e9
-        HEX a4 a0 01 a9 10 20 e4 82
-        HEX 20 d1 15 4c 6e 83 a0 01
-        HEX a9 10 20 e4 82 4c d1 15
-        HEX 20 19 81 77 69 74 68 20
-        HEX 00 ae 7a 7e 20 b8 80 38
-        HEX 74 ae 7a 7e e0 04 f0 08
-        HEX e0 08 90 13 e0 0b b0 0f
-        HEX 4c 07 84 20 19 81 4e 6f
-        HEX 74 68 69 6e 67 00 60 20
-        HEX 19 81 7e 00 ae 7a 7e bd
-        HEX e9 a5 8d ff a4 ad e8 a4
-        HEX 8d ea a4 ad e9 a4 8d eb
-        HEX a4 ad ea a4 18 6d ec a4
-        HEX 8d ea a4 aa ad eb a4 18
-        HEX 6d ed a4 8d eb a4 a8 20
-        HEX 32 9d c9 01 f0 bd c9 03
-        HEX f0 b9 c9 04 f0 b5 c9 0c
-        HEX f0 b1 c9 10 b0 19 ce ff
-        HEX a4 d0 ce 4c b9 8f a9 06
-        HEX 20 cb 15 20 19 81 4d 69
-        HEX 73 73 65 64 21 00 60 4a
-        HEX 4a 4a 4a 8d f2 a4 ae f2
-        HEX a4 a9 80 18 6d ca 7e 8d
-        HEX f3 a4 20 b9 15 cd f3 a4
-        HEX b0 d4 a9 06 20 cb 15 ad
-        HEX c8 7e 18 6d 7a 7e 6d 7a
-        HEX 7e 6d 7a 7e 8d f3 a4 20
-        HEX b9 15 c9 00 f0 f9 cd f3
-        HEX a4 b0 f4 8d f3 a4 a9 00
-        HEX 8d f4 a4 a9 02 20 cb 15
-        HEX 20 19 81 48 69 74 21 20
-        HEX 00 ae f2 a4 bd 1a a5 38
-        HEX ed f3 a4 9d 1a a5 bd 20
-        HEX a5 ed f4 a4 9d 20 a5 90
-        HEX 1a ad f4 a4 ae f3 a4 a0
-        HEX 00 8c 49 82 20 07 82 20
-        HEX 19 81 20 64 61 6d 61 67
-        HEX 65 00 60 ad f2 a4 18 6d
-        HEX 07 a5 aa 20 b1 80 d6 76
-        HEX 20 19 81 20 6b 69 6c 6c
-        HEX 65 64 21 00 4c a7 93 ae
-        HEX 79 7e f0 2c bd 93 7e d0
-        HEX 27 20 19 81 7e 54 68 6f
-        HEX 75 20 68 61 73 74 20 75
-        HEX 73 65 64 20 75 70 20 74
-        HEX 68 61 74 20 73 70 65 6c
-        HEX 6c 21 00 a9 08 4c cb 15
-        HEX de 93 7e 20 b1 80 d4 74
-        HEX ad 79 7e f0 2b ad d8 7e
-        HEX c9 02 f0 24 a9 80 18 6d
-        HEX d2 7e 8d f2 a4 20 b9 15
-        HEX cd f2 a4 90 13 20 19 81
-        HEX 20 2d 20 66 61 69 6c 65
-        HEX 64 21 00 a9 08 4c cb 15
-        HEX ad 79 7e d0 26 20 b9 15
-        HEX 29 0f f0 f9 c9 0b b0 f5
-        HEX 48 20 19 81 7e 22 50 4f
-        HEX 54 45 4e 54 49 53 2d 4c
-        HEX 41 55 44 49 53 21 22 00
-        HEX 4c 68 91 48 20 19 81 7e
-        HEX 00 68 48 aa ca 20 b8 80
-        HEX 5d a5 20 19 81 7e 00 68
-        HEX 0a aa ca ca bd 81 91 8d
-        HEX 7f 91 bd 82 91 8d 80 91
-        HEX 4c ff ff 95 91 db 91 f4
-        HEX 91 a3 92 a6 92 d3 92 d8
-        HEX 92 17 93 41 93 6f 93 ae
-        HEX e8 a4 ac e9 a4 20 32 9d
-        HEX c9 06 d0 29 20 19 81 43
-        HEX 6f 66 66 69 6e 00 20 19
-        HEX 81 20 6f 70 65 6e 65 64
-        HEX 21 00 a9 00 ae e8 a4 ac
-        HEX e9 a4 20 1f a4 a9 0a 20
-        HEX cb 15 4c e0 94 20 19 81
-        HEX 46 61 69 6c 65 64 21 00
-        HEX a9 08 4c cb 15 ae e8 a4
-        HEX ac e9 a4 20 32 9d c9 05
-        HEX d0 e3 20 19 81 43 68 65
-        HEX 73 74 00 4c ac 91 a9 05
-        HEX 8d f2 a4 ad e8 a4 8d ea
-        HEX a4 ad e9 a4 8d eb a4 ad
-        HEX ea a4 18 6d ec a4 8d ea
-        HEX a4 aa ad eb a4 18 6d ed
-        HEX a4 8d eb a4 a8 20 32 9d
-        HEX c9 10 90 6b 4a 4a 4a 4a
-        HEX 8d f2 a4 20 b9 15 29 7f
-        HEX cd d2 7e b0 f6 18 69 01
-        HEX 8d f3 a4 8d f0 a4 a9 00
-        HEX 8d f4 a4 8d f1 a4 ad 7a
-        HEX 7e c9 08 d0 1c 4e f1 a4
-        HEX 6e f0 a4 ad f3 a4 18 6d
-        HEX f0 a4 8d f3 a4 ad f4 a4
-        HEX 6d f1 a4 8d f4 a4 4c 85
-        HEX 92 c9 09 d0 09 0e f3 a4
-        HEX 2e f4 a4 4c 85 92 c9 0a
-        HEX f0 04 c9 0b d0 09 0e f3
-        HEX a4 2e f4 a4 4c 51 92 a9
-        HEX 0a 20 cb 15 4c 6e 90 c9
-        HEX 00 f0 07 c9 05 b0 03 4c
-        HEX cb 91 ce f2 a4 f0 03 4c
-        HEX 05 92 4c cb 91 4c cb 91
-        HEX ad 06 a5 c9 0a d0 03 4c
-        HEX cb 91 a9 07 ae e8 a4 ac
-        HEX e9 a4 20 1f a4 20 19 81
-        HEX 4c 61 64 64 65 72 20 63
-        HEX 72 65 61 74 65 64 21 00
-        HEX a9 0a 4c cb 15 a9 08 4c
-        HEX b2 92 20 a4 9c 8d ee a4
-        HEX 20 a4 9c 8d ef a4 a8 ae
-        HEX ee a4 ec e8 a4 d0 05 cc
-        HEX e9 a4 f0 e6 20 32 9d d0
-        HEX e1 ad ef a4 8d e9 a4 ad
-        HEX ee a4 8d e8 a4 20 19 81
-        HEX 54 65 6c 65 70 6f 72 74
-        HEX 65 64 21 00 a9 0a 4c cb
-        HEX 15 20 38 a4 20 32 9d f0
-        HEX 03 4c cb 91 20 38 a4 a9
-        HEX 0c 20 1f a4 20 19 81 46
-        HEX 69 65 6c 64 20 63 72 65
-        HEX 61 74 65 64 21 00 a9 0a
-        HEX 4c cb 15 20 38 a4 20 32
-        HEX 9d c9 0c f0 03 4c cb 91
-        HEX 20 38 a4 a9 00 20 1f a4
-        HEX 20 19 81 46 69 65 6c 64
-        HEX 20 64 65 73 74 72 6f 79
-        HEX 65 64 21 00 a9 0a 4c cb
-        HEX 15 20 38 a4 8e ea a4 8c
-        HEX eb a4 20 32 9d c9 10 b0
-        HEX 03 4c cb 91 4a 4a 4a 4a
-        HEX 8d f2 a4 18 6d 07 a5 aa
-        HEX 20 b1 80 d6 76 20 19 81
-        HEX 20 64 65 73 74 72 6f 79
-        HEX 65 64 21 00 a9 0a 20 cb
-        HEX 15 ae f2 a4 8e 2e a5 a9
-        HEX 01 9d 08 a5 ae ea a4 ac
-        HEX eb a4 20 32 9d 29 0f ae
-        HEX ea a4 ac eb a4 20 1f a4
-        HEX 20 b9 15 29 07 f0 f9 c9
-        HEX 06 b0 f5 8d fe a4 aa bd
-        HEX 08 a5 f0 ec de 08 a5 a9
-        HEX 0a 8d f2 a4 a9 00 8d f3
-        HEX a4 ac 06 a5 b9 0d a6 c9
-        HEX 01 f0 03 20 54 82 ac fe
-        HEX a4 20 bc 9c ae fe a4 ad
-        HEX f2 a4 9d 1a a5 ad f3 a4
-        HEX 9d 20 a5 20 a4 9c ae fe
-        HEX a4 9d 14 a5 20 a4 9c ae
-        HEX fe a4 9d 0e a5 bc 14 a5
-        HEX aa 20 32 9d d0 e5 ae fe
-        HEX a4 bd 0e a5 cd e8 a4 d0
-        HEX 08 bd 14 a5 cd e9 a4 f0
-        HEX d2 ae fe a4 20 9b 9c ad
-        HEX fe a4 0a 0a 0a 0a 20 1f
-        HEX a4 a9 00 ae 06 a5 18 6d
-        HEX 2e a5 ca d0 f9 8d f2 a4
-        HEX 0a 0a 18 6d f2 a4 8d f2
-        HEX a4 20 b9 15 cd f2 a4 b0
-        HEX f8 18 69 01 8d f2 a4 ad
-        HEX 2c a5 18 6d f2 a4 8d 2c
-        HEX a5 ad 2d a5 69 00 8d 2d
-        HEX a5 ad e7 7e 18 6d f2 a4
-        HEX 8d e7 7e ad e8 7e 69 00
-        HEX 8d e8 7e ad e7 7e c9 0f
-        HEX ad e8 7e e9 27 90 0a a9
-        HEX 0f 8d e7 7e a9 27 8d e8
-        HEX 7e ad 2e a5 c9 05 d0 32
-        HEX ad 06 a5 38 e9 01 4a f0
-        HEX 29 0a aa ca bd a9 7e f0
-        HEX 21 30 1f a9 ff 9d a9 7e
-        HEX 20 19 81 7e 41 20 71 75
-        HEX 65 73 74 20 69 73 20 63
-        HEX 6f 6d 70 6c 65 74 65 64
-        HEX 21 00 a9 09 8d f2 a4 a9
-        HEX 00 8d f3 a4 ac 06 a5 b9
-        HEX 0d a6 c9 01 f0 06 20 54
-        HEX 82 4c ff 94 20 b9 15 29
-        HEX 01 48 20 b9 15 29 07 18
-        HEX 69 05 a8 68 20 bc 9c ad
-        HEX d4 7e 18 6d f2 a4 8d d4
-        HEX 7e ad d5 7e 6d f3 a4 8d
-        HEX d5 7e ad d4 7e c9 0f ad
-        HEX d5 7e e9 27 90 0a a9 0f
-        HEX 8d d4 7e a9 27 8d d5 7e
-        HEX 20 19 81 7e 54 68 6f 75
-        HEX 20 64 6f 73 74 20 66 69
-        HEX 6e 64 3a 20 00 a9 00 8d
-        HEX 49 82 8d f4 a4 a9 00 8d
-        HEX f0 a4 8d f1 a4 ad f2 a4
-        HEX c9 64 ad f3 a4 e9 00 90
-        HEX 16 8d f3 a4 ad f2 a4 e9
-        HEX 64 8d f2 a4 ee f0 a4 d0
-        HEX e4 ee f1 a4 4c 5b 95 ad
-        HEX f0 a4 0d f1 a4 f0 15 ee
-        HEX f4 a4 ae f0 a4 ad f1 a4
-        HEX 20 07 82 20 19 81 20 67
-        HEX 6f 6c 64 00 a2 00 ad f2
-        HEX a4 c9 0a 90 06 38 e9 0a
-        HEX e8 d0 f6 8d f2 a4 8e f0
-        HEX a4 ad f0 a4 f0 2f ad f4
-        HEX a4 f0 13 20 19 81 2c 7e
-        HEX 00 ad f2 a4 d0 08 20 19
-        HEX 81 61 6e 64 20 00 ee f4
-        HEX a4 ae f0 a4 ad f1 a4 20
-        HEX 07 82 20 19 81 20 73 69
-        HEX 6c 76 65 72 00 ad f2 a4
-        HEX f0 2e ad f4 a4 f0 18 20
-        HEX 19 81 2c 20 00 ad f4 a4
-        HEX c9 01 d0 03 20 7e 80 20
-        HEX 19 81 61 6e 64 20 00 ad
-        HEX f2 a4 20 0d 82 20 19 81
-        HEX 20 63 6f 70 70 65 72 00
-        HEX a9 21 4c 62 80 ae e8 a4
-        HEX ac e9 a4 20 32 9d 8d f2
-        HEX a4 c9 07 f0 14 c9 08 f0
-        HEX 10 c9 09 f0 33 20 19 81
-        HEX 20 77 68 61 74 00 4c 07
-        HEX 84 ad ed a4 d0 22 20 19
-        HEX 81 7e 54 68 6f 75 20 6d
-        HEX 75 73 74 20 66 61 63 65
-        HEX 20 74 68 65 20 6c 61 64
-        HEX 64 65 72 21 00 4c 0f 84
-        HEX ad f2 a4 c9 08 f0 03 4c
-        HEX 2c 97 ce 06 a5 20 19 81
-        HEX 20 75 70 20 74 6f 20 6c
-        HEX 65 76 65 6c 20 00 ad 06
-        HEX a5 a2 00 8e 49 82 20 0d
-        HEX 82 ad 06 a5 f0 03 4c 28
-        HEX 97 0e 2c a5 2e 2d a5 ad
-        HEX c6 7e 8d f2 a4 ad c7 7e
-        HEX 8d f3 a4 ad c6 7e 18 6d
-        HEX 2c a5 8d c6 7e ad c7 7e
-        HEX 6d 2d a5 8d c7 7e ad c6
-        HEX 7e c9 0f ad c7 7e e9 27
-        HEX 90 0a a9 0f 8d c6 7e a9
-        HEX 27 8d c7 7e ad c6 7e 38
-        HEX ed f2 a4 85 65 ad c7 7e
-        HEX ed f3 a4 85 66 05 65 f0
-        HEX 2f 20 19 81 7e 54 68 6f
-        HEX 75 20 64 6f 73 74 20 67
-        HEX 61 69 6e 20 00 a9 00 8d
-        HEX 49 82 a6 65 a5 66 20 07
-        HEX 82 20 19 81 20 68 69 74
-        HEX 20 70 6f 69 6e 74 73 00
-        HEX 20 6e 83 20 b4 83 20 51
-        HEX 81 20 a9 83 20 8f 15 4c
-        HEX fb 88 20 5d 8c 60 ee 06
-        HEX a5 20 19 81 20 64 6f 77
-        HEX 6e 20 74 6f 20 6c 65 76
-        HEX 65 6c 20 00 ad 06 a5 a2
-        HEX 00 8e 49 82 20 0d 82 20
-        HEX 5d 8c 60 ad e5 7e c9 0f
-        HEX ad e6 7e e9 27 90 0a a9
-        HEX 0f 8d e5 7e a9 27 8d e6
-        HEX 7e 60 20 19 81 20 63 6f
-        HEX 66 66 69 6e 00 ae e8 a4
-        HEX ac e9 a4 20 32 9d c9 06
-        HEX f0 03 4c 5f 98 20 b9 15
-        HEX c9 68 10 1c ad 08 a5 0d
-        HEX 09 a5 0d 0a a5 0d 0b a5
-        HEX 0d 0c a5 0d 0d a5 f0 08
-        HEX 20 38 a4 20 32 9d f0 03
-        HEX 4c c3 98 20 b9 15 29 07
-        HEX f0 f9 c9 06 b0 f5 8d fe
-        HEX a4 aa bd 08 a5 f0 ec a9
-        HEX 00 9d 08 a5 20 19 81 7e
-        HEX 57 61 74 63 68 20 6f 75
-        HEX 74 21 00 20 38 a4 8a ae
-        HEX fe a4 9d 0e a5 98 9d 14
-        HEX a5 20 38 a4 ad fe a4 0a
-        HEX 0a 0a 0a 20 1f a4 ad 06
-        HEX a5 0a 0a 18 6d 06 a5 6d
-        HEX fe a4 ae fe a4 9d 1a a5
-        HEX a9 00 9d 20 a5 60 a9 12
-        HEX 85 24 20 19 81 20 69 73
-        HEX 7e 6f 6e 6c 79 20 61 6c
-        HEX 6c 6f 77 65 64 20 6f 75
-        HEX 74 64 6f 6f 72 73 21 00
-        HEX 4c 0f 84 20 da 8d c9 53
-        HEX f0 09 c9 57 f0 05 c9 41
-        HEX f0 01 60 48 20 b4 83 20
-        HEX 51 81 20 a9 83 68 20 66
-        HEX 84 60 20 19 81 20 63 68
-        HEX 65 73 74 00 ae e8 a4 ac
-        HEX e9 a4 20 32 9d c9 05 f0
-        HEX 14 20 19 81 20 2d 20 6e
-        HEX 6f 6e 65 20 68 65 72 65
-        HEX 21 00 4c 0f 84 ad d8 7e
-        HEX c9 04 f0 49 a9 80 18 6d
-        HEX ca 7e 8d f2 a4 20 b9 15
-        HEX cd f2 a4 90 38 20 19 81
-        HEX 7e 54 68 6f 75 20 68 61
-        HEX 73 74 20 73 65 74 20 6f
-        HEX 66 66 20 61 20 74 72 61
-        HEX 70 21 00 a9 02 20 cb 15
-        HEX ad c6 7e 38 ed 06 a5 8d
-        HEX c6 7e ad c7 7e e9 00 8d
-        HEX c7 7e 90 1b 60 ae e8 a4
-        HEX ac e9 a4 a9 00 20 1f a4
-        HEX 4c e0 94 20 b4 83 20 51
-        HEX 81 20 a9 83 4c a2 85 20
-        HEX b4 83 20 51 81 20 a9 83
-        HEX 20 8f 15 4c f8 88 a2 05
-        HEX 8e fe a4 ae fe a4 bd 08
-        HEX a5 f0 03 4c 01 9a 20 81
-        HEX 9d f0 07 c9 02 b0 06 8a
-        HEX d0 03 4c 0a 9a c9 04 90
-        HEX 03 4c 01 9a a0 00 ae fe
-        HEX a4 ad e8 a4 dd 0e a5 f0
-        HEX 06 30 03 c8 d0 01 88 8c
-        HEX 00 a5 a0 00 ad e9 a4 dd
-        HEX 14 a5 f0 06 30 03 c8 d0
-        HEX 01 88 8c 01 a5 bd 14 a5
-        HEX 18 6d 01 a5 8d eb a4 a8
-        HEX bd 0e a5 aa 18 6d 00 a5
-        HEX 8d ea a4 ad ea a4 ae fe
-        HEX a4 dd 0e a5 f0 51 bc 14
-        HEX a5 aa 20 32 9d c9 01 f0
-        HEX 46 c9 02 f0 42 c9 0c b0
-        HEX 3e ae fe a4 20 9b 9c 20
-        HEX 32 9d 48 ae fe a4 20 9b
-        HEX 9c 68 29 0f 20 1f a4 ae
-        HEX fe a4 ad ea a4 9d 0e a5
-        HEX 20 9b 9c 20 32 9d 8d f2
-        HEX a4 ae fe a4 20 9b 9c ad
-        HEX fe a4 0a 0a 0a 0a 0d f2
-        HEX a4 20 1f a4 4c 01 9a ae
-        HEX fe a4 bd 0e a5 aa ac eb
-        HEX a4 20 32 9d c9 01 f0 43
-        HEX c9 02 f0 3f c9 0c b0 3b
-        HEX ae fe a4 20 9b 9c 20 32
-        HEX 9d 48 ae fe a4 20 9b 9c
-        HEX 68 29 0f 20 1f a4 ae fe
-        HEX a4 ad eb a4 9d 14 a5 20
-        HEX 9b 9c 20 32 9d 8d f2 a4
-        HEX ae fe a4 20 9b 9c ad fe
-        HEX a4 0a 0a 0a 0a 0d f2 a4
-        HEX 20 1f a4 ce fe a4 f0 03
-        HEX 4c f1 98 60 a9 17 85 25
-        HEX 20 19 81 7e 41 74 74 61
-        HEX 63 6b 65 64 20 62 79 20
-        HEX 00 ad fe a4 18 6d 07 a5
-        HEX aa 20 b1 80 d6 76 20 19
-        HEX 81 21 7e 00 a9 04 20 ce
-        HEX 15 ad cc 7e 4a 18 6d 7b
-        HEX 7e 6d 7b 7e 6d 7b 7e 6d
-        HEX 7b 7e 6d 7b 7e 6d 7b 7e
-        HEX 6d 7b 7e 6d 7b 7e 69 38
-        HEX 8d f2 a4 8d fc a4 20 b9
-        HEX 15 cd f2 a4 b0 0e 20 19
-        HEX 81 4d 69 73 73 65 64 21
-        HEX 00 4c 01 9a ad fe a4 18
-        HEX 6d 07 a5 c9 17 d0 03 4c
-        HEX 20 9b c9 1e d0 03 4c 23
-        HEX 9b c9 25 d0 03 4c 26 9b
-        HEX c9 2a d0 03 4c 29 9b ac
-        HEX 06 a5 8c f2 a4 a9 00 8d
-        HEX f3 a4 8d f1 a4 b9 0d a6
-        HEX ac fe a4 20 bc 9c 20 b9
-        HEX 15 8d f0 a4 ad f1 a4 f0
-        HEX 06 20 b9 15 8d f1 a4 ad
-        HEX f0 a4 cd f2 a4 ad f1 a4
-        HEX ed f3 a4 b0 e1 ad f0 a4
-        HEX 18 69 01 8d f2 a4 ad f1
-        HEX a4 69 00 8d f3 a4 20 19
-        HEX 81 48 69 74 2e 2e 2e 20
-        HEX 00 a2 00 8e 49 82 ad f3
-        HEX a4 ae f2 a4 20 07 82 20
-        HEX 19 81 20 64 61 6d 61 67
-        HEX 65 00 a9 02 20 ce 15 ad
-        HEX c6 7e 38 ed f2 a4 8d c6
-        HEX 7e ad c7 7e ed f3 a4 8d
-        HEX c7 7e 90 03 4c 01 9a 4c
-        HEX dd 98 4c 4e 9b 4c 9b 9b
-        HEX 4c c6 9b 20 b9 15 30 03
-        HEX 4c 95 9a 20 19 81 4d 65
-        HEX 6e 74 61 6c 20 61 74 74
-        HEX 61 63 6b 21 00 ad d2 7e
-        HEX 4a 18 69 05 8d d2 7e 60
-        HEX a2 01 bd 83 7e f0 3e ec
-        HEX 7a 7e f0 39 de 83 7e 8e
-        HEX f2 a4 20 19 81 54 68 69
-        HEX 65 66 20 73 74 6f 6c 65
-        HEX 20 61 00 ad f2 a4 c9 03
-        HEX f0 04 c9 08 d0 05 a9 6e
-        HEX 20 62 80 a9 20 20 62 80
-        HEX ae f2 a4 20 b8 80 c8 73
-        HEX a9 21 4c 62 80 e8 e0 10
-        HEX d0 b8 4c 95 9a ad 7b 7e
-        HEX d0 03 4c 95 9a 20 19 81
-        HEX 41 72 6d 6f 75 72 20 64
-        HEX 65 73 74 72 6f 79 65 64
-        HEX 21 00 ae 7b 7e de 7d 7e
-        HEX a9 00 8d 7b 7e 4c 01 9a
-        HEX 20 19 81 41 20 67 72 65
-        HEX 6d 6c 69 6e 20 73 74 6f
-        HEX 6c 65 20 73 6f 6d 65 20
-        HEX 66 6f 6f 64 21 00 4e e6
-        HEX 7e 6e e5 7e 4c 01 9a ad
-        HEX 06 a5 38 e9 01 4a 8d f2
-        HEX a4 0a 0a 18 6d f2 a4 69
-        HEX 14 8d 07 a5 a2 05 a9 01
-        HEX 9d 08 a5 ca d0 fa a9 03
-        HEX 8d ee a4 20 b9 15 29 07
-        HEX f0 f9 c9 06 b0 f5 8d fe
-        HEX a4 aa bd 08 a5 f0 ec de
-        HEX 08 a5 a9 0a 8d f2 a4 a9
-        HEX 00 8d f3 a4 ac 06 a5 b9
-        HEX 0d a6 c9 01 f0 03 20 54
-        HEX 82 ac fe a4 20 bc 9c ae
-        HEX fe a4 ad f2 a4 9d 1a a5
-        HEX ad f3 a4 9d 20 a5 20 a4
-        HEX 9c ae fe a4 9d 14 a5 20
-        HEX a4 9c ae fe a4 9d 0e a5
-        HEX bc 14 a5 aa 20 32 9d d0
-        HEX e5 ae fe a4 bd 0e a5 cd
-        HEX e8 a4 d0 08 bd 14 a5 cd
-        HEX e9 a4 f0 d2 ae fe a4 20
-        HEX 9b 9c ad fe a4 0a 0a 0a
-        HEX 0a 20 1f a4 ce ee a4 f0
-        HEX 03 4c 11 9c 60 bd 14 a5
-        HEX a8 bd 0e a5 aa 60 8e f2
-        HEX a4 8c f3 a4 20 b9 15 29
-        HEX 0f f0 f9 c9 0a b0 f5 ae
-        HEX f2 a4 ac f3 a4 60 8d f0
-        HEX a4 ad f2 a4 18 6d f0 a4
-        HEX 8d f2 a4 90 03 ee f3 a4
-        HEX 88 d0 ee 60 20 19 81 7e
-        HEX 54 68 6f 75 20 64 6f 73
-        HEX 74 20 66 69 6e 64 20 00
-        HEX 20 38 a4 20 32 9d c9 02
-        HEX d0 17 20 19 81 61 20 74
-        HEX 72 61 70 64 6f 6f 72 21
-        HEX 00 20 38 a4 a9 09 4c 1f
-        HEX a4 c9 03 d0 1a 20 19 81
-        HEX 61 20 73 65 63 72 65 74
-        HEX 20 64 6f 6f 72 21 00 20
-        HEX 38 a4 a9 04 4c 1f a4 20
-        HEX 19 81 6e 6f 74 68 69 6e
-        HEX 67 2e 00 60 8a c0 00 f0
-        HEX 07 18 69 0b 88 4c 35 9d
-        HEX aa bd 99 b0 60 20 32 9d
-        HEX 29 0f 60 20 b9 15 c9 55
-        HEX b0 03 a9 ff 60 c9 aa b0
-        HEX 03 a9 00 60 a9 01 60 20
-        HEX 49 9d 18 79 0e a5 8d ea
-        HEX a4 20 49 9d 18 79 14 a5
-        HEX 8d eb a4 60 20 a4 15 a2
-        HEX 00 a0 17 20 15 81 7e 00
-        HEX 4c fa 87 8e f6 a4 bd 0e
-        HEX a5 c9 ff f0 7a ad e8 a4
-        HEX c9 ff f0 73 38 fd 0e a5
-        HEX b0 09 8d 03 a5 38 a9 00
-        HEX ed 03 a5 a0 00 8c f8 a4
-        HEX 8c f9 a4 a8 aa e8 ca f0
-        HEX 0f 98 18 6d f8 a4 8d f8
-        HEX a4 90 f3 ee f9 a4 b0 ee
-        HEX ae f6 a4 ad e9 a4 38 fd
-        HEX 14 a5 b0 09 8d 03 a5 38
-        HEX a9 00 ed 03 a5 a0 00 8c
-        HEX fa a4 8c fb a4 a8 aa e8
-        HEX ca f0 0f 98 18 6d fa a4
-        HEX 8d fa a4 90 f3 ee fb a4
-        HEX b0 ee 18 ad fa a4 6d f8
-        HEX a4 8d f8 a4 ad fb a4 6d
-        HEX f9 a4 8d f9 a4 90 06 a9
-        HEX ff 8d f8 a4 60 a0 01 8c
-        HEX fa a4 88 8c fb a4 38 ad
-        HEX f8 a4 aa ed fa a4 8d f8
-        HEX a4 ad f9 a4 ed fb a4 8d
-        HEX f9 a4 90 10 c8 ad fa a4
-        HEX 69 01 8d fa a4 90 df ee
-        HEX fb a4 b0 da 8c f8 a4 8e
-        HEX f9 a4 98 60 00 40 60 70
-        HEX 78 7c 7e 7f 7f 7f 7f ff
-        HEX bf 9f 8f 87 83 81 80 80
-        HEX 80 80 00 20 30 38 3c 3e
-        HEX 3f 3f 3f 3f 3f 7f 5f 4f
-        HEX 47 43 41 40 40 40 40 40
-        HEX 10 48 64 72 79 7c 7f 7f
-        HEX 7f 7f 30 58 6c 76 7b 7c
-        HEX 7f 7f 7f 7f ef b7 9b 8d
-        HEX 86 83 80 80 80 80 cf a7
-        HEX 93 89 84 83 80 80 80 80
-        HEX 77 5b 4d 46 42 40 40 40
-        HEX 40 40 67 53 49 44 42 40
-        HEX 40 40 40 40 2a 35 3b 3d
-        HEX 3e 3f 3f 3f 3f 3f 38 5c
-        HEX 6e 7a 7d 7e 7f 7f 7f 7f
-        HEX c7 a3 91 85 82 81 80 80
-        HEX 80 80 10 08 04 02 01 00
-        HEX 00 00 00 00 6f 57 4b 45
-        HEX 42 40 40 40 40 40 4c 66
-        HEX 73 79 7c 7e 7f 7f 7f 7f
-        HEX 58 6c 76 7a 7d 7e 7f 7f
-        HEX 7f 7f b0 98 8c 86 83 82
-        HEX 81 80 80 80 a8 94 8a 85
-        HEX 82 81 80 80 80 80 ad fe
-        HEX a4 f0 0d 18 6d 07 a5 c9
-        HEX 1e f0 05 c9 29 f0 01 60
-        HEX ae f7 a4 bd 96 9e 8d 36
-        HEX a5 bd 64 9e 8d 37 a5 18
-        HEX 7d 96 9e 4a 8d 34 a5 18
-        HEX 7d 96 9e 4a 8d 35 a5 ad
-        HEX 34 a5 18 7d 64 9e 4a 8d
-        HEX 33 a5 bd dc 9e 8d 2f a5
-        HEX bd f0 9e 8d 32 a5 bd e6
-        HEX 9e 8d 30 a5 bd fa 9e 8d
-        HEX 31 a5 ad 2f a5 85 06 ad
-        HEX 33 a5 85 07 ad 30 a5 85
-        HEX 08 ad 37 a5 85 09 20 dd
-        HEX 15 ad 32 a5 85 08 ad 33
-        HEX a5 85 09 20 dd 15 ad 32
-        HEX a5 85 08 ad 35 a5 85 09
-        HEX 20 dd 15 ad 31 a5 85 08
-        HEX ad 36 a5 85 09 20 dd 15
-        HEX ad 30 a5 85 08 ad 36 a5
-        HEX 85 09 20 dd 15 ad 2f a5
-        HEX 85 08 ad 35 a5 85 09 20
-        HEX dd 15 ad 2f a5 85 08 ad
-        HEX 33 a5 85 09 20 dd 15 ad
-        HEX 30 a5 85 08 ad 34 a5 85
-        HEX 09 20 dd 15 ad 31 a5 85
-        HEX 08 ad 34 a5 85 09 20 dd
-        HEX 15 ad 31 a5 85 08 ad 36
-        HEX a5 85 09 20 dd 15 ad 30
-        HEX a5 85 06 85 08 ad 36 a5
-        HEX 85 07 ad 34 a5 85 09 20
-        HEX dd 15 ad 31 a5 85 06 ad
-        HEX 34 a5 85 07 ad 32 a5 85
-        HEX 08 ad 33 a5 85 09 4c dd
-        HEX 15 ad fe a4 f0 11 18 6d
-        HEX 07 a5 c9 1e f0 09 c9 20
-        HEX f0 05 c9 29 f0 01 60 ad
-        HEX ed a4 d0 16 ae f7 a4 bd
-        HEX 96 9e 85 07 a9 7f 85 06
-        HEX 85 08 38 e5 07 85 09 4c
-        HEX dd 15 ae f7 a4 bd 96 9e
-        HEX 85 07 a9 7f 38 e5 07 85
-        HEX 09 48 bd 7a 9e 85 06 85
-        HEX 08 20 dd 15 ae f7 a4 68
-        HEX 85 09 bd 96 9e 85 07 bd
-        HEX 8e 9e 85 06 85 08 20 dd
-        HEX 15 a9 04 8d f2 a4 ae f7
+        HEX 04 d0 03 20 af a2 ad 26
+        HEX a5 c9 01 f0 09 c9 03 d0
+        HEX 0d ad f7 a4 f0 0f a9 01
+        HEX 8d 2b a5 4c fa 8b ad 26
+        HEX a5 c9 04 d0 0b 20 47 a3
+        HEX ad f7 a4 d0 e9 4c fa 8b
+        HEX ad 26 a5 c9 06 d0 15 20
+        HEX 04 9f 20 a4 15 a2 00 a0
+        HEX 17 20 15 81 7e 43 6f 66
+        HEX 66 69 6e 00 ad 26 a5 c9
+        HEX 0c d0 03 20 ae a0 ad 27
+        HEX a5 c9 01 f0 08 c9 03 f0
+        HEX 04 c9 04 d0 03 20 49 a2
+        HEX ad 28 a5 c9 01 f0 08 c9
+        HEX 03 f0 04 c9 04 d0 03 20
+        HEX 7c a2 ad 27 a5 c9 04 d0
+        HEX 0e ad f7 a4 f0 06 20 8a
+        HEX a3 4c 61 8b 20 8a a3 ad
+        HEX 28 a5 c9 04 d0 0e ad f7
+        HEX a4 f0 06 20 bc a3 4c 76
+        HEX 8b 20 bc a3 ad 27 a5 c9
+        HEX 01 f0 0b c9 03 f0 07 c9
+        HEX 04 f0 03 20 7b a1 ad 28
+        HEX a5 c9 01 f0 0b c9 03 f0
+        HEX 07 c9 04 f0 03 20 d7 a1
+        HEX ad 26 a5 c9 07 f0 04 c9
+        HEX 09 d0 03 20 f2 a0 ad 26
+        HEX a5 c9 08 d0 03 20 32 a1
+        HEX ad 26 a5 c9 07 f0 04 c9
+        HEX 08 d0 03 20 0f a0 ad 26
+        HEX a5 c9 05 d0 33 ad fe a4
+        HEX f0 0f 18 6d 07 a5 c9 1e
+        HEX f0 07 c9 29 f0 03 4c fa
+        HEX 8b 20 a4 15 a2 00 a0 17
+        HEX 20 15 81 7e 43 68 65 73
+        HEX 74 00 a9 0b ae f7 a4 ee
+        HEX f7 a4 20 49 a4 ce f7 a4
+        HEX ad fe a4 f0 50 18 6d 07
+        HEX a5 48 20 a4 15 a2 00 a0
+        HEX 17 20 15 81 7e 00 68 48
+        HEX aa c9 29 f0 15 c9 20 d0
+        HEX 0c 20 19 81 43 68 65 73
+        HEX 74 00 4c 2c 8c 20 b1 80
+        HEX d6 76 68 c9 29 f0 1e 38
+        HEX e9 15 ae f7 a4 ca 20 49
+        HEX a4 ad fe a4 18 6d 07 a5
+        HEX c9 1e f0 09 c9 20 f0 05
+        HEX a9 01 8d 2b a5 ad 2b a5
+        HEX f0 03 4c ad 15 ee f7 a4
+        HEX 4c 4e 8a
+@
+
+<<dng renderer stub hex>>=
+        HEX 00 40 60 70 78 7c 7e 7f
+        HEX 7f 7f 7f ff bf 9f 8f 87
+        HEX 83 81 80 80 80 80 00 20
+        HEX 30 38 3c 3e 3f 3f 3f 3f
+        HEX 3f 7f 5f 4f 47 43 41 40
+        HEX 40 40 40 40 10 48 64 72
+        HEX 79 7c 7f 7f 7f 7f 30 58
+        HEX 6c 76 7b 7c 7f 7f 7f 7f
+        HEX ef b7 9b 8d 86 83 80 80
+        HEX 80 80 cf a7 93 89 84 83
+        HEX 80 80 80 80 77 5b 4d 46
+        HEX 42 40 40 40 40 40 67 53
+        HEX 49 44 42 40 40 40 40 40
+        HEX 2a 35 3b 3d 3e 3f 3f 3f
+        HEX 3f 3f 38 5c 6e 7a 7d 7e
+        HEX 7f 7f 7f 7f c7 a3 91 85
+        HEX 82 81 80 80 80 80 10 08
+        HEX 04 02 01 00 00 00 00 00
+        HEX 6f 57 4b 45 42 40 40 40
+        HEX 40 40 4c 66 73 79 7c 7e
+        HEX 7f 7f 7f 7f 58 6c 76 7a
+        HEX 7d 7e 7f 7f 7f 7f b0 98
+        HEX 8c 86 83 82 81 80 80 80
+        HEX a8 94 8a 85 82 81 80 80
+        HEX 80 80 ad fe a4 f0 0d 18
+        HEX 6d 07 a5 c9 1e f0 05 c9
+        HEX 29 f0 01 60 ae f7 a4 bd
+        HEX 96 9e 8d 36 a5 bd 64 9e
+        HEX 8d 37 a5 18 7d 96 9e 4a
+        HEX 8d 34 a5 18 7d 96 9e 4a
+        HEX 8d 35 a5 ad 34 a5 18 7d
+        HEX 64 9e 4a 8d 33 a5 bd dc
+        HEX 9e 8d 2f a5 bd f0 9e 8d
+        HEX 32 a5 bd e6 9e 8d 30 a5
+        HEX bd fa 9e 8d 31 a5 ad 2f
+        HEX a5 85 06 ad 33 a5 85 07
+        HEX ad 30 a5 85 08 ad 37 a5
+        HEX 85 09 20 dd 15 ad 32 a5
+        HEX 85 08 ad 33 a5 85 09 20
+        HEX dd 15 ad 32 a5 85 08 ad
+        HEX 35 a5 85 09 20 dd 15 ad
+        HEX 31 a5 85 08 ad 36 a5 85
+        HEX 09 20 dd 15 ad 30 a5 85
+        HEX 08 ad 36 a5 85 09 20 dd
+        HEX 15 ad 2f a5 85 08 ad 35
+        HEX a5 85 09 20 dd 15 ad 2f
+        HEX a5 85 08 ad 33 a5 85 09
+        HEX 20 dd 15 ad 30 a5 85 08
+        HEX ad 34 a5 85 09 20 dd 15
+        HEX ad 31 a5 85 08 ad 34 a5
+        HEX 85 09 20 dd 15 ad 31 a5
+        HEX 85 08 ad 36 a5 85 09 20
+        HEX dd 15 ad 30 a5 85 06 85
+        HEX 08 ad 36 a5 85 07 ad 34
+        HEX a5 85 09 20 dd 15 ad 31
+        HEX a5 85 06 ad 34 a5 85 07
+        HEX ad 32 a5 85 08 ad 33 a5
+        HEX 85 09 4c dd 15 ad fe a4
+        HEX f0 11 18 6d 07 a5 c9 1e
+        HEX f0 09 c9 20 f0 05 c9 29
+        HEX f0 01 60 ad ed a4 d0 16
+        HEX ae f7 a4 bd 96 9e 85 07
+        HEX a9 7f 85 06 85 08 38 e5
+        HEX 07 85 09 4c dd 15 ae f7
+        HEX a4 bd 96 9e 85 07 a9 7f
+        HEX 38 e5 07 85 09 48 bd 7a
+        HEX 9e 85 06 85 08 20 dd 15
+        HEX ae f7 a4 68 85 09 bd 96
+        HEX 9e 85 07 bd 8e 9e 85 06
+        HEX 85 08 20 dd 15 a9 04 8d
+        HEX f2 a4 ae f7 a4 bd c8 9e
+        HEX 4a 4a 8d f3 a4 bd 58 9e
+        HEX 18 6d f3 a4 85 07 85 09
+        HEX ae f7 a4 bd 7a 9e 85 06
+        HEX bd 8e 9e 85 08 bd c8 9e
+        HEX 4a 18 7d c8 9e 65 07 85
+        HEX 07 85 09 20 dd 15 ce f2
+        HEX a4 d0 dd 60 a9 03 8d f2
+        HEX a4 a9 05 20 d4 15 ae f7
         HEX a4 bd c8 9e 4a 4a 8d f3
-        HEX a4 bd 58 9e 18 6d f3 a4
+        HEX a4 bd aa 9e 38 ed f3 a4
         HEX 85 07 85 09 ae f7 a4 bd
-        HEX 7a 9e 85 06 bd 8e 9e 85
-        HEX 08 bd c8 9e 4a 18 7d c8
-        HEX 9e 65 07 85 07 85 09 20
-        HEX dd 15 ce f2 a4 d0 dd 60
-        HEX a9 03 8d f2 a4 a9 05 20
-        HEX d4 15 ae f7 a4 bd c8 9e
-        HEX 4a 4a 8d f3 a4 bd aa 9e
-        HEX 38 ed f3 a4 85 07 85 09
-        HEX ae f7 a4 bd 6e 9e 85 06
-        HEX bd 82 9e 85 08 a5 07 18
-        HEX 7d c8 9e 85 07 85 09 20
-        HEX dd 15 ce f2 a4 d0 e1 a9
-        HEX 07 4c d4 15 ae f7 a4 bd
-        HEX b4 9e 85 06 bd 96 9e 85
-        HEX 07 bd 79 9e 85 08 bd a0
+        HEX 6e 9e 85 06 bd 82 9e 85
+        HEX 08 a5 07 18 7d c8 9e 85
+        HEX 07 85 09 20 dd 15 ce f2
+        HEX a4 d0 e1 a9 07 4c d4 15
+        HEX ae f7 a4 bd b4 9e 85 06
+        HEX bd 96 9e 85 07 bd 79 9e
+        HEX 85 08 bd a0 9e 85 09 20
+        HEX dd 15 ae f7 a4 bd 8d 9e
+        HEX 85 08 20 dd 15 ae f7 a4
+        HEX bd be 9e 85 08 bd 96 9e
+        HEX 85 09 20 dd 15 ae f7 a4
+        HEX bd b4 9e 85 08 4c dd 15
+        HEX ae f7 a4 bd b4 9e 85 06
+        HEX a9 7f 38 fd 96 9e 85 07
+        HEX bd 79 9e 85 08 a9 7f 38
+        HEX fd a0 9e 85 09 20 dd 15
+        HEX ae f7 a4 bd 8d 9e 85 08
+        HEX 20 dd 15 ae f7 a4 bd be
+        HEX 9e 85 08 a9 7f 38 fd 96
         HEX 9e 85 09 20 dd 15 ae f7
-        HEX a4 bd 8d 9e 85 08 20 dd
-        HEX 15 ae f7 a4 bd be 9e 85
-        HEX 08 bd 96 9e 85 09 20 dd
-        HEX 15 ae f7 a4 bd b4 9e 85
-        HEX 08 4c dd 15 ae f7 a4 bd
-        HEX b4 9e 85 06 a9 7f 38 fd
-        HEX 96 9e 85 07 bd 79 9e 85
-        HEX 08 a9 7f 38 fd a0 9e 85
-        HEX 09 20 dd 15 ae f7 a4 bd
-        HEX 8d 9e 85 08 20 dd 15 ae
-        HEX f7 a4 bd be 9e 85 08 a9
-        HEX 7f 38 fd 96 9e 85 09 20
-        HEX dd 15 ae f7 a4 bd b4 9e
+        HEX a4 bd b4 9e 85 08 4c dd
+        HEX 15 ae f7 a4 f0 17 bd 42
+        HEX 9e 85 06 85 08 bd 58 9e
+        HEX 85 07 bd 63 9e 85 09 20
+        HEX dd 15 ae f7 a4 bd 59 9e
+        HEX 85 07 85 09 bd 42 9e 85
+        HEX 06 bd 43 9e 85 08 20 dd
+        HEX 15 20 33 a2 c9 01 f0 13
+        HEX c9 03 f0 0f c9 04 f0 0b
+        HEX ae f7 a4 bd 64 9e 85 09
+        HEX 20 dd 15 ae f7 a4 bd 64
+        HEX 9e 85 07 85 09 bd 42 9e
         HEX 85 08 4c dd 15 ae f7 a4
-        HEX f0 17 bd 42 9e 85 06 85
+        HEX f0 17 bd 4d 9e 85 06 85
         HEX 08 bd 58 9e 85 07 bd 63
         HEX 9e 85 09 20 dd 15 ae f7
         HEX a4 bd 59 9e 85 07 85 09
-        HEX bd 42 9e 85 06 bd 43 9e
+        HEX bd 4d 9e 85 06 bd 4e 9e
         HEX 85 08 20 dd 15 20 33 a2
         HEX c9 01 f0 13 c9 03 f0 0f
         HEX c9 04 f0 0b ae f7 a4 bd
         HEX 64 9e 85 09 20 dd 15 ae
         HEX f7 a4 bd 64 9e 85 07 85
-        HEX 09 bd 42 9e 85 08 4c dd
-        HEX 15 ae f7 a4 f0 17 bd 4d
-        HEX 9e 85 06 85 08 bd 58 9e
-        HEX 85 07 bd 63 9e 85 09 20
-        HEX dd 15 ae f7 a4 bd 59 9e
+        HEX 09 bd 4d 9e 85 08 4c dd
+        HEX 15 ad ee a4 18 6d ec a4
+        HEX aa ad ef a4 18 6d ed a4
+        HEX a8 20 32 9d 29 0f 60 ae
+        HEX f7 a4 bd 42 9e 85 06 bd
+        HEX 43 9e 85 08 bd 58 9e 85
+        HEX 07 bd 59 9e 85 09 20 dd
+        HEX 15 ae f7 a4 bd 42 9e 85
+        HEX 08 bd 63 9e 85 09 bd 64
+        HEX 9e 85 07 20 dd 15 ae f7
+        HEX a4 60 ae f7 a4 bd 4d 9e
+        HEX 85 06 bd 4e 9e 85 08 bd
+        HEX 58 9e 85 07 bd 59 9e 85
+        HEX 09 20 dd 15 ae f7 a4 bd
+        HEX 4d 9e 85 08 bd 63 9e 85
+        HEX 09 bd 64 9e 85 07 20 dd
+        HEX 15 ae f7 a4 60 ae f7 a4
+        HEX bd 42 9e 85 06 bd 58 9e
         HEX 85 07 85 09 bd 4d 9e 85
-        HEX 06 bd 4e 9e 85 08 20 dd
-        HEX 15 20 33 a2 c9 01 f0 13
-        HEX c9 03 f0 0f c9 04 f0 0b
-        HEX ae f7 a4 bd 64 9e 85 09
-        HEX 20 dd 15 ae f7 a4 bd 64
-        HEX 9e 85 07 85 09 bd 4d 9e
-        HEX 85 08 4c dd 15 ad ee a4
-        HEX 18 6d ec a4 aa ad ef a4
-        HEX 18 6d ed a4 a8 20 32 9d
-        HEX 29 0f 60 ae f7 a4 bd 42
-        HEX 9e 85 06 bd 43 9e 85 08
-        HEX bd 58 9e 85 07 bd 59 9e
-        HEX 85 09 20 dd 15 ae f7 a4
-        HEX bd 42 9e 85 08 bd 63 9e
-        HEX 85 09 bd 64 9e 85 07 20
-        HEX dd 15 ae f7 a4 60 ae f7
-        HEX a4 bd 4d 9e 85 06 bd 4e
-        HEX 9e 85 08 bd 58 9e 85 07
-        HEX bd 59 9e 85 09 20 dd 15
-        HEX ae f7 a4 bd 4d 9e 85 08
-        HEX bd 63 9e 85 09 bd 64 9e
-        HEX 85 07 20 dd 15 ae f7 a4
-        HEX 60 ae f7 a4 bd 42 9e 85
-        HEX 06 bd 58 9e 85 07 85 09
-        HEX bd 4d 9e 85 08 20 dd 15
-        HEX ae f7 a4 bd 4e 9e 85 08
-        HEX bd 63 9e 85 07 85 09 20
-        HEX dd 15 ae f7 a4 bd 42 9e
-        HEX 85 06 bd 43 9e 85 08 20
-        HEX dd 15 ad 26 a5 c9 04 d0
-        HEX 05 ae f7 a4 f0 0b ae f7
-        HEX a4 bd 4e 9e 85 08 20 dd
-        HEX 15 ad 29 a5 c9 01 f0 08
-        HEX c9 03 f0 04 c9 04 d0 12
-        HEX ae f7 a4 bd 58 9e 85 09
-        HEX bd 42 9e 85 06 85 08 20
-        HEX dd 15 ad 2a a5 c9 01 f0
-        HEX 08 c9 03 f0 04 c9 04 d0
-        HEX 17 ae f7 a4 bd 4d 9e 85
-        HEX 06 85 08 bd 58 9e 85 07
-        HEX bd 63 9e 85 09 20 dd 15
-        HEX 60 ae f7 a4 ad fe a4 f0
-        HEX 11 18 6d 07 a5 c9 1e f0
-        HEX 09 c9 20 f0 05 c9 29 f0
-        HEX 01 60 bd 43 9e 85 06 85
-        HEX 08 bd 63 9e 85 07 bd 59
-        HEX 9e 85 09 20 dd 15 ae f7
-        HEX a4 bd 4e 9e 85 08 20 dd
-        HEX 15 ae f7 a4 bd 63 9e 85
-        HEX 09 4c dd 15 ae f7 a4 bd
-        HEX 6e 9e 85 06 85 08 bd 96
-        HEX 9e 85 07 bd 59 9e 85 09
-        HEX 20 dd 15 ae f7 a4 bd 78
-        HEX 9e 85 08 bd aa 9e 85 09
-        HEX 20 dd 15 ae f7 a4 bd a0
-        HEX 9e 85 09 4c dd 15 ae f7
-        HEX a4 bd 82 9e 85 06 85 08
-        HEX bd 96 9e 85 07 bd 59 9e
-        HEX 85 09 20 dd 15 ae f7 a4
-        HEX bd 8c 9e 85 08 bd aa 9e
-        HEX 85 09 20 dd 15 ae f7 a4
-        HEX bd a0 9e 85 09 4c dd 15
-        HEX 86 24 4c b0 15 18 ad 04
-        HEX a5 69 09 6d 05 a5 ae 04
-        HEX a5 8d 04 a5 8e 05 a5 60
-        HEX 20 f3 a3 29 1f c9 14 b0
-        HEX f7 aa bd f9 a5 c9 09 f0
-        HEX 05 c9 02 f0 01 60 a9 03
-        HEX 60 48 8a c0 00 f0 07 18
-        HEX 69 0b 88 4c 23 a4 a8 68
-        HEX 99 99 b0 60 49 ff 18 69
-        HEX 01 60 ad e8 a4 18 6d ec
-        HEX a4 aa ad e9 a4 18 6d ed
-        HEX a4 a8 60 8e f5 a4 0a a8
-        HEX b9 92 a6 18 69 92 8d c9
-        HEX a4 b9 93 a6 69 a6 8d ca
-        HEX a4 ae f7 a4 ca bd d2 9e
-        HEX c0 12 d0 03 bd 64 9e c0
-        HEX 16 d0 03 bd 96 9e c0 1c
-        HEX d0 03 bd a0 9e 8d 9c a4
-        HEX 20 c8 a4 8d f2 a4 20 d4
-        HEX a4 18 69 80 85 08 20 c8
-        HEX a4 aa 0d f2 a4 d0 01 60
-        HEX 8a 20 d4 a4 18 69 5f 85
-        HEX 09 ad ee a4 85 06 ad ef
-        HEX a4 85 07 20 c8 a4 c9 00
-        HEX d0 08 a5 08 85 06 a5 09
-        HEX 85 07 a5 08 8d ee a4 a5
-        HEX 09 8d ef a4 20 dd 15 4c
-        HEX 7e a4 ad ff ff ee c9 a4
-        HEX d0 03 ee ca a4 60 18 c9
-        HEX 80 90 01 38 08 ae f5 a4
-        HEX f0 06 28 08 6a ca d0 fa
-        HEX 28 60 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 46 6f 72 77 61 72
-        HEX e4 54 75 72 6e 20 61 72
-        HEX 6f 75 6e e4 54 75 72 6e
-        HEX 20 72 69 67 68 f4 54 75
-        HEX 72 6e 20 6c 65 66 f4 22
-        HEX 41 50 45 52 54 55 53 21
-        HEX a2 22 50 45 43 55 4e 49
-        HEX 41 21 a2 22 56 41 53 54
-        HEX 4f 21 a2 22 4e 55 44 4f
-        HEX 21 a2 22 49 4e 46 45 52
-        HEX 55 53 a2 22 41 53 43 45
-        HEX 4e 44 4f a2 22 44 55 43
-        HEX 49 53 2d 45 44 55 43 4f
-        HEX 21 a2 22 53 54 52 55 58
-        HEX 49 21 a2 22 44 45 4c 49
-        HEX 4f 21 a2 22 49 4e 54 45
-        HEX 52 46 49 43 49 4f 21 a2
-        HEX 04 08 05 02 08 01 05 04
-        HEX 06 01 03 07 03 09 02 06
-        HEX 01 01 02 03 03 04 04 05
-        HEX 05 06 06 06 08 08 09 09
-        HEX 00 0b 16 21 2c 37 42 4d
-        HEX 58 63 6e 01 01 01 01 01
-        HEX 01 01 05 05 05 05 01 05
-        HEX 01 05 05 00 00 02 09 00
-        HEX 00 03 03 03 03 00 00 04
-        HEX 04 04 04 04 04 04 04 00
-        HEX 01 04 09 10 19 24 31 40
-        HEX 51 64 79 01 01 01 01 01
-        HEX 01 01 01 01 01 01 01 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 01 01 00 01 00 01 00 01
-        HEX 00 01 00 01 01 00 00 00
-        HEX 00 00 00 00 00 00 01 01
-        HEX 00 01 00 01 00 01 00 01
-        HEX 00 01 01 00 00 00 00 00
-        HEX 00 00 00 00 01 01 00 01
-        HEX 00 01 00 01 00 01 00 01
-        HEX 01 00 00 00 00 00 00 00
-        HEX 00 00 01 01 00 01 00 01
-        HEX 00 01 00 01 00 01 01 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 32 00 c8 00
-        HEX 4f 01 94 01 dc 01 24 02
-        HEX b7 02 32 03 ad 03 19 04
-        HEX 2b 04 97 04 be 04 42 05
-        HEX c0 05 f9 05 6e 06 aa 06
-        HEX 73 07 d6 07 45 08 4b 08
-        HEX ab 08 23 09 9b 09 e7 fd
-        HEX 00 19 fd 01 0a e6 01 0a
-        HEX e2 01 0f dc 01 23 e2 01
-        HEX 23 d8 01 0f d5 01 05 ce
-        HEX 01 0a c8 01 0a c4 01 05
-        HEX c1 01 fb c1 01 f6 c4 01
-        HEX f6 c8 01 fb ce 01 f1 d5
-        HEX 01 dd d8 01 dd e2 01 f1
-        HEX dc 01 f6 e2 01 f6 e6 01
-        HEX e7 fd 01 f1 fd 00 ec 00
-        HEX 01 f6 00 01 f6 fd 01 0f
-        HEX fd 00 14 00 01 0a 00 01
-        HEX 0a fd 01 f6 e2 00 0a e2
-        HEX 01 f6 e6 00 0a e6 01 f6
-        HEX d2 00 fb d5 01 05 d5 01
-        HEX 0a d2 01 00 dc 00 00 d5
-        HEX 01 fc cb 00 04 cb 01 00
-        HEX c8 00 05 c4 01 05 c8 01
-        HEX fb c8 01 fb c4 01 00 c8
-        HEX 01 00 00 00 e2 00 00 ec
-        HEX 00 01 ec f0 01 f6 e8 01
-        HEX 0a e8 01 14 f0 01 14 00
-        HEX 01 1e 00 01 00 ec 00 00
-        HEX c4 01 fd e0 00 03 e0 01
-        HEX fa d8 00 06 d8 01 f7 d0
-        HEX 00 09 d0 01 ec d8 00 f6
-        HEX c8 01 0a c8 01 14 d8 01
-        HEX e2 d0 00 e2 d8 01 d8 d0
-        HEX 01 e2 d0 01 f6 e0 01 14
-        HEX dc 00 14 cc 01 0f d8 00
-        HEX 19 d8 01 fb c4 00 05 c4
-        HEX 01 0a bc 01 0a b8 01 05
-        HEX b4 01 fb b4 01 f6 b8 01
-        HEX f6 bc 01 fb c4 01 fb b4
-        HEX 00 00 b8 01 fb bc 00 05
-        HEX bc 00 fb c0 00 05 c0 01
-        HEX 00 00 00 00 c9 00 00 f9
-        HEX 01 0a 00 01 1e 00 01 1e
-        HEX cc 01 0a c1 01 00 c9 01
-        HEX f6 c1 01 e2 cc 01 e2 00
-        HEX 01 f6 00 01 00 f9 01 0a
-        HEX c1 00 0a b5 01 00 ae 01
-        HEX f6 b5 01 f6 c1 01 f6 b5
-        HEX 00 00 c4 01 0a b5 01 00
-        HEX b2 01 f6 b5 01 00 00 00
-        HEX fb d8 00 ec f6 01 f6 00
-        HEX 01 0a 00 01 14 f6 01 05
-        HEX d8 01 00 e2 00 f6 ce 01
-        HEX 00 d3 01 0a ce 01 00 e2
-        HEX 01 05 d3 00 02 d8 01 fb
-        HEX d3 00 fe d8 01 fc ec 00
-        HEX fc e7 01 f8 ec 00 f8 e7
-        HEX 01 08 ec 00 08 e7 01 04
-        HEX ec 00 04 e7 01 00 00 00
-        HEX 03 d2 00 12 ca 01 24 ca
-        HEX 01 2d ce 01 24 c2 01 12
-        HEX be 01 03 c4 01 06 c0 01
-        HEX 06 ba 01 03 bc 01 fe bc
-        HEX 01 fa ba 01 fa c0 01 fd
-        HEX c4 01 ee be 01 dc c2 01
-        HEX d3 ce 01 dc ca 01 ee ca
-        HEX 01 fd d2 01 03 d2 01 fe
-        HEX bf 00 02 bf 00 00 00 00
-        HEX ec e2 00 14 ec 01 28 e2
-        HEX 01 14 ce 01 00 c4 01 d8
-        HEX ba 01 c4 c4 01 d8 d8 01
-        HEX ec e2 01 ec e7 01 ce ec
-        HEX 01 e2 e7 01 e2 dd 01 ce
-        HEX dd 01 c4 e2 01 ce d8 01
-        HEX 00 d8 01 00 e2 01 ec e2
-        HEX 01 ec ce 01 d8 ce 01 d8
-        HEX d8 01 ec ce 00 00 d8 01
-        HEX 14 ec 00 32 f6 01 00 01
-        HEX 01 1b e9 00 41 ec 01 64
-        HEX 00 01 22 e5 00 41 e2 01
-        HEX 64 f1 01 28 e2 00 41 d3
-        HEX 01 64 e2 01 c4 c4 00 a6
-        HEX d3 01 9c e7 01 ca c1 00
-        HEX ba b0 01 9c c4 01 d1 bd
-        HEX 00 ce ab 01 b0 9c 01 d8
-        HEX ba 00 ec ab 01 c4 9c 01
-        HEX 00 00 00 ec f1 00 ec ec
-        HEX 01 e2 e2 01 e2 00 01 1e
-        HEX 00 01 1e f1 01 e2 f1 01
-        HEX 14 f1 00 0a ec 01 0a dd
-        HEX 01 f6 dd 01 f6 ec 01 00
-        HEX f1 01 ec fb 00 1e fb 01
-        HEX 1e f6 01 e2 f6 01 f6 ec
-        HEX 00 0a ec 01 0a e7 01 f6
-        HEX e7 01 f6 e2 01 0a e2 01
-        HEX 0a dd 01 f6 dd 01 0a d6
-        HEX 00 f6 d6 01 ec e2 01 00
-        HEX d6 01 14 e2 01 0a d6 01
-        HEX f1 dd 00 f1 d6 01 f6 ce
-        HEX 01 0a ce 01 0e d6 01 0f
-        HEX dd 01 f1 d6 00 00 ce 01
-        HEX 0d d6 01 00 00 00 ec 00
-        HEX 00 14 00 01 0a f9 01 0a
-        HEX f1 01 14 ea 01 14 f1 01
-        HEX 1e ea 01 1e d3 01 14 cc
-        HEX 01 ec cc 01 ec 00 00 f6
-        HEX f9 01 f6 f1 01 ec ea 01
-        HEX ec f1 01 e2 ea 01 e2 d3
-        HEX 01 ec cc 01 0a cc 00 14
-        HEX bd 01 0a b5 01 f6 b5 01
-        HEX ec bd 01 f6 cc 01 14 bd
-        HEX 00 ec bd 01 e2 f1 00 0a
-        HEX d3 01 14 d3 01 00 e2 01
-        HEX 00 db 01 f6 db 01 0a cc
-        HEX 01 0a d3 01 00 c4 00 0a
-        HEX bd 01 0a c4 01 f6 c4 01
-        HEX f6 bd 01 00 c4 01 00 00
-        HEX 00 00 e7 00 05 00 01 19
-        HEX 00 01 0f fb 01 07 e7 01
-        HEX 0f d3 01 19 e7 01 1e e7
-        HEX 01 19 ce 01 05 c9 01 0f
-        HEX c4 01 0f bf 01 05 ba 01
-        HEX 00 e7 00 fb 00 01 e7 00
-        HEX 01 f1 fb 01 f9 e7 01 f1
-        HEX d3 01 e7 e7 01 e2 e7 01
-        HEX e7 ce 01 fb c9 01 f1 c4
-        HEX 01 f1 bf 01 fb ba 01 05
-        HEX ba 00 fb ba 01 0a bf 00
-        HEX 00 bc 01 f6 bf 01 00 c2
-        HEX 01 0a bf 01 f6 c4 00 0a
-        HEX c4 01 00 00 00 c0 00 00
-        HEX 3f 00 01 3f c1 01 c0 c1
-        HEX 01 c0 00 01 00 00 00 00
-        HEX e7 00 14 00 01 28 00 01
-        HEX 1e fb 01 0f dd 01 14 d3
-        HEX 01 1e d8 01 1e e2 01 28
-        HEX e2 01 28 d3 01 0f c4 01
-        HEX 1e c4 01 1e b6 01 0a b6
-        HEX 01 0a c1 01 f6 c1 01 00
-        HEX e7 00 ec 00 01 d8 00 01
-        HEX e2 fb 01 f1 dd 01 ec d1
-        HEX 01 d8 d6 01 c7 ca 01 ce
-        HEX c4 01 d8 cb 01 f1 c4 01
-        HEX e2 c4 01 e2 b6 01 f6 b6
-        HEX 01 f6 c1 01 17 c0 00 12
-        HEX bb 00 e9 c0 00 ee bb 00
-        HEX 00 00 00 ec 00 00 ec ec
-        HEX 01 14 ec 01 14 00 01 ec
-        HEX 00 01 ec ec 00 f6 e2 01
-        HEX 1e e2 01 1e f6 01 14 00
-        HEX 01 14 ec 00 1e e2 01 00
-        HEX 00 00 05 d3 00 0c dd 01
-        HEX 05 ec 01 05 f1 01 11 00
-        HEX 01 19 00 01 14 fb 01 0f
-        HEX ec 01 0f e2 01 05 d3 00
-        HEX fb d3 01 f4 dd 01 fb ec
-        HEX 01 fb f1 01 ef 00 01 e7
-        HEX 00 01 ec fb 01 f1 ec 01
-        HEX f1 e2 01 0f e2 00 19 d3
-        HEX 01 19 c4 01 14 c9 01 14
-        HEX d3 01 0f d3 01 05 ce 01
-        HEX 0f c9 01 05 c4 01 fb c4
-        HEX 01 ec c9 01 ec cb 01 fb
-        HEX ce 01 ec d8 01 ec ec 01
-        HEX f1 e7 01 ec ca 00 fb ca
-        HEX 01 02 c7 00 fb f1 00 0e
-        HEX fb 01 14 fb 00 23 f6 01
-        HEX 19 00 01 00 00 00 00 e7
-        HEX 00 0f ec 01 0f fb 01 19
-        HEX 00 01 23 00 01 19 fb 01
-        HEX 19 e7 01 0f dd 01 0f d8
-        HEX 01 23 c9 01 23 ba 01 19
-        HEX c4 01 0f c9 01 05 c4 01
-        HEX 00 e7 00 f1 ec 01 f1 fb
-        HEX 01 e7 00 01 dd 00 01 e7
-        HEX fb 01 e7 e7 01 f1 dd 01
-        HEX f1 d8 01 dd c9 01 dd ba
-        HEX 01 e7 c4 01 f1 c9 01 fb
-        HEX c4 01 0a bd 00 05 c4 01
-        HEX 05 c7 01 fb c7 01 fb c4
-        HEX 01 f6 bd 01 f1 b5 01 fb
-        HEX ba 01 05 ba 01 0f b5 01
-        HEX 0a bd 01 fc be 00 04 be
-        HEX 00 00 00 00 ec 9c 00 ec
-        HEX a6 01 f6 b0 01 0a b0 01
-        HEX 14 a6 01 14 9c 01 ec a6
-        HEX 00 dd b5 01 dd ce 01 f6
-        HEX b0 00 ec c4 01 f6 d8 01
-        HEX 0a b0 00 14 c4 01 0a e2
-        HEX 01 14 a6 00 23 ba 01 28
-        HEX ce 01 00 00 00 ec 00 00
-        HEX f6 f1 01 f6 c4 01 00 ba
-        HEX 01 05 ba 01 0a bf 01 0a
-        HEX ec 01 14 00 01 f6 e2 00
-        HEX ec f1 01 e2 ec 01 e7 e7
-        HEX 01 f6 d3 00 e7 dd 01 e2
-        HEX d3 01 e7 c9 01 f6 c9 00
-        HEX ec c4 01 e7 ba 01 f1 b0
-        HEX 01 0a c4 00 14 bf 01 0f
-        HEX b5 01 05 b0 01 0a ce 00
-        HEX 14 d3 01 1e ce 01 1e bf
-        HEX 01 0a dd 00 14 e7 01 19
-        HEX e7 01 1e dd 01 00 c4 00
-        HEX fb c9 01 00 ce 01 05 c9
-        HEX 01 00 c4 01 00 c9 00 00
-        HEX 00 00 ec 00 00 f1 00 01
-        HEX f6 fb 01 f1 f6 01 fb ec
-        HEX 01 14 e7 01 0a f1 01 0f
-        HEX f6 01 0a fb 01 0f 00 01
-        HEX 14 00 01 f6 f1 00 0a f1
-        HEX 01 f6 fb 00 0a fb 01 fb
-        HEX f4 00 05 f4 00 fb f8 00
-        HEX 05 f8 01 00 00 00 05 e2
-        HEX 00 0c db 01 0c d1 01 05
-        HEX c9 01 fb c9 01 05 e2 00
-        HEX fb e2 01 f4 db 01 f4 d1
-        HEX 01 fb c9 01 00 ce 00 05
-        HEX d6 01 00 dd 01 fb d6 01
-        HEX 00 ce 01 00 d3 00 00 d8
-        HEX 01 0c db 00 11 dd 01 14
-        HEX db 01 14 d8 01 19 d8 01
-        HEX 19 dd 01 14 dd 01 14 d8
-        HEX 01 f4 db 00 ef d8 01 ec
-        HEX db 01 ec d8 01 e7 d8 01
-        HEX e7 dd 01 ec dd 01 ec d8
-        HEX 01 f4 d1 00 ef d1 01 ec
-        HEX cc 01 ec cc 01 ec ce 01
-        HEX e7 ce 01 e7 c9 01 ec c9
-        HEX 01 ec ce 01 0c d1 00 0f
-        HEX cc 01 14 cc 01 14 ce 01
-        HEX 19 ce 01 19 c9 01 14 c9
-        HEX 01 14 ce 01 05 c9 00 07
-        HEX c2 01 0a c2 01 0a c4 01
-        HEX 0f c4 01 0f bf 01 0a bf
-        HEX 01 0a c4 01 fb c9 00 f9
-        HEX c4 01 f6 c2 01 f6 c4 01
-        HEX f1 c4 01 f1 bf 01 f6 bf
-        HEX 01 f6 c4 01 00 00 00 d8
-        HEX 00 00 e2 e2 01 ec ba 01
-        HEX 00 b0 01 0a b0 01 14 ba
-        HEX 01 0f c4 01 0f ce 01 14
-        HEX e2 01 14 e2 01 1e 00 01
-        HEX 00 ba 00 0a b5 01 0f ba
-        HEX 01 0a c4 01 05 c4 01 00
-        HEX bf 01 00 ba 01 e7 ce 00
-        HEX f6 dd 01 f6 c4 00 f6 ce
-        HEX 01 fb d8 01 05 d8 00 0f
-        HEX e2 01 0a ce 00 0f d8 01
-        HEX 00 e2 00 00 f6 01 fb 00
-        HEX 01 05 bb 00 0a bb 00 00
-        HEX 00 00 0a b5 00 0f b9 01
-        HEX 14 c1 01 14 c9 01 0f cc
-        HEX 01 05 df 01 fb df 01 0a
-        HEX b5 00 f6 b5 01 f1 b9 01
-        HEX ec c1 01 ec c9 01 f1 cc
-        HEX 01 fb df 01 f1 c1 00 f6
-        HEX bd 01 fb bd 01 00 c1 01
-        HEX 0f c1 00 0a bd 01 05 bd
+        HEX 08 20 dd 15 ae f7 a4 bd
+        HEX 4e 9e 85 08 bd 63 9e 85
+        HEX 07 85 09 20 dd 15 ae f7
+        HEX a4 bd 42 9e 85 06 bd 43
+        HEX 9e 85 08 20 dd 15 ad 26
+        HEX a5 c9 04 d0 05 ae f7 a4
+        HEX f0 0b ae f7 a4 bd 4e 9e
+        HEX 85 08 20 dd 15 ad 29 a5
+        HEX c9 01 f0 08 c9 03 f0 04
+        HEX c9 04 d0 12 ae f7 a4 bd
+        HEX 58 9e 85 09 bd 42 9e 85
+        HEX 06 85 08 20 dd 15 ad 2a
+        HEX a5 c9 01 f0 08 c9 03 f0
+        HEX 04 c9 04 d0 17 ae f7 a4
+        HEX bd 4d 9e 85 06 85 08 bd
+        HEX 58 9e 85 07 bd 63 9e 85
+        HEX 09 20 dd 15 60 ae f7 a4
+        HEX ad fe a4 f0 11 18 6d 07
+        HEX a5 c9 1e f0 09 c9 20 f0
+        HEX 05 c9 29 f0 01 60 bd 43
+        HEX 9e 85 06 85 08 bd 63 9e
+        HEX 85 07 bd 59 9e 85 09 20
+        HEX dd 15 ae f7 a4 bd 4e 9e
+        HEX 85 08 20 dd 15 ae f7 a4
+        HEX bd 63 9e 85 09 4c dd 15
+        HEX ae f7 a4 bd 6e 9e 85 06
+        HEX 85 08 bd 96 9e 85 07 bd
+        HEX 59 9e 85 09 20 dd 15 ae
+        HEX f7 a4 bd 78 9e 85 08 bd
+        HEX aa 9e 85 09 20 dd 15 ae
+        HEX f7 a4 bd a0 9e 85 09 4c
+        HEX dd 15 ae f7 a4 bd 82 9e
+        HEX 85 06 85 08 bd 96 9e 85
+        HEX 07 bd 59 9e 85 09 20 dd
+        HEX 15 ae f7 a4 bd 8c 9e 85
+        HEX 08 bd aa 9e 85 09 20 dd
+        HEX 15 ae f7 a4 bd a0 9e 85
+        HEX 09 4c dd 15 86 24 4c b0
+        HEX 15
+@
+
+<<dng shape draw stub hex>>=
+        HEX 8e f5 a4 0a a8 b9 92 a6
+        HEX 18 69 92 8d c9 a4 b9 93
+        HEX a6 69 a6 8d ca a4 ae f7
+        HEX a4 ca bd d2 9e c0 12 d0
+        HEX 03 bd 64 9e c0 16 d0 03
+        HEX bd 96 9e c0 1c d0 03 bd
+        HEX a0 9e 8d 9c a4 20 c8 a4
+        HEX 8d f2 a4 20 d4 a4 18 69
+        HEX 80 85 08 20 c8 a4 aa 0d
+        HEX f2 a4 d0 01 60 8a 20 d4
+        HEX a4 18 69 5f 85 09 ad ee
+        HEX a4 85 06 ad ef a4 85 07
+        HEX 20 c8 a4 c9 00 d0 08 a5
+        HEX 08 85 06 a5 09 85 07 a5
+        HEX 08 8d ee a4 a5 09 8d ef
+        HEX a4 20 dd 15 4c 7e a4 ad
+        HEX ff ff ee c9 a4 d0 03 ee
+        HEX ca a4 60 18 c9 80 90 01
+        HEX 38 08 ae f5 a4 f0 06 28
+        HEX 08 6a ca d0 fa 28 60
+@
+
+<<dng shapes blob hex>>=
+        HEX 32 00 c8 00 4f 01 94 01
+        HEX dc 01 24 02 b7 02 32 03
+        HEX ad 03 19 04 2b 04 97 04
+        HEX be 04 42 05 c0 05 f9 05
+        HEX 6e 06 aa 06 73 07 d6 07
+        HEX 45 08 4b 08 ab 08 23 09
+        HEX 9b 09 e7 fd 00 19 fd 01
+        HEX 0a e6 01 0a e2 01 0f dc
+        HEX 01 23 e2 01 23 d8 01 0f
+        HEX d5 01 05 ce 01 0a c8 01
+        HEX 0a c4 01 05 c1 01 fb c1
+        HEX 01 f6 c4 01 f6 c8 01 fb
+        HEX ce 01 f1 d5 01 dd d8 01
+        HEX dd e2 01 f1 dc 01 f6 e2
+        HEX 01 f6 e6 01 e7 fd 01 f1
+        HEX fd 00 ec 00 01 f6 00 01
+        HEX f6 fd 01 0f fd 00 14 00
+        HEX 01 0a 00 01 0a fd 01 f6
+        HEX e2 00 0a e2 01 f6 e6 00
+        HEX 0a e6 01 f6 d2 00 fb d5
+        HEX 01 05 d5 01 0a d2 01 00
+        HEX dc 00 00 d5 01 fc cb 00
+        HEX 04 cb 01 00 c8 00 05 c4
+        HEX 01 05 c8 01 fb c8 01 fb
+        HEX c4 01 00 c8 01 00 00 00
+        HEX e2 00 00 ec 00 01 ec f0
+        HEX 01 f6 e8 01 0a e8 01 14
+        HEX f0 01 14 00 01 1e 00 01
+        HEX 00 ec 00 00 c4 01 fd e0
+        HEX 00 03 e0 01 fa d8 00 06
+        HEX d8 01 f7 d0 00 09 d0 01
+        HEX ec d8 00 f6 c8 01 0a c8
+        HEX 01 14 d8 01 e2 d0 00 e2
+        HEX d8 01 d8 d0 01 e2 d0 01
+        HEX f6 e0 01 14 dc 00 14 cc
+        HEX 01 0f d8 00 19 d8 01 fb
+        HEX c4 00 05 c4 01 0a bc 01
+        HEX 0a b8 01 05 b4 01 fb b4
+        HEX 01 f6 b8 01 f6 bc 01 fb
+        HEX c4 01 fb b4 00 00 b8 01
+        HEX fb bc 00 05 bc 00 fb c0
+        HEX 00 05 c0 01 00 00 00 00
+        HEX c9 00 00 f9 01 0a 00 01
+        HEX 1e 00 01 1e cc 01 0a c1
+        HEX 01 00 c9 01 f6 c1 01 e2
+        HEX cc 01 e2 00 01 f6 00 01
+        HEX 00 f9 01 0a c1 00 0a b5
+        HEX 01 00 ae 01 f6 b5 01 f6
+        HEX c1 01 f6 b5 00 00 c4 01
+        HEX 0a b5 01 00 b2 01 f6 b5
+        HEX 01 00 00 00 fb d8 00 ec
+        HEX f6 01 f6 00 01 0a 00 01
+        HEX 14 f6 01 05 d8 01 00 e2
+        HEX 00 f6 ce 01 00 d3 01 0a
+        HEX ce 01 00 e2 01 05 d3 00
+        HEX 02 d8 01 fb d3 00 fe d8
+        HEX 01 fc ec 00 fc e7 01 f8
+        HEX ec 00 f8 e7 01 08 ec 00
+        HEX 08 e7 01 04 ec 00 04 e7
+        HEX 01 00 00 00 03 d2 00 12
+        HEX ca 01 24 ca 01 2d ce 01
+        HEX 24 c2 01 12 be 01 03 c4
+        HEX 01 06 c0 01 06 ba 01 03
+        HEX bc 01 fe bc 01 fa ba 01
+        HEX fa c0 01 fd c4 01 ee be
+        HEX 01 dc c2 01 d3 ce 01 dc
+        HEX ca 01 ee ca 01 fd d2 01
+        HEX 03 d2 01 fe bf 00 02 bf
+        HEX 00 00 00 00 ec e2 00 14
+        HEX ec 01 28 e2 01 14 ce 01
+        HEX 00 c4 01 d8 ba 01 c4 c4
+        HEX 01 d8 d8 01 ec e2 01 ec
+        HEX e7 01 ce ec 01 e2 e7 01
+        HEX e2 dd 01 ce dd 01 c4 e2
+        HEX 01 ce d8 01 00 d8 01 00
+        HEX e2 01 ec e2 01 ec ce 01
+        HEX d8 ce 01 d8 d8 01 ec ce
+        HEX 00 00 d8 01 14 ec 00 32
+        HEX f6 01 00 01 01 1b e9 00
+        HEX 41 ec 01 64 00 01 22 e5
+        HEX 00 41 e2 01 64 f1 01 28
+        HEX e2 00 41 d3 01 64 e2 01
+        HEX c4 c4 00 a6 d3 01 9c e7
+        HEX 01 ca c1 00 ba b0 01 9c
+        HEX c4 01 d1 bd 00 ce ab 01
+        HEX b0 9c 01 d8 ba 00 ec ab
+        HEX 01 c4 9c 01 00 00 00 ec
+        HEX f1 00 ec ec 01 e2 e2 01
+        HEX e2 00 01 1e 00 01 1e f1
+        HEX 01 e2 f1 01 14 f1 00 0a
+        HEX ec 01 0a dd 01 f6 dd 01
+        HEX f6 ec 01 00 f1 01 ec fb
+        HEX 00 1e fb 01 1e f6 01 e2
+        HEX f6 01 f6 ec 00 0a ec 01
+        HEX 0a e7 01 f6 e7 01 f6 e2
+        HEX 01 0a e2 01 0a dd 01 f6
+        HEX dd 01 0a d6 00 f6 d6 01
+        HEX ec e2 01 00 d6 01 14 e2
+        HEX 01 0a d6 01 f1 dd 00 f1
+        HEX d6 01 f6 ce 01 0a ce 01
+        HEX 0e d6 01 0f dd 01 f1 d6
+        HEX 00 00 ce 01 0d d6 01 00
+        HEX 00 00 ec 00 00 14 00 01
+        HEX 0a f9 01 0a f1 01 14 ea
+        HEX 01 14 f1 01 1e ea 01 1e
+        HEX d3 01 14 cc 01 ec cc 01
+        HEX ec 00 00 f6 f9 01 f6 f1
+        HEX 01 ec ea 01 ec f1 01 e2
+        HEX ea 01 e2 d3 01 ec cc 01
+        HEX 0a cc 00 14 bd 01 0a b5
+        HEX 01 f6 b5 01 ec bd 01 f6
+        HEX cc 01 14 bd 00 ec bd 01
+        HEX e2 f1 00 0a d3 01 14 d3
+        HEX 01 00 e2 01 00 db 01 f6
+        HEX db 01 0a cc 01 0a d3 01
+        HEX 00 c4 00 0a bd 01 0a c4
+        HEX 01 f6 c4 01 f6 bd 01 00
+        HEX c4 01 00 00 00 00 e7 00
+        HEX 05 00 01 19 00 01 0f fb
+        HEX 01 07 e7 01 0f d3 01 19
+        HEX e7 01 1e e7 01 19 ce 01
+        HEX 05 c9 01 0f c4 01 0f bf
+        HEX 01 05 ba 01 00 e7 00 fb
+        HEX 00 01 e7 00 01 f1 fb 01
+        HEX f9 e7 01 f1 d3 01 e7 e7
+        HEX 01 e2 e7 01 e7 ce 01 fb
+        HEX c9 01 f1 c4 01 f1 bf 01
+        HEX fb ba 01 05 ba 00 fb ba
+        HEX 01 0a bf 00 00 bc 01 f6
+        HEX bf 01 00 c2 01 0a bf 01
+        HEX f6 c4 00 0a c4 01 00 00
+        HEX 00 c0 00 00 3f 00 01 3f
+        HEX c1 01 c0 c1 01 c0 00 01
+        HEX 00 00 00 00 e7 00 14 00
+        HEX 01 28 00 01 1e fb 01 0f
+        HEX dd 01 14 d3 01 1e d8 01
+        HEX 1e e2 01 28 e2 01 28 d3
+        HEX 01 0f c4 01 1e c4 01 1e
+        HEX b6 01 0a b6 01 0a c1 01
+        HEX f6 c1 01 00 e7 00 ec 00
+        HEX 01 d8 00 01 e2 fb 01 f1
+        HEX dd 01 ec d1 01 d8 d6 01
+        HEX c7 ca 01 ce c4 01 d8 cb
+        HEX 01 f1 c4 01 e2 c4 01 e2
+        HEX b6 01 f6 b6 01 f6 c1 01
+        HEX 17 c0 00 12 bb 00 e9 c0
+        HEX 00 ee bb 00 00 00 00 ec
+        HEX 00 00 ec ec 01 14 ec 01
+        HEX 14 00 01 ec 00 01 ec ec
+        HEX 00 f6 e2 01 1e e2 01 1e
+        HEX f6 01 14 00 01 14 ec 00
+        HEX 1e e2 01 00 00 00 05 d3
+        HEX 00 0c dd 01 05 ec 01 05
+        HEX f1 01 11 00 01 19 00 01
+        HEX 14 fb 01 0f ec 01 0f e2
+        HEX 01 05 d3 00 fb d3 01 f4
+        HEX dd 01 fb ec 01 fb f1 01
+        HEX ef 00 01 e7 00 01 ec fb
+        HEX 01 f1 ec 01 f1 e2 01 0f
+        HEX e2 00 19 d3 01 19 c4 01
+        HEX 14 c9 01 14 d3 01 0f d3
+        HEX 01 05 ce 01 0f c9 01 05
+        HEX c4 01 fb c4 01 ec c9 01
+        HEX ec cb 01 fb ce 01 ec d8
+        HEX 01 ec ec 01 f1 e7 01 ec
+        HEX ca 00 fb ca 01 02 c7 00
+        HEX fb f1 00 0e fb 01 14 fb
+        HEX 00 23 f6 01 19 00 01 00
+        HEX 00 00 00 e7 00 0f ec 01
+        HEX 0f fb 01 19 00 01 23 00
+        HEX 01 19 fb 01 19 e7 01 0f
+        HEX dd 01 0f d8 01 23 c9 01
+        HEX 23 ba 01 19 c4 01 0f c9
+        HEX 01 05 c4 01 00 e7 00 f1
+        HEX ec 01 f1 fb 01 e7 00 01
+        HEX dd 00 01 e7 fb 01 e7 e7
+        HEX 01 f1 dd 01 f1 d8 01 dd
+        HEX c9 01 dd ba 01 e7 c4 01
+        HEX f1 c9 01 fb c4 01 0a bd
+        HEX 00 05 c4 01 05 c7 01 fb
+        HEX c7 01 fb c4 01 f6 bd 01
+        HEX f1 b5 01 fb ba 01 05 ba
+        HEX 01 0f b5 01 0a bd 01 fc
+        HEX be 00 04 be 00 00 00 00
+        HEX ec 9c 00 ec a6 01 f6 b0
+        HEX 01 0a b0 01 14 a6 01 14
+        HEX 9c 01 ec a6 00 dd b5 01
+        HEX dd ce 01 f6 b0 00 ec c4
+        HEX 01 f6 d8 01 0a b0 00 14
+        HEX c4 01 0a e2 01 14 a6 00
+        HEX 23 ba 01 28 ce 01 00 00
+        HEX 00 ec 00 00 f6 f1 01 f6
+        HEX c4 01 00 ba 01 05 ba 01
+        HEX 0a bf 01 0a ec 01 14 00
+        HEX 01 f6 e2 00 ec f1 01 e2
+        HEX ec 01 e7 e7 01 f6 d3 00
+        HEX e7 dd 01 e2 d3 01 e7 c9
+        HEX 01 f6 c9 00 ec c4 01 e7
+        HEX ba 01 f1 b0 01 0a c4 00
+        HEX 14 bf 01 0f b5 01 05 b0
+        HEX 01 0a ce 00 14 d3 01 1e
+        HEX ce 01 1e bf 01 0a dd 00
+        HEX 14 e7 01 19 e7 01 1e dd
+        HEX 01 00 c4 00 fb c9 01 00
+        HEX ce 01 05 c9 01 00 c4 01
+        HEX 00 c9 00 00 00 00 ec 00
+        HEX 00 f1 00 01 f6 fb 01 f1
+        HEX f6 01 fb ec 01 14 e7 01
+        HEX 0a f1 01 0f f6 01 0a fb
+        HEX 01 0f 00 01 14 00 01 f6
+        HEX f1 00 0a f1 01 f6 fb 00
+        HEX 0a fb 01 fb f4 00 05 f4
+        HEX 00 fb f8 00 05 f8 01 00
+        HEX 00 00 05 e2 00 0c db 01
+        HEX 0c d1 01 05 c9 01 fb c9
+        HEX 01 05 e2 00 fb e2 01 f4
+        HEX db 01 f4 d1 01 fb c9 01
+        HEX 00 ce 00 05 d6 01 00 dd
+        HEX 01 fb d6 01 00 ce 01 00
+        HEX d3 00 00 d8 01 0c db 00
+        HEX 11 dd 01 14 db 01 14 d8
+        HEX 01 19 d8 01 19 dd 01 14
+        HEX dd 01 14 d8 01 f4 db 00
+        HEX ef d8 01 ec db 01 ec d8
+        HEX 01 e7 d8 01 e7 dd 01 ec
+        HEX dd 01 ec d8 01 f4 d1 00
+        HEX ef d1 01 ec cc 01 ec cc
+        HEX 01 ec ce 01 e7 ce 01 e7
+        HEX c9 01 ec c9 01 ec ce 01
+        HEX 0c d1 00 0f cc 01 14 cc
+        HEX 01 14 ce 01 19 ce 01 19
+        HEX c9 01 14 c9 01 14 ce 01
+        HEX 05 c9 00 07 c2 01 0a c2
+        HEX 01 0a c4 01 0f c4 01 0f
+        HEX bf 01 0a bf 01 0a c4 01
+        HEX fb c9 00 f9 c4 01 f6 c2
+        HEX 01 f6 c4 01 f1 c4 01 f1
+        HEX bf 01 f6 bf 01 f6 c4 01
+        HEX 00 00 00 d8 00 00 e2 e2
+        HEX 01 ec ba 01 00 b0 01 0a
+        HEX b0 01 14 ba 01 0f c4 01
+        HEX 0f ce 01 14 e2 01 14 e2
+        HEX 01 1e 00 01 00 ba 00 0a
+        HEX b5 01 0f ba 01 0a c4 01
+        HEX 05 c4 01 00 bf 01 00 ba
+        HEX 01 e7 ce 00 f6 dd 01 f6
+        HEX c4 00 f6 ce 01 fb d8 01
+        HEX 05 d8 00 0f e2 01 0a ce
+        HEX 00 0f d8 01 00 e2 00 00
+        HEX f6 01 fb 00 01 05 bb 00
+        HEX 0a bb 00 00 00 00 0a b5
+        HEX 00 0f b9 01 14 c1 01 14
+        HEX c9 01 0f cc 01 05 df 01
+        HEX fb df 01 0a b5 00 f6 b5
+        HEX 01 f1 b9 01 ec c1 01 ec
+        HEX c9 01 f1 cc 01 fb df 01
+        HEX f1 c1 00 f6 bd 01 fb bd
         HEX 01 00 c1 01 0f c1 00 0a
-        HEX c4 01 05 c4 01 00 c1 01
-        HEX f1 c1 00 f6 c4 01 fb c4
-        HEX 01 00 c1 01 fb d3 00 05
-        HEX d3 01 fb c9 00 05 c9 01
-        HEX 00 cc 01 fb c9 01 00 00
-        HEX 00 01 01 00 00 00 00 08
-        HEX bc 00 0c bc 01 08 c8 01
-        HEX 14 cc 01 20 00 01 e0 00
-        HEX 01 ec cc 01 f8 c8 01 f4
-        HEX bc 01 f8 bc 01 f0 e8 00
-        HEX f4 d0 01 fc c8 01 f8 b8
-        HEX 01 00 b4 01 08 b8 01 04
-        HEX c8 01 0c d0 01 10 e8 01
-        HEX fe c6 00 fe c8 01 f8 d8
-        HEX 01 f8 ec 01 02 c6 00 02
-        HEX c8 01 08 d8 01 08 ec 01
-        HEX 00 c4 00 00 f0 01 03 ba
-        HEX 00 fd ba 00 00 00 00 f6
-        HEX f6 00 0a f6 01 14 ec 01
-        HEX 1e f6 01 1e 00 01 28 00
-        HEX 01 28 ec 01 1e e2 01 1e
-        HEX d8 01 2d d3 01 37 ba 01
-        HEX 2d bf 01 23 ba 01 28 c4
-        HEX 01 1e ce 01 19 ba 01 0a
-        HEX b0 01 00 c4 01 f6 b0 01
-        HEX e7 ba 01 f6 f6 00 ec ec
-        HEX 01 e2 f6 01 e2 00 01 d8
-        HEX 00 01 d8 ec 01 e2 e2 01
-        HEX e2 d8 01 d3 d3 01 c9 ba
-        HEX 01 d3 bf 01 dd ba 01 d8
-        HEX c4 01 e2 ce 01 e7 ba 01
-        HEX ec c9 00 0a c9 01 14 c9
-        HEX 00 0a c9 01 00 00 00 00
-        HEX dd 00 0f e7 01 0f 00 01
-        HEX 2d 00 01 23 fb 01 23 e7
-        HEX 01 19 d8 01 23 dd 01 2d
-        HEX c4 01 0f ba 01 05 c4 01
-        HEX 00 ba 01 00 dd 00 f1 e7
-        HEX 01 f1 00 01 d3 00 01 dd
-        HEX fb 01 dd e7 01 e7 d8 01
-        HEX dd dd 01 d3 c4 01 f1 ba
-        HEX 01 fb c4 01 00 ba 01 0f
-        HEX ba 00 11 b5 01 0a b3 01
-        HEX 0f ab 01 05 b0 01 f1 ba
-        HEX 00 ef b5 01 f6 b3 01 f1
-        HEX ab 01 fb b0 01 05 b0 01
-        HEX 09 b5 00 05 b8 01 f7 b5
-        HEX 00 fb b8 01 00 00 00 00
-        HEX e2 00 01 01 01 14 00 01
-        HEX 0a f6 01 0a d8 01 14 e2
-        HEX 01 14 c4 01 0a ba 01 0a
-        HEX ab 01 00 a6 01 01 01 00
-        HEX ec 00 01 f6 f6 01 f6 d8
-        HEX 01 ec e2 01 ec c4 01 f6
-        HEX ba 01 f6 ab 01 00 a6 01
-        HEX 0a ba 00 14 b0 01 28 b0
-        HEX 01 46 ec 01 28 ec 01 14
-        HEX d8 01 f6 ba 00 ec b0 01
-        HEX d8 b0 01 ba ec 01 d8 ec
-        HEX 01 ec d8 01 05 b0 00 fb
-        HEX b0 00 05 b8 00 fb b8 01
-        HEX 00 00 00
-@ %def DNG_BLOB
+        HEX bd 01 05 bd 01 00 c1 01
+        HEX 0f c1 00 0a c4 01 05 c4
+        HEX 01 00 c1 01 f1 c1 00 f6
+        HEX c4 01 fb c4 01 00 c1 01
+        HEX fb d3 00 05 d3 01 fb c9
+        HEX 00 05 c9 01 00 cc 01 fb
+        HEX c9 01 00 00 00 01 01 00
+        HEX 00 00 00 08 bc 00 0c bc
+        HEX 01 08 c8 01 14 cc 01 20
+        HEX 00 01 e0 00 01 ec cc 01
+        HEX f8 c8 01 f4 bc 01 f8 bc
+        HEX 01 f0 e8 00 f4 d0 01 fc
+        HEX c8 01 f8 b8 01 00 b4 01
+        HEX 08 b8 01 04 c8 01 0c d0
+        HEX 01 10 e8 01 fe c6 00 fe
+        HEX c8 01 f8 d8 01 f8 ec 01
+        HEX 02 c6 00 02 c8 01 08 d8
+        HEX 01 08 ec 01 00 c4 00 00
+        HEX f0 01 03 ba 00 fd ba 00
+        HEX 00 00 00 f6 f6 00 0a f6
+        HEX 01 14 ec 01 1e f6 01 1e
+        HEX 00 01 28 00 01 28 ec 01
+        HEX 1e e2 01 1e d8 01 2d d3
+        HEX 01 37 ba 01 2d bf 01 23
+        HEX ba 01 28 c4 01 1e ce 01
+        HEX 19 ba 01 0a b0 01 00 c4
+        HEX 01 f6 b0 01 e7 ba 01 f6
+        HEX f6 00 ec ec 01 e2 f6 01
+        HEX e2 00 01 d8 00 01 d8 ec
+        HEX 01 e2 e2 01 e2 d8 01 d3
+        HEX d3 01 c9 ba 01 d3 bf 01
+        HEX dd ba 01 d8 c4 01 e2 ce
+        HEX 01 e7 ba 01 ec c9 00 0a
+        HEX c9 01 14 c9 00 0a c9 01
+        HEX 00 00 00 00 dd 00 0f e7
+        HEX 01 0f 00 01 2d 00 01 23
+        HEX fb 01 23 e7 01 19 d8 01
+        HEX 23 dd 01 2d c4 01 0f ba
+        HEX 01 05 c4 01 00 ba 01 00
+        HEX dd 00 f1 e7 01 f1 00 01
+        HEX d3 00 01 dd fb 01 dd e7
+        HEX 01 e7 d8 01 dd dd 01 d3
+        HEX c4 01 f1 ba 01 fb c4 01
+        HEX 00 ba 01 0f ba 00 11 b5
+        HEX 01 0a b3 01 0f ab 01 05
+        HEX b0 01 f1 ba 00 ef b5 01
+        HEX f6 b3 01 f1 ab 01 fb b0
+        HEX 01 05 b0 01 09 b5 00 05
+        HEX b8 01 f7 b5 00 fb b8 01
+        HEX 00 00 00 00 e2 00 01 01
+        HEX 01 14 00 01 0a f6 01 0a
+        HEX d8 01 14 e2 01 14 c4 01
+        HEX 0a ba 01 0a ab 01 00 a6
+        HEX 01 01 01 00 ec 00 01 f6
+        HEX f6 01 f6 d8 01 ec e2 01
+        HEX ec c4 01 f6 ba 01 f6 ab
+        HEX 01 00 a6 01 0a ba 00 14
+        HEX b0 01 28 b0 01 46 ec 01
+        HEX 28 ec 01 14 d8 01 f6 ba
+        HEX 00 ec b0 01 d8 b0 01 ba
+        HEX ec 01 d8 ec 01 ec d8 01
+        HEX 05 b0 00 fb b0 00 05 b8
+        HEX 00 fb b8 01 00 00 00
+@
 
 <<dng.asm>>=
         PROCESSOR 6502
-<<dng blob>>
+<<dng defines>>
+<<dng entry>>
+<<dng view stub>>
+<<dng generator>>
+<<dng prompt>>
+<<dng main loop>>
+<<dng turning>>
+<<dng forward>>
+<<dng leftover move>>
+<<dng cmd pass>>
+<<dng cmd attack>>
+<<dng cmd cast>>
+<<dng spell open unlock>>
+<<dng spell missile>>
+<<dng spell ladders blink>>
+<<dng spell fields kill>>
+<<dng monster killed>>
+<<dng treasure>>
+<<dng cmd klimb>>
+<<dng cmd open>>
+<<dng cmd quit ready>>
+<<dng cmd unlock>>
+<<dng cmd ztats death>>
+<<dng monster turns>>
+<<dng monster strike>>
+<<dng level init>>
+<<dng cmd inform>>
+<<dng map helpers>>
+<<dng monster distance>>
+<<dng renderer stub>>
+<<dng generator helpers>>
+<<dng shape draw stub>>
+<<dng state>>
+<<dng strings>>
+<<dng tables>>
+<<dng template>>
+<<dng shapes blob>>
 @
 
 \section{SPA}
