@@ -9,6 +9,33 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 24 scout (2026-06-13): MAKE.INDATA scouted -- the art/map builder
+
+MAKE.INDATA ($1E00-$5435, 13877 bytes) is the LAST target and the only one
+that is NOT an overlay: a one-shot BUILDER BRUN at cold start. It is pure
+binary (no strings) -- a hi-res DECOMPRESSOR + a build driver + ~13KB of
+packed art/map data.
+- The driver ($1F17, via JMP at $1E00): PAGE_COPY ($1EFD) stamps $2000-$27FF
+  into $8700 and `JSR $8700` (a copied-in helper -- likely the low-RAM text/
+  font blitter the U1.INTRO chapter says MAKE.INDATA installs); then copies 38
+  pages $27BD-> $6000 (the ART_BASE artwork region); sets the decompress
+  pointer $00/01=$49EC and JSR $1E03 (decompressor); clears HGR2, flips to
+  hi-res, runs an LFSR fizzle (EOR #$B4) -- pre-rendering the title image.
+- The decompressor ($1E03/$1E47) reads a byte stream via ($00), sentinel $08
+  introduces runs, and the $1E1D address math converts a 0..$BF row index to
+  hi-res raster addresses -- it unpacks straight into the screen.
+- This resolves the ART_* EQU semantics (U1.INTRO chapter) + the last TODO-SYM
+  (ART_BASE..$8Fxx bound), and -- per OUT round 12's deduction (no verbatim
+  4096-cell map exists) -- GENERATES/packs the four-continent world map at
+  $6000. Render the continents once the decompressor is ported.
+- Full scout in agent memory (makeindata_subsystem.md). Decompose next: clone
+  gen_gen at BASE=$1E00 (no overlay engine EQUs -- it predates the engine,
+  calls ROM + its own code + the $8700 payload); port the decompressor to
+  Python to recover the rasters; emit packed data as labeled HEX; render the
+  intro frames AND the four continents.
+- No build change this scout (memory + TODO only). All 16 targets still
+  byte-perfect; PDF 962 pages clean; ORG stubs unchanged at 1 (makeindata).
+
 ### Round 23 (2026-06-13): TM fully decomposed, byte-perfect -- the endgame
 
 - The time-machine endgame overlay is annotated across 37 chunks (27
@@ -822,9 +849,13 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       gate (destroy the gem THEN kill Mondain -> VICTORIOUS -> NIF +
       Control-RESET), the wireframe interior scene, the grid combat +
       spells, Mondain's AI. Pins the entire SPA->CAS->TM win loop in code.
-- [ ] makeindata (13877): the LAST target. Builds intro art AND (likely)
-      generates the world map for /U1.VARS -- render the four continents
-      then; resolves ART_* semantics and the one TODO-SYM. NEXT.
+- [ ] makeindata (13877): the LAST target. SCOUTED (Round 24): a one-shot
+      hi-res decompressor + build driver ($1E00 code) + ~13KB packed art/map
+      data. Driver stamps $8700 helper, copies art to $6000, decompresses from
+      $49EC, LFSR-fizzles the title. Decompose next: clone gen_gen at
+      BASE=$1E00, port the decompressor ($1E03/$1E47), recover + render the
+      intro frames and the four continents. Resolves ART_* + the last TODO-SYM
+      and clears the final ORG stub. See makeindata_subsystem.md.
 - [ ] TM CRAFT_GFX render (deferred, own round like DNG 15): emulate
       SHAPE_STEP ($9EE5) + BLIT_LINE ($A176) + PROJ_TBL ($9D2A) +
       scene-setup positions to render the craft interior / Mondain / gem.
