@@ -1063,11 +1063,14 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       art ($6000). Both screens rendered. Cleared the LAST ORG stub and the
       last TODO-SYM (ART_* region ends $85FF). It does NOT build the world map
       (corrected the scout + a stale OUT claim). See makeindata_subsystem.md.
-- [ ] TM CRAFT_GFX render (deferred, own round like DNG 15): emulate
-      SHAPE_STEP ($9EE5) + BLIT_LINE ($A176) + PROJ_TBL ($9D2A) +
-      scene-setup positions to render the craft interior / Mondain / gem.
-      Not a static sprite gallery -- a runtime display list. See
-      tm_subsystem.md for the unblock recipe.
+- [skip] TM CRAFT_GFX render: RE-ASSESSED round 31 as INFEASIBLE from the
+      materials on hand (not merely deferred), and moved to the blocked list.
+      The stroker is a scanline RLE blitter over ~13 indirect ZP base pointers
+      (($D6)..($FA),Y) that the RESIDENT STUPH/MI.U1 actor engine sets up at
+      runtime -- NONE is initialized in any of the 16 targets. Imaging it needs
+      a full actor-engine emulator + the live projection state, with no
+      correctness guarantee -> would risk a broken render. Documented in prose +
+      the HEX blob + the SHAPE_STEP/BLIT_LINE plates instead. See tm_subsystem.md.
 - [~] Synthesis chapters (the quality bar that makes the doc "done").
       Started Round 26: the Architecture overview chapter (engine/overlay
       model, GAME_LOAD dispatch, the mode template, shared state, the win
@@ -1095,8 +1098,18 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
   Until then the four continents cannot be imaged from the materials on
   hand. (The 10 town/castle maps ARE rendered -- they live in TCMAPS,
   which is present; see images/tcmaps_*.png.)
-- TM CRAFT_GFX render (deferred, own round like DNG 15): emulate
-  SHAPE_STEP ($9EE5) + BLIT_LINE ($A176) + PROJ_TBL ($9D2A) + the
-  scene-setup positions to image the craft interior / Mondain / gem. Not
-  a static sprite gallery -- a runtime display list. Unblock recipe in
-  tm_subsystem.md. Not blocked on missing data; just an unwritten round.
+- TM CRAFT_GFX render: RE-ASSESSED round 31 -- INFEASIBLE from the
+  materials on hand, not merely an unwritten round. SHAPE_STEP ($9EE5) +
+  BLIT_LINE ($A176) is a scanline RLE blitter, and CRAFT_GFX is
+  pre-rasterized hi-res byte runs (not (dx,dy,pen) vectors like the DNG/SPA
+  galleries that rendered cleanly). The stroker + ANIM_SETUP dereference
+  ~13 indirect ZP base pointers (($D6)..($FA),Y) that the RESIDENT
+  STUPH/MI.U1 shape-actor engine initializes at runtime -- verified by grep
+  that NONE of them is set in any of the 16 targets. Imaging it requires
+  reverse-engineering and emulating that whole actor engine + reconstructing
+  the live cell-projection state, with no correctness guarantee -> a wrong
+  image would violate the don't-ship-broken-renders rule. So it is left
+  un-imaged and documented in prose + the verbatim HEX blob + the
+  SHAPE_STEP/BLIT_LINE plates, which is the honest level of treatment. Do
+  NOT re-attempt without a full STUPH actor-engine emulator. See
+  tm_subsystem.md for the full evidence.

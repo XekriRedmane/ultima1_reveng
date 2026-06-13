@@ -51,14 +51,33 @@ travels to the time machine. See [[twn-cas-subsystem]] for the handoff.
   pointed to by the table at $9EB3 (-> CRAFT_GFX $A470, the vertex-list data
   blob). PROJ_TBL $9D2A = three 20-byte cell->screen projection tables.
 
-**RENDERER NOT YET RENDERED (deferred, like DNG round 14->15):** CRAFT_GFX is a
+**RENDERER NOT RENDERED -- and now judged INFEASIBLE from the materials on hand,
+NOT merely deferred (re-assessed round 31, final-polish pass):** CRAFT_GFX is a
 single runtime-interpreted display list bound to live cell-projection state (NOT
-a gallery of static sprites like SPA/DNG shapes). The shape table at $9EB3 has
-effectively ONE entry ($A47C). A faithful image needs emulating SHAPE_STEP +
-BLIT_LINE + the projection + scene setup. Unblock: port SHAPE_STEP/BLIT_LINE to
-Python, feed CRAFT_GFX, drive it through the cell positions TM_ENTRY/scene-setup
-establish. Defer per the don't-ship-broken-renders rule until the band-fill
-stroker is emulated. This is the only TM graphic outstanding.
+a gallery of static sprites like SPA/DNG shapes -- those rendered precisely
+because they are self-contained scaled vector lists). The shape table at $9EB3
+has effectively ONE entry ($A47C). The bytes at CRAFT_GFX are a header/control
+block ($00..FF..3E030210) + 80-fill rows + PRE-RASTERIZED hi-res byte runs (the
+80-high-bit screen-byte pattern), NOT (dx,dy,pen) vectors -- SHAPE_STEP/BLIT_LINE
+is a SCANLINE RUN-LENGTH BLITTER (LDA ($C1,X)/STA ($B2),Y), not a vector
+interpreter.
+  THE BLOCKER (verified by grep over all 16 targets): the stroker's inner loop
+and ANIM_SETUP dereference ~13 indirect ZP BASE pointers -- ($D6),Y ($D8),Y
+($DA),Y ($DC),Y ($DE),Y ($E0),Y ($E2),Y ($F0),Y ($F2),Y ($F4),Y ($F6),Y ($F8),Y
+($FA),Y -- and NONE of these base pointers is initialized anywhere in main.nw.
+They are set up by the RESIDENT STUPH/MI.U1 shape-ANIMATION ACTOR ENGINE at
+runtime (the same ZP cells are EQU-aliased as RWTS temporaries RW_T6/RW_ERR/
+RW_TA/RW_TC -- the engine repurposes them as actor-table bases). SHAPE_NEXT only
+writes the working NPC array at $00D6 itself, never the ($D6) base.
+  So a faithful image requires reverse-engineering and emulating that entire
+resident actor engine (where those 13 bases come from + the frame/displacement/
+colour tables they reference) AND reconstructing the exact live cell-projection
+state -- a large separate effort with NO guarantee of a correct raster. Per the
+don't-ship-broken-renders standing rule, attempting it risks shipping a garbage
+figure. CONCLUSION: leave CRAFT_GFX un-imaged; it is documented in prose + the
+verbatim HEX blob + the SHAPE_STEP/BLIT_LINE plates, which is the correct and
+honest level of treatment. Do NOT re-attempt without a full STUPH actor-engine
+emulator. This is the only TM graphic outstanding and it is acceptably so.
 
 **PIPELINE (cloned from gen_gen, kept for reference/reuse):**
 .claude/scripts/tm_gen.py + tm_symmap.py + tm_labels.py + tm_chapter_tm.py
