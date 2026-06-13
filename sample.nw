@@ -1,0 +1,88 @@
+# Ultima I RE — HTML weaver sample
+
+This sample exercises the new **HTML weaver**: Markdown prose with *emphasis*,
+`inline code`, inline math $d = \lfloor h/2 \rfloor \bmod 16$, a chunk-name link
+to the [[boot1 entry]] chunk, a symbol link [[BOOT1_ENTRY]], an un-symbolized
+address [[$0800]] (styled, no link), and an undefined symbol [[PLAYER_HP]]
+(also styled, no link). Cross-page links are exercised below.
+
+A Mermaid diagram (rendered client-side from a fenced block):
+
+```mermaid
+flowchart LR
+  PROM[Disk II PROM] --> BB[Boot block]
+  BB --> KER[ProDOS kernel]
+  KER --> SYS[U1.SYSTEM]
+```
+
+A Markdown pipe table:
+
+| Mode     | Overlay | Base    |
+|----------|---------|---------|
+| Outdoors | OUT     | [[$8956]] |
+| Town     | TWN     | [[$8956]] |
+
+A byte-field layout figure as block-level raw HTML, whose cells link to symbols:
+
+<table class="layout">
+<thead><tr><th>Offset</th><th>Field</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>+0</code></td><td>[[SECTOR_BUF]]</td><td>scratch buffer pointer</td></tr>
+<tr><td><code>+2</code></td><td>[[PLAYER_HP]]</td><td>hit points (not yet RE'd)</td></tr>
+</tbody>
+</table>
+
+And a verbatim block (no highlighting, no math/markup interpretation):
+
+```
+raw verbatim: $not math$ and _not emphasis_ and [[not a link]]
+```
+
+# Boot block
+
+The boot block lives at [[$0800]] and begins at [[BOOT1_ENTRY]]. The collection
+chunk below assembles the file in address order.
+
+<<sample.asm>>=
+        PROCESSOR 6502
+<<boot1 defines>>
+<<boot1 entry>>
+<<more boot>>
+@
+
+The zero-page / buffer constants:
+
+<<boot1 defines>>=
+        ORG $0800
+SECTOR_BUF EQU $0C00
+@ %def SECTOR_BUF
+
+The entry routine clears a byte then jumps on to the second stage, which lives
+on a *different page* — exercising a cross-page identifier link to [[MORE_BOOT]].
+
+<<boot1 entry>>=
+        ORG $0800
+BOOT1_ENTRY:
+        SUBROUTINE
+        ; Boot entry: clear one buffer byte, then continue.
+        LDA #$00            ; A <- #$00
+        STA SECTOR_BUF      ; clear first buffer byte
+        JMP MORE_BOOT       ; continue with the second stage
+@ %def BOOT1_ENTRY
+
+<!-- nwpage: more-boot | More boot -->
+
+## Second-stage boot
+
+This text lives on its own page, forced by an explicit page marker. It refers
+back to [[SECTOR_BUF]] and [[BOOT1_ENTRY]], both defined on the previous page —
+so these are cross-page symbol links.
+
+<<more boot>>=
+        ORG $0820
+MORE_BOOT:
+        SUBROUTINE
+        ; Second stage: re-read the byte cleared by the entry routine.
+        LDA SECTOR_BUF      ; defined on the boot page
+        RTS
+@ %def MORE_BOOT

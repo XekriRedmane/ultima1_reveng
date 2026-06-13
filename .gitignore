@@ -1,4 +1,7 @@
 output/
+output_site/
+output_sample/
+main.nw.latex.bak
 __pycache__/
 *.pyc
 .venv/
