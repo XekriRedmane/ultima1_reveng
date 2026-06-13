@@ -9,6 +9,50 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 21 (2026-06-13): SPA fully decomposed, byte-perfect
+
+- The space-combat overlay is annotated across 62 chunks (entry/
+  liftoff, main loop + dispatch, physics/torus/hazards, docking +
+  the four-berth ship system, the flight commands with their delta
+  tables, the radar + 42-star field, firing + the kill counter, the
+  front/nav view machinery + enemy AI, the cell/RNG helpers, the XOR
+  sprite blitter + fixed-point projection, and the file-tail tables).
+  byte-perfect (9930/9930); full doc tangles + builds. PDF 842 pages,
+  clean (0 errors, 0 undefined refs).
+- THE SPACE ACE GATE is now pinned in code: HIT_ENEMY ($96E2) drains
+  the enemy HP, awards +100 exp (capped 9999), then INC PLR_VESSELS
+  ($7EB6) with saturation -- the ONLY writer of the counter CAS reads.
+  Reaching exactly $14 (20) fires the "rank of Space Ace" popup; the
+  win-condition loop SPA -> CAS (princess rescue >=20 -> TM_REVEAL) ->
+  TM is fully traced end to end now.
+- THE FLIGHT MODEL pinned: real-time rotation+thrust (NOT the grid
+  overlays' turn model). Ship has SHIP_X/Y on a torus (wrap $0E/$F4),
+  signed velocity ZP_VX/VY, heading HEAD_CUR 0..3. Thrust/Retro add
+  THRUST/RETRO deltas; Clockwise/Counter rotate. PLR_FUEL/PLR_SHIELD
+  (16-bit, reuse food/?? slots) gate actions; the central star drains
+  the shield; collisions bounce + damage. NO patched-JSR dispatch --
+  GET_COMMAND -> DISPATCH_TBL (26 words) self-modified into a JMP.
+- THE SPRITE ATLAS rendered (standing rule): 36 entries in 6 parallel
+  tables; shapes 0-8 = the enemy at 9 distance scales (a far dot
+  growing into a TIE-fighter-like craft -- two pods + diamond
+  cockpit), shapes 9-35 = 27 rotation frames + the planet/sun disc.
+  images/spa_ships.png + spa_shapes_all.png (renderer
+  render_spa_ships.py), both embedded as figures. The XOR blitter has
+  two unrolled passes (collision-test + draw) selected by DRAW_MODE.
+- Pipeline kept for reuse: .claude/scripts/gen_spa.py + spa_symmap.py
+  + spa_labels.py + gen_chapter_spa.py (clone of the gen_cas trio).
+  Engine-address corrections recorded in agent memory (PRINT_STAT16 =
+  $8355, POPUP_FRAME = $841E; trig helpers MUL8_FIXED/$A107,
+  DIV16/$A123). 4 cross-chunk locals promoted to globals.
+- All 16 targets byte-perfect. Hygiene: 0 EQU stubs, 0 raw-hex
+  operands, 0 missing plates (291 routines), 0 placement violations,
+  1 TODO-SYM (intro art, resolves with makeindata). ORG stubs 4 -> 3
+  (gen, tm, makeindata).
+- Next session: GEN (8932, character generation / new game -- the
+  A=0 GAME_LOAD slot) and TM (8123, the time-machine endgame where
+  TM_REVEAL pays off -- Mondain's gem, the win); then makeindata
+  (world-map render, resolves the last TODO-SYM); then synthesis.
+
 ### Round 20 scout (2026-06-13): SPA scouted -- the space-combat overlay
 
 SPA ($8956-$B01F, 9930 bytes) is the SPACE COMBAT overlay and the
@@ -650,14 +694,15 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       (Get/Steal/Unlock), castle tick all decomposed. Pins the quest
       assignment and the endgame breadcrumb trail.
 - [x] tcmaps: DONE (Round 16: structured + rendered).
-- [ ] SPA overlay (9930 bytes): SCOUTED (Round 20, agent memory). The
-      space-combat flight sim that grows PLR_VESSELS to the Space Ace
-      gate. Decompose next from the scout: clone the gen_cas pipeline,
-      pin the code/data boundary ($91xx-$92xx), render the starfield/
-      ship sprites. Largest remaining overlay. NEXT.
+- [x] SPA overlay (9930 bytes): DONE (Round 21, byte-perfect, 62
+      chunks). Rotation+thrust flight sim; HIT_ENEMY pins PLR_VESSELS /
+      the Space Ace gate; sprite atlas rendered. Pins the SPA->CAS->TM
+      win-condition loop in code.
 - [ ] GEN overlay (8932): character generation / new game (the A=0
       GAME_LOAD slot). TM overlay (8123): the time-machine endgame
-      (TM_REVEAL pays off here -- Mondain's gem, the win).
+      (TM_REVEAL pays off here -- Mondain's gem, the win). NEXT: GEN,
+      then TM. Clone the gen_spa pipeline (gen_spa.py + spa_symmap/
+      spa_labels/gen_chapter_spa as the freshest templates).
 - [ ] makeindata: builds intro art AND (likely) generates the
       world map for /U1.VARS -- render the four continents then;
       resolves ART_* semantics and the one TODO-SYM.

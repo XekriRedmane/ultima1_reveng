@@ -23471,1260 +23471,4134 @@ SHAPE_STROKES ; (dx,dy,flag) triples; (0,0,*) ends a shape
 
 \section{SPA}
 
-\texttt{SPA} --- space overlay, 9930 bytes at [[$8956]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
+\texttt{SPA} --- the space-combat overlay, 9930 bytes at [[$8956]]. It is
+the most unusual of the six gameplay overlays: where \texttt{OUT},
+\texttt{DNG}, \texttt{TWN} and \texttt{CAS} are turn-based grid worlds,
+\texttt{SPA} is a real-time rotation-and-thrust flight model in the
+spirit of \emph{Asteroids} or \emph{Star Raiders}. The player launches a
+ship into a sector of space, flies it under inertia (thrust and retro
+along a heading that rotates in $90^\circ$ steps), and hunts enemy craft
+in a first-person targeting view. It is reached from the overworld by
+boarding a space-going transport and lifting off; it is the engine that
+grows [[PLR_VESSELS]], the destroyed-craft counter, to the \emph{Space
+Ace} threshold of twenty that the castle's Princess rescue gates the
+time-machine reveal on (see the \texttt{CAS} chapter). Destroy twenty
+enemy ships here and the endgame opens.
 
-<<spa blob>>=
+\texttt{SPA} reuses the resident library and the \texttt{MI.U1} engine
+API exactly as the other overlays do, but almost none of their gameplay
+code: it has its own physics, its own RNG-seeded starfield, its own
+sprite blitter and its own fixed-point projection math. Unlike the grid
+overlays it does \emph{not} use the patched-\texttt{JSR} dispatch idiom;
+commands run through [[GET_COMMAND]] and then a word table of handler
+addresses ([[DISPATCH_TBL]]) that is self-modified into a [[JMP]] in the
+main loop.
+
+\subsection{The flight model}
+
+The ship has a position [[SHIP_X]]/[[SHIP_Y]] on a wrap-around torus
+(coordinates wrap at [[$0E]] and [[$F4]]), a signed velocity vector
+[[ZP_VX]]/[[ZP_VY]], and a heading [[HEAD_CUR]] that is one of four
+compass directions. \texttt{Thrust} adds the heading's
+[[THRUST_DX]]/[[THRUST_DY]] delta to the velocity; \texttt{Retro}
+subtracts it; \texttt{Clockwise} and \texttt{Counter-Clockwise} rotate
+the heading. Each physics step ([[PHYSICS]]) integrates the velocity into
+the position, advances a rotation animation, then tests the ship against
+the docking base and the enemy. Fuel ([[PLR_FUEL]]) and shield
+([[PLR_SHIELD]]) are 16-bit figures shown in the status panel; flying
+near the central star drains the shield, and a collision bounces the ship
+and costs a shield hit.
+
+\subsection{The targeting view and combat}
+
+In the front view the player aims a reticle and fires
+([[CMD_FIRE]]); a shot connects when the reticle lies inside the enemy
+craft's hit box, whose extent scales with range through the
+[[SHAPE_XOFF]]/[[SHAPE_YOFF]] tables. A kill drains the enemy's HP, awards
+$+100$ experience (capped at $9999$), and increments [[PLR_VESSELS]];
+reaching exactly twenty triggers the ``rank of Space Ace'' popup. The
+enemy fires back ([[ALIEN_FIRES]]) with a probability that climbs as the
+fight wears on. The enemy is drawn by projecting its relative position
+through the fixed-point rotation math ([[MUL8_FIXED]]/[[DIV16]]) and
+blitting one of nine distance-scaled sprites.
+
+\subsection{Bases, docking and landing}
+
+A sector may hold a base. Docking ([[DOCK]]) costs a 500p fee, then
+refuels the ship and opens the bay so the player can stow the current
+craft into one of four berths and board another ([[CHOOSE_SHIP]],
+[[BOARD_SHIP]]). Landing on a planet ([[LAND]]) requires the
+heat-shielded space shuttle; any other craft burns up, and a successful
+landing returns to the overworld via [[EXIT_TO_OUT]].
+
+\subsection{Engine and state symbols}
+
+\texttt{SPA} reuses the resident-library and \texttt{MI.U1} engine API
+and the shared player-state block. Only the flight-specific zero-page
+scratch, the \texttt{SPA} BSS state bands, and the in-file tables are new.
+The player's food/experience slots are repurposed here as the ship's
+fuel and shield.
+
+<<spa defines>>=
+; --- resident library (STUPH) vectors ---
+SFX_ON          EQU $1581
+FILE_LOAD_AT    EQU $158C
+TEXT_SCROLL     EQU $1592
+CLR_EOL         EQU $1598
+CLR_WINDOW      EQU $159B
+WIN_STATS       EQU $15A1
+WIN_TEXT        EQU $15A4
+WIN_VIEW        EQU $15A7
+FONT_DRAW       EQU $15B0
+RND             EQU $15B9
+KEY_POLL        EQU $15BC
+KEY_WAIT        EQU $15BF
+KEY_GET         EQU $15C2
+CURSOR_FLASH    EQU $15C8
+SFX_PLAY        EQU $15CB
+SFX_DRAIN       EQU $15D1
+COLOR_SET       EQU $15D4
+PLOT            EQU $15D7
+LINE_TO         EQU $15DA
+FRAME_SYNC      EQU $15E6
+VDELAY          EQU $15E9
+@
+
+<<spa defines>>=
+; --- the MI.U1 engine API ---
+MSG_GETC        EQU $8037
+MSG_PTR         EQU $8040
+PRINT_DIGIT     EQU $8058
+CHAR_OUT        EQU $8062
+PUTCH_NL_COND   EQU $8078
+PUTCH_NL_COL1   EQU $807E
+CURSOR_COL1     EQU $8081
+CR              EQU $809C
+WIN_SHRINK      EQU $80A1
+STR_NTH_CAP     EQU $80B1
+STR_FIRST       EQU $80B6
+STR_NTH         EQU $80B8
+MSG_AT          EQU $8115
+MSG_PRINT       EQU $8119
+PRINT_NUM16     EQU $8207
+PRINT_NUM8      EQU $820D
+NUM_PAD         EQU $8249
+KEY_PENDING     EQU $8266
+PAUSE_ABORTABLE EQU $826C
+KEY_ALIAS       EQU $827D
+GET_COMMAND     EQU $82A2
+TICK            EQU $82E2
+TICK_SND        EQU $82E4
+PRINT_STAT16    EQU $8355
+STATS_VALUES    EQU $836E
+WIN_RESTORE     EQU $83A9
+WIN_SAVE        EQU $83B4
+CURSOR_TO_TEXT  EQU $83C8
+QUERY_MARK      EQU $8407
+BEEP_HUH        EQU $840F
+KBD_CLEAR       EQU $8414
+RTS_HOOK        EQU $841D
+POPUP_FRAME     EQU $841E
+READY_CMD       EQU $8466
+INVENTORY       EQU $85A2
+POPUP_CLOSE     EQU $876C
+PRESS_SPACE     EQU $87FA
+PRINT_NAME      EQU $8837
+SOUND_TOGGLE    EQU $8845
+SFX_TOGGLE      EQU $885B
+RESPAWN         EQU $88F8
+EXIT_TO_OUT     EQU $88FB
+STALE_FFFF      EQU $FFFF       ; stale on-disk operand of the
+                                ;   self-modified shape pointers
+@
+
+<<spa defines>>=
+; --- soft switches and shared high memory ---
+HGR2            EQU $4000
+MLIB_SET_PREFIX EQU $B733
+SPEAKER         EQU $C030
+TXTCLR          EQU $C050
+@
+
+<<spa defines>>=
+; --- the shared player-state block (fuel/shield reuse food/exp) ---
+DIR_STR_PTR     EQU $7E51
+READY_ARMOUR    EQU $7E7B
+PLR_VESSELS     EQU $7EB6
+PLR_COIN        EQU $7ED4
+READY_TRANSPORT EQU $7EDF
+PLR_EXP         EQU $7EE7
+PLR_FUEL        EQU $7EE9
+PLR_SHIELD      EQU $7EEB
+PLR_SPACE_X     EQU $7EEF
+PLR_SPACE_Y     EQU $7EF0
+@
+
+<<spa defines>>=
+; --- space-mode zero page ---
+ZP_X            EQU $00         ; ship sector cell column
+ZP_Y            EQU $01         ; ship sector cell row
+ZP_PX           EQU $06         ; PLOT/LINE pixel column
+ZP_PY           EQU $07         ; PLOT/LINE pixel row
+ZP_TX           EQU $0C         ; scan-grid column
+ZP_TY           EQU $0D         ; scan-grid row
+MON_WNDLFT      EQU $20         ; text window: left
+MON_WNDWDTH     EQU $21         ; text window: width
+MON_WNDBTM      EQU $23         ; text window: bottom row + 1
+MON_CH          EQU $24         ; text cursor column
+MON_CV          EQU $25         ; text cursor row
+ZP_HGR_PTR      EQU $26         ; hi-res screen pointer (blitter)
+ZP_SHIFT_CNT    EQU $28         ; SHAPE_PRESHIFT: byte count
+ZP_SHIFT_ROW    EQU $2A         ; SHAPE_PRESHIFT: row count
+ZP_RNG          EQU $4E         ; Fibonacci RNG state (seeded from space pos)
+ZP_INVERSE      EQU $7E         ; video EOR mask
+ZP_PAGE_XOR     EQU $7F         ; draw-page selector
+ZP_CNT          EQU $60         ; blit step counter
+ZP_CX           EQU $6C         ; grid cursor column
+ZP_CY           EQU $6D         ; grid cursor row
+ZP_VX           EQU $6E         ; velocity x (signed)
+ZP_VY           EQU $6F         ; velocity y (signed)
+ZP_SHP_SRC      EQU $70         ; blitter: shape source pointer
+ZP_SHP_DST      EQU $72         ; blitter: shape dest pointer / scratch
+ZP_T0           EQU $A7         ; general scratch
+ZP_T1           EQU $A8
+ZP_T2           EQU $A9
+ZP_M0           EQU $AA         ; projection scratch quad
+ZP_M1           EQU $AB
+ZP_M2           EQU $AC
+ZP_M3           EQU $AD
+ZP_MUL_B        EQU $AE         ; MUL8_FIXED multiplicand
+ZP_FX0          EQU $B0         ; fixed-point trig registers
+ZP_FX1          EQU $B1
+ZP_FX2          EQU $B2
+ZP_FX3          EQU $B3
+ZP_FX4          EQU $B4
+ZP_FX5          EQU $B5
+ZP_FX_CNT       EQU $B6
+ZP_FX_T         EQU $B7
+ZP_BLIT_A       EQU $B8         ; blit pixel byte
+ZP_BLIT_HIT     EQU $B9         ; blit collision accumulator
+ZP_RET_X        EQU $BA         ; reticle / radar pan column
+ZP_RET_Y        EQU $BB         ; reticle / radar pan row
+ZP_RET_CNT      EQU $BC         ; reticle / hyperspace countdown
+MSG_PTR         EQU $8040       ; engine inline-text pointer
+@
+
+<<spa defines>>=
+; --- engine row-address tables (installed by MAKE.INDATA) ---
+HGR_ROW_LO      EQU $1210       ; hi-res row base address, low byte
+HGR_ROW_HI      EQU $12D0       ; hi-res row base address, high byte
+HGR_ROW_BIT     EQU $1380       ; column -> pixel bit mask
+PRESHIFT_TBL    EQU $1480       ; column -> sub-byte shift count
+; --- SPA BSS grids above the file end ---
+ENEMY_GRID_LO   EQU $B020       ; 8x8 enemy/feature grid, low nibbles
+ENEMY_GRID_HI   EQU $B099       ; 8x8 enemy/feature grid, high nibbles
+SHAPE_BUF       EQU $B112       ; 256-byte shape pre-shift scratch buffer
+@
+
+\texttt{SPA} enters at [[OVERLAY_ENTRY]], where every overlay is loaded.
+What follows is the overlay in address order: entry and the main loop,
+the physics and hazards, docking and the ship-berth system, the flight
+commands and their delta tables, the dispatch table, the radar and
+starfield, firing and the kill counter, the view machinery and enemy AI,
+the cell/RNG helpers, the sprite blitter and projection math, and the
+file-tail tables.
+
+<<spa entry>>=
         ORG $8956
-SPA_BLOB
-        ; STUB — not yet disassembled (space overlay)
-        HEX ad ef 7e 85 4e ad f0 7e
-        HEX 85 4f a9 19 8d 51 7e a9
-        HEX 92 8d 52 7e a9 00 a0 f2
-        HEX 99 1f b0 88 d0 fa a9 00
-        HEX 85 7f 20 78 80 a9 0a 85
-        HEX a7 a9 00 8d 49 82 a5 a7
-        HEX 20 0d 82 c6 a7 f0 1a 20
-        HEX 66 82 d0 15 20 19 81 2e
-        HEX 2e 00 a9 06 85 a8 a9 00
-        HEX 20 e9 15 c6 a8 d0 f7 f0
-        HEX dd 20 14 84 20 01 9a 20
-        HEX b4 83 20 a1 15 20 19 81
-        HEX 53 68 6c 64 7c 46 75 65
-        HEX 6c 00 20 a9 83 20 82 a1
-        HEX a0 29 20 b9 15 99 ff 9b
-        HEX 20 b9 15 4a 99 29 9c 88
-        HEX 10 f0 a9 05 85 00 85 01
-        HEX a9 08 85 6d a9 08 85 6c
-        HEX 20 bc 9c 20 53 9c ae 87
-        HEX 92 bd 43 92 99 20 b0 bd
-        HEX 4d 92 99 99 b0 c6 6c a5
-        HEX 6c c9 02 b0 e3 c6 6d a5
-        HEX 6d c9 02 b0 d7 a9 03 85
-        HEX 6c 85 6d 20 53 9c a9 00
-        HEX 99 20 b0 a9 c0 99 99 b0
-        HEX a5 00 85 6c a5 01 85 6d
-        HEX 20 53 9c a9 15 99 20 b0
-        HEX a9 05 99 99 b0 20 19 81
-        HEX 7e 54 68 6f 75 20 68 61
-        HEX 73 74 20 6c 69 66 74 65
-        HEX 64 20 6f 66 66 21 00 20
-        HEX 7f 9f 20 89 9d a5 24 c9
-        HEX 02 90 06 20 19 81 7c 0e
-        HEX 00 20 c2 15 f0 4f 20 bd
-        HEX a1 20 a2 82 b0 47 e0 08
-        HEX b0 34 ad e9 7e 0d ea 7e
-        HEX d0 2c 20 19 81 7e 4e 6f
-        HEX 20 66 75 65 6c 21 21 7e
-        HEX 57 69 6c 74 20 74 68 6f
-        HEX 75 20 64 72 69 66 74 20
-        HEX 66 6f 72 65 76 65 72 3f
-        HEX 21 3f 00 4c b3 8a bd d3
-        HEX 91 8d b1 8a bd d4 91 8d
-        HEX b2 8a 4c 53 8a ad 40 92
-        HEX d0 9b 18 ad 8a 92 65 6e
-        HEX 8d 88 92 18 ad 8b 92 65
-        HEX 6f 29 7f 8d 89 92 ad 88
-        HEX 92 c9 0e b0 07 a9 f4 8d
-        HEX 88 92 d0 09 c9 f5 90 05
-        HEX a9 0e 8d 88 92 ce 8c 92
-        HEX 20 9e 9d ad 88 92 85 6e
-        HEX ad 89 92 85 6f ad 3e 92
-        HEX 8d 3f 92 ad 8e 92 f0 05
-        HEX ce 8e 92 a9 04 8d 8d 92
-        HEX ee 8c 92 20 9e 9d ad 8a
-        HEX 92 d0 20 ae 3f 92 ad 8b
-        HEX 92 dd 4b 8c d0 3a a5 6e
-        HEX cd 6f 92 d0 33 18 ad 79
-        HEX 92 7d 47 8c c5 6f d0 28
-        HEX 4c 4f 8c ad 8b 92 d0 20
-        HEX ae 3f 92 ad 8a 92 dd 4b
-        HEX 8c d0 15 a5 6f cd 79 92
-        HEX d0 0e 18 ad 6f 92 7d 47
-        HEX 8c c5 6e d0 03 4c 4f 8c
-        HEX a5 b9 d0 03 4c 53 8a a5
-        HEX 6e 8d 74 92 a5 6f 8d 7e
-        HEX 92 a9 09 8d 87 9d a9 08
-        HEX 8d 88 9d 20 e2 9c c9 15
-        HEX 90 0d ce 88 9d 10 f4 a9
-        HEX 0c 20 cb 15 4c 53 8a ad
-        HEX 88 9d d0 24 20 19 81 54
-        HEX 68 79 20 73 68 69 70 20
-        HEX 6d 65 6c 74 73 20 6e 65
-        HEX 61 72 20 74 68 65 20 73
-        HEX 74 61 72 21 00 4c f8 88
-        HEX c9 04 b0 03 4c 4c 8f a5
-        HEX 24 c9 02 90 03 20 7e 80
-        HEX 20 19 81 43 72 75 6e 63
-        HEX 68 21 00 a9 0e 20 cb 15
-        HEX a9 0e 20 cb 15 a9 00 38
-        HEX ed 8a 92 8d 8a 92 a9 00
-        HEX 38 ed 8b 92 8d 8b 92 ad
-        HEX eb 7e 85 aa ad ec 7e 85
-        HEX ab 46 ab 66 aa 46 ab 66
-        HEX aa 18 a9 05 65 aa 85 aa
-        HEX a9 00 65 ab 85 ab 38 ad
-        HEX eb 7e e5 aa 8d eb 7e ad
-        HEX ec 7e e5 ab 8d ec 7e 08
-        HEX b0 08 a9 00 8d eb 7e 8d
-        HEX ec 7e 20 82 a1 28 b0 1e
-        HEX 20 19 81 7e 54 68 79 20
-        HEX 73 68 69 65 6c 64 20 69
-        HEX 73 20 64 72 61 69 6e 65
-        HEX 64 21 00 4c f8 88 4c 53
-        HEX 8a 12 ec ee 12 ff 02 01
-        HEX fe 20 19 81 44 6f 63 6b
-        HEX 65 64 21 20 57 65 6c 63
-        HEX 6f 6d 65 20 74 6f 20 42
-        HEX 61 73 65 21 00 a9 00 8d
-        HEX 8a 92 8d 8b 92 a9 01 8d
-        HEX 40 92 ce 8c 92 20 9e 9d
-        HEX ee 8c 92 a9 00 8d 8e 92
-        HEX 8d 8d 92 20 9e 9d ad d5
-        HEX 7e c9 01 d0 05 ad d4 7e
-        HEX c9 f4 b0 53 20 19 81 7e
-        HEX 53 6f 72 72 79 2c 20 62
-        HEX 75 74 20 74 68 6f 75 20
-        HEX 63 61 6e 73 74 20 6e 6f
-        HEX 74 7e 72 65 66 75 65 6c
-        HEX 20 74 68 79 20 73 68 69
-        HEX 70 20 77 69 74 68 6f 75
-        HEX 74 7e 74 68 65 20 35 30
-        HEX 30 70 20 44 6f 63 6b 69
-        HEX 6e 67 20 46 65 65 2e 20
-        HEX 00 20 bf 15 4c 53 8a ad
-        HEX 7b 7e c9 05 f0 44 c9 04
-        HEX f0 40 20 19 81 7e 54 68
-        HEX 65 20 73 70 61 63 65 64
-        HEX 6f 6f 72 73 20 6f 70 65
-        HEX 6e 2c 20 65 78 70 6f 73
-        HEX 69 6e 67 7e 74 68 65 65
-        HEX 20 74 6f 20 61 20 63 6f
-        HEX 6d 70 6c 65 74 65 20 76
-        HEX 61 63 75 75 6d 21 00 4c
-        HEX f8 88 18 ad 3f 92 69 05
-        HEX aa a5 6e 9d 6b 92 a5 6f
-        HEX 9d 75 92 ad 3f 92 9d 61
-        HEX 92 38 ad d4 7e e9 f4 8d
-        HEX d4 7e ad d5 7e e9 01 8d
-        HEX d5 7e a5 00 85 6c a5 01
-        HEX 85 6d ac 7c 7e b9 fe a0
-        HEX 9d 57 92 a9 40 85 aa a9
-        HEX 00 85 ab 98 38 e9 06 aa
-        HEX ca 30 0b 06 aa 26 ab 06
-        HEX aa 26 ab 4c 7e 8d 20 53
-        HEX 9c b9 20 b0 05 aa 99 20
-        HEX b0 b9 99 b0 05 ab 99 99
-        HEX b0 20 53 9c 20 19 81 7e
-        HEX 43 68 6f 6f 73 65 20 74
-        HEX 68 79 20 73 68 69 70 3a
-        HEX 20 00 20 c2 15 f0 fb 20
-        HEX 7d 82 c9 0b d0 03 4c e2
-        HEX 8d c9 0a d0 03 4c 0d 8e
-        HEX c9 15 d0 03 4c 38 8e c9
-        HEX 08 d0 03 4c 62 8e 20 07
-        HEX 84 4c a2 8d ad 5e 92 d0
-        HEX 03 4c 8b 8e 20 19 81 7e
-        HEX 54 68 6f 75 20 61 72 74
-        HEX 20 69 6e 20 74 68 65 20
-        HEX 74 6f 70 20 73 68 69 70
-        HEX 2e 00 a2 07 4c ae 8e ad
-        HEX 5c 92 f0 79 20 19 81 7e
-        HEX 54 68 6f 75 20 61 72 74
-        HEX 20 69 6e 20 74 68 65 20
-        HEX 62 6f 74 74 6f 6d 20 73
-        HEX 68 69 70 2e 00 a2 05 4c
-        HEX ae 8e ad 5f 92 f0 4e 20
-        HEX 19 81 7e 54 68 6f 75 20
-        HEX 61 72 74 20 69 6e 20 74
-        HEX 68 65 20 72 69 67 68 74
-        HEX 20 73 68 69 70 2e 00 a2
-        HEX 08 4c ae 8e ad 5d 92 f0
-        HEX 24 20 19 81 7e 54 68 6f
-        HEX 75 20 61 72 74 20 69 6e
-        HEX 20 74 68 65 20 6c 65 66
-        HEX 74 20 73 68 69 70 2e 00
-        HEX a2 06 4c ae 8e 20 19 81
-        HEX 7e 54 68 61 74 20 70 6f
-        HEX 72 74 20 69 73 20 6e 6f
-        HEX 74 20 61 76 61 69 6c 61
-        HEX 62 6c 65 2e 00 4c a2 8d
-        HEX bd 57 92 a0 02 d9 04 a1
-        HEX f0 04 88 10 f8 c8 98 48
-        HEX 18 69 06 8d 7c 7e bd 6b
-        HEX 92 85 6e bd 75 92 85 6f
-        HEX bd 61 92 8d 3f 92 8d 3e
-        HEX 92 a9 00 9d 57 92 9d 61
-        HEX 92 a9 ff 9d 6b 92 9d 75
-        HEX 92 a9 bf 85 aa a9 ff 85
-        HEX ab a5 00 85 6c a5 01 85
-        HEX 6d 68 48 aa ca 30 0d 38
-        HEX 26 aa 26 ab 38 26 aa 26
-        HEX ab 4c fa 8e 20 53 9c b9
-        HEX 20 b0 25 aa 99 20 b0 b9
-        HEX 99 b0 25 ab 99 99 b0 20
-        HEX 53 9c 68 aa bd 40 8f 8d
-        HEX e9 7e bd 43 8f 8d ea 7e
-        HEX bd 46 8f 8d eb 7e bd 49
-        HEX 8f 8d ec 7e 20 82 a1 4c
-        HEX 53 8a e8 c4 88 03 09 13
-        HEX e8 88 e8 03 13 03 ad 7c
-        HEX 7e c9 06 f0 3a 20 19 81
-        HEX 4f 6e 6c 79 20 73 70 61
-        HEX 63 65 20 73 68 75 74 74
-        HEX 6c 65 73 20 61 72 65 20
-        HEX 68 65 61 74 7e 73 68 69
-        HEX 65 6c 64 65 64 20 66 6f
-        HEX 72 20 6c 61 6e 64 69 6e
-        HEX 67 73 21 00 4c f8 88 20
-        HEX 19 81 54 68 6f 75 20 68
-        HEX 61 73 74 20 6c 61 6e 64
-        HEX 65 64 20 73 61 66 65 6c
-        HEX 79 21 20 00 4c fb 88 ad
-        HEX 40 92 f0 08 a9 00 20 cb
-        HEX 15 4c b5 8b ae 3f 92 18
-        HEX ad 8a 92 7d f4 8f 20 fc
-        HEX 8f 8d 8a 92 18 ad 8b 92
-        HEX 7d f8 8f 20 fc 8f 8d 8b
-        HEX 92 a9 00 20 cb 15 a9 08
-        HEX 6d 8e 92 29 7f 8d 8e 92
-        HEX a9 05 20 54 a1 20 19 81
-        HEX 7c 0e 00 4c b3 8a 00 02
-        HEX 00 fe ff 00 01 00 c9 80
-        HEX b0 07 c9 09 90 09 a9 08
-        HEX 60 c9 f8 b0 02 a9 f8 60
-        HEX ae 3f 92 18 ad 8a 92 7d
-        HEX 46 90 20 fc 8f 8d 8a 92
-        HEX 18 ad 8b 92 7d 4a 90 20
-        HEX fc 8f 8d 8b 92 a9 00 20
-        HEX cb 15 a9 00 8d 8e 92 8d
-        HEX 40 92 a9 05 20 54 a1 20
-        HEX 19 81 7c 0e 00 4c b3 8a
-        HEX 00 fe 00 02 01 00 ff 00
-        HEX ad 40 92 f0 03 4c b5 8b
-        HEX ad 3f 92 18 69 01 29 03
-        HEX 8d 3e 92 a9 00 8d 8e 92
-        HEX a9 02 20 54 a1 20 19 81
-        HEX 7c 0e 00 4c b8 8a ad 40
-        HEX 92 f0 03 4c b5 8b ae 3f
-        HEX 92 ca 10 02 a2 03 8e 3e
-        HEX 92 a9 00 8d 8e 92 a9 02
-        HEX 20 54 a1 20 19 81 7c 0e
-        HEX 00 4c b8 8a 20 07 84 20
-        HEX 19 81 7e 48 79 70 65 72
-        HEX 4a 75 6d 70 20 63 61 6e
-        HEX 20 6f 6e 6c 79 20 62 65
-        HEX 7e 75 73 65 64 20 69 6e
-        HEX 20 66 72 6f 6e 74 20 76
-        HEX 69 65 77 20 6d 6f 64 65
-        HEX 2e 7c 0e 00 4c b3 8a 20
-        HEX de 90 20 89 9d 4c 53 8a
-        HEX 20 1e 84 20 19 81 53 65
-        HEX 63 74 6f 72 20 53 63 61
-        HEX 6e 3a 7c 00 a9 07 20 d4
-        HEX 15 a9 5f 85 06 a9 23 85
-        HEX 07 a2 9a a4 07 20 da 15
-        HEX a6 06 a0 64 20 da 15 a2
-        HEX 5e a4 07 20 da 15 a6 06
-        HEX a0 23 20 da 15 a9 02 85
-        HEX 6d a9 02 85 6c 20 7e 80
-        HEX a9 0c 85 24 20 53 9c a2
-        HEX 03 ad 86 92 d0 0d ca ad
-        HEX 81 92 d0 07 ca ad 7f 92
-        HEX d0 01 ca bd b9 91 a6 00
-        HEX e4 6c d0 13 a4 01 c4 6d
-        HEX d0 0d 8d b6 91 a6 24 8e
-        HEX b7 91 a4 25 8c b8 91 20
-        HEX 62 80 e6 6c a5 6c c9 09
-        HEX 90 c2 e6 6d a5 6d c9 09
-        HEX 90 af ad b8 91 85 25 ad
-        HEX b7 91 85 24 a9 ff 20 e9
-        HEX 15 20 66 82 d0 1d a9 20
-        HEX 20 62 80 ad b7 91 85 24
-        HEX a9 ff 20 e9 15 20 66 82
-        HEX d0 09 ad b6 91 20 62 80
-        HEX 4c 75 91 20 a9 83 20 01
-        HEX 9a 20 bf 15 a5 00 85 6c
-        HEX a5 01 85 6d 20 53 9c 60
-        HEX 00 00 00 3c 2a 5d 5b 20
-        HEX 5b 88 4c b3 8a 20 a2 85
-        HEX 20 01 9a 20 89 9d a9 02
-        HEX 85 24 4c 53 8a ad 8f 0e
-        HEX 90 4e 90 74 90 07 92 13
-        HEX 92 07 92 07 92 07 92 07
-        HEX 92 07 92 07 92 07 92 9a
-        HEX 90 d5 90 07 92 bd 91 07
-        HEX 92 07 92 07 92 07 92 07
-        HEX 92 07 92 98 92 07 92 c3
-        HEX 91 20 07 84 20 19 81 7c
-        HEX 0e 00 4c b3 8a 20 45 88
-        HEX 4c b3 8a 54 68 72 75 73
-        HEX f4 52 65 74 72 ef 43 6c
-        HEX 6f 63 6b 77 69 73 e5 43
-        HEX 6f 75 6e 74 65 72 2d 43
-        HEX 6c 6f 63 6b 77 69 73 e5
-        HEX 03 03 00 00 00 51 00 11
-        HEX 00 00 01 01 00 00 00 00
-        HEX 00 45 00 00 00 00 c0 00
-        HEX 80 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 80 70 60 50 40 30 20
-        HEX 10 00 ad 40 92 f0 38 20
-        HEX 07 84 20 19 81 7e 56 69
-        HEX 65 77 20 63 61 6e 27 74
-        HEX 20 62 65 20 63 68 61 6e
-        HEX 67 65 64 7e 77 68 69 6c
-        HEX 73 74 20 69 6e 20 73 70
-        HEX 61 63 65 20 64 6f 63 6b
-        HEX 2e 7c 0e 00 4c b3 8a ad
-        HEX 8a 92 0d 8b 92 d0 3b ad
-        HEX e9 7e 0d ea 7e d0 0c 20
-        HEX d8 97 20 19 81 7c 0e 00
-        HEX 4c b3 8a ae 3f 92 18 ad
-        HEX 8a 92 7d f4 8f 20 fc 8f
-        HEX 8d 8a 92 18 ad 8b 92 7d
-        HEX f8 8f 20 fc 8f 8d 8b 92
-        HEX a9 00 20 cb 15 a9 05 20
-        HEX 54 a1 ad 8b 92 10 06 a9
-        HEX 00 38 ed 8b 92 85 a7 ad
-        HEX 8a 92 10 06 a9 00 38 ed
-        HEX 8a 92 c5 a7 b0 02 a5 a7
-        HEX aa bd 8e 92 8d f4 93 8d
-        HEX 97 92 20 b4 83 20 01 9a
-        HEX 20 a9 83 a2 02 8e f1 93
-        HEX a9 de 8d 51 7e a9 93 8d
-        HEX 52 7e 20 cf 95 20 19 81
-        HEX 7c 0e 00 20 86 94 f0 fb
-        HEX 20 bd a1 aa 38 e9 31 90
-        HEX 46 c9 08 b0 42 48 20 19
-        HEX 81 53 70 65 65 64 20 00
-        HEX 68 48 18 69 01 20 58 80
-        HEX ad e9 7e 0d ea 7e aa 68
-        HEX e0 00 d0 06 20 d8 97 4c
-        HEX 5b 93 aa bd 8f 92 a8 38
-        HEX ed f4 93 8c f4 93 b0 07
-        HEX 85 a7 a9 00 38 e5 a7 4a
-        HEX 4a 20 54 a1 4c 5b 93 8a
-        HEX ac 81 15 8c fd 93 a0 00
-        HEX 8c 81 15 20 a2 82 ac fd
-        HEX 93 8c 81 15 b0 8f bd cb
-        HEX 9b 8d d9 93 bd cc 9b 8d
-        HEX da 93 20 1d 84 4c 5b 93
-        HEX 43 6c 69 6d e2 44 69 76
-        HEX e5 52 69 67 68 f4 4c 65
-        HEX 66 f4 00 02 80 40 80 00
-        HEX 3f 80 40 00 00 3b 67 ff
-        HEX ae f7 93 ac f8 93 e4 ba
-        HEX d0 04 c4 bb f0 05 a9 04
-        HEX 20 1d 94 a6 ba 8e f7 93
-        HEX a4 bb 8c f8 93 a9 07 86
-        HEX 06 88 88 84 07 20 d4 15
-        HEX 20 d7 15 e6 07 20 d7 15
-        HEX e6 07 20 d7 15 e6 07 20
-        HEX d7 15 e6 07 20 d7 15 c6
-        HEX 07 c6 07 c6 06 c6 06 20
-        HEX d7 15 18 a5 06 69 04 85
-        HEX 06 4c d7 15 ad fb 93 85
-        HEX 4e ad fc 93 85 4f a9 c8
-        HEX 85 bc 60 18 a5 4e 69 09
-        HEX 65 4f a6 4e 85 4e 86 4f
-        HEX 4a 90 04 4a e9 20 60 0a
-        HEX 60 20 c8 15 20 97 94 20
-        HEX 66 82 d0 01 60 4c bf 15
-        HEX a9 32 8d 96 94 20 77 94
-        HEX d0 05 ce 96 94 d0 f6 60
-        HEX 32 a2 00 18 ad f9 93 65
-        HEX ba c9 f7 90 07 a9 f7 8e
-        HEX f9 93 d0 09 c9 09 b0 05
-        HEX a9 09 8e f9 93 85 ba 18
-        HEX ad fa 93 65 bb c9 78 90
-        HEX 07 a9 78 8e fa 93 d0 09
-        HEX c9 09 b0 05 a9 09 8e fa
-        HEX 93 85 bb 20 fe 93 20 bc
-        HEX 15 a9 29 8d f6 93 ac f6
-        HEX 93 b9 29 9c 85 07 b9 ff
-        HEX 9b 85 06 38 e5 ba 90 0c
-        HEX 4a 4a 4a 38 65 06 85 0c
-        HEX 90 47 b0 11 38 a5 ba e5
-        HEX 06 4a 4a 4a 85 0c 18 a5
-        HEX 06 e5 0c b0 34 ad 81 15
-        HEX f0 03 2c 30 c0 20 61 94
-        HEX 65 ba 85 0c 20 61 94 c9
-        HEX 80 6a 65 bb 85 0d ad 81
-        HEX 15 f0 3e a9 80 cd f4 93
-        HEX 90 37 c5 ba d0 33 4a c5
-        HEX bb d0 2e 2c 30 c0 4c 67
-        HEX 95 85 0c 38 a5 07 e5 bb
-        HEX 30 0b 4a 4a 4a 4a 38 65
-        HEX 07 10 14 30 b8 38 a5 bb
-        HEX e5 07 4a 4a 4a 4a 85 0d
-        HEX 18 a5 07 e5 0d 30 a6 85
-        HEX 0d ae f4 93 ca f0 0d a9
-        HEX 04 20 d4 15 20 d7 15 a9
-        HEX 06 20 d4 15 ac f6 93 a5
-        HEX 0c 85 06 99 ff 9b a5 0d
-        HEX 85 07 99 29 9c 20 d7 15
-        HEX ce f6 93 30 12 ad 81 15
-        HEX f0 0a ad f4 93 c9 03 90
-        HEX 03 2c 30 c0 4c dc 94 20
-        HEX 3d 9a 20 11 94 2c 50 c0
-        HEX ad f4 93 f0 03 20 e9 15
-        HEX ad e9 7e 0d ea 7e f0 11
-        HEX 60 20 81 80 20 19 81 43
-        HEX 65 6e 74 65 72 00 20 98
-        HEX 15 a9 80 85 bc 85 ba 4a
-        HEX 85 bb a9 00 8d f9 93 8d
-        HEX fa 93 60 ad e9 7e 0d ea
-        HEX 7e d0 03 4c d8 97 a9 02
-        HEX 20 54 a1 a9 fc 8d f9 93
-        HEX a9 00 8d fa 93 60 ad e9
-        HEX 7e 0d ea 7e d0 03 4c d8
-        HEX 97 a9 02 20 54 a1 a9 04
-        HEX 8d f9 93 a9 00 8d fa 93
-        HEX 60 ad e9 7e 0d ea 7e d0
-        HEX 03 4c d8 97 a9 02 20 54
-        HEX a1 a9 fc 8d fa 93 a9 00
-        HEX 8d f9 93 60 ad e9 7e 0d
-        HEX ea 7e d0 03 4c d8 97 a9
-        HEX 02 20 54 a1 a9 04 8d fa
-        HEX 93 a9 00 8d f9 93 60 ad
-        HEX ea 7e c9 00 d0 05 ad e9
-        HEX 7e c9 0a b0 03 4c d8 97
-        HEX a9 0a 20 54 a1 a9 00 8d
-        HEX f9 93 8d fa 93 a9 05 20
-        HEX bb 97 a9 0c 20 cb 15 ad
-        HEX 86 92 d0 03 4c b9 97 ad
-        HEX f1 93 4a 4a 4a 4a 4a aa
-        HEX e8 ad f2 93 38 fd 17 a2
-        HEX c5 ba b0 e8 ad f2 93 18
-        HEX 7d 17 a2 c5 ba 90 dd ad
-        HEX f3 93 38 fd 3b a2 c5 bb
-        HEX b0 d2 ad f3 93 18 7d 3b
-        HEX a2 c5 bb 90 c7 a9 02 20
-        HEX cb 15 a9 f8 8d 8c 92 a9
-        HEX 00 20 ac 9b 20 e6 15 a9
-        HEX 80 20 ac 9b 20 e6 15 ee
-        HEX 8c 92 30 eb a9 02 8d f1
-        HEX 93 a9 90 8d f2 93 8d f3
-        HEX 93 20 19 81 7e 48 69 74
-        HEX 21 21 21 00 a5 00 85 6c
-        HEX a5 01 85 6d 20 53 9c ce
-        HEX 86 92 10 06 ee 86 92 4c
-        HEX b9 97 b9 99 b0 38 e9 40
-        HEX 99 99 b0 18 ad e7 7e 69
-        HEX 64 8d e7 7e ad e8 7e 69
-        HEX 00 8d e8 7e ad e8 7e c9
-        HEX 27 d0 05 ad e7 7e c9 10
-        HEX 90 0a a9 0f 8d e7 7e a9
-        HEX 27 8d e8 7e ee b6 7e d0
-        HEX 03 ce b6 7e ad b6 7e c9
-        HEX 14 90 22 f0 23 20 19 81
-        HEX 7e 54 68 6f 75 20 61 72
-        HEX 74 20 73 74 69 6c 6c 20
-        HEX 61 20 53 70 61 63 65 20
-        HEX 41 63 65 21 00 4c b9 97
-        HEX 20 1e 84 a9 07 85 25 a9
-        HEX 06 85 24 20 19 81 54 68
-        HEX 6f 75 20 68 61 73 74 20
-        HEX 61 63 68 69 65 76 65 64
-        HEX 7e 7e 00 a9 09 85 24 20
-        HEX 19 81 74 68 65 20 72 61
-        HEX 6e 6b 20 6f 66 7e 7e 00
-        HEX a9 0a 85 24 20 19 81 53
-        HEX 70 61 63 65 20 41 63 65
-        HEX 21 00 20 6c 82 20 a9 83
-        HEX 20 01 9a a9 04 20 d4 15
-        HEX a2 20 20 cb 97 a2 e0 20
-        HEX cb 97 4c 11 94 86 06 a0
-        HEX 7f 84 07 a6 ba a4 bb 4c
-        HEX da 15 20 19 81 7e 4e 6f
-        HEX 74 20 65 6e 6f 75 67 68
-        HEX 20 66 75 65 6c 21 00 60
-        HEX 20 c8 83 a9 3f 20 b0 15
-        HEX 4c 14 84 ad ea 7e c9 00
-        HEX d0 05 ad e9 7e c9 64 90
-        HEX d1 a5 24 48 20 19 81 2e
-        HEX 2e 2e 00 ad f4 93 8d f1
-        HEX 98 a9 80 8d ca 9b a9 00
-        HEX 8d f9 93 8d fa 93 20 97
-        HEX 94 ce f4 93 ad f4 93 c9
-        HEX 01 d0 f3 20 19 81 20 6c
-        HEX 69 67 68 74 20 73 70 65
-        HEX 65 64 21 00 a9 64 20 54
-        HEX a1 68 85 24 a5 4e 8d fb
-        HEX 93 a5 4f 8d fc 93 a2 2a
-        HEX bd ff 9b 9d 00 40 bd 29
-        HEX 9c 9d 2a 40 ca 10 f1 20
-        HEX 52 94 20 97 94 c6 bc d0
-        HEX f9 a2 2a bd 00 40 9d ff
-        HEX 9b bd 2a 40 9d 29 9c ca
-        HEX 10 f1 20 52 94 ee f4 93
-        HEX 20 97 94 c6 bc d0 f9 20
-        HEX 97 94 ee f4 93 ad f4 93
-        HEX cd f1 98 d0 f2 20 19 81
-        HEX 20 63 6f 6d 70 6c 65 74
-        HEX 65 2e 00 20 98 15 a9 00
-        HEX 8d ca 9b a6 00 a4 01 ad
-        HEX 8a 92 f0 12 30 09 e8 e0
-        HEX 09 90 0b a2 02 d0 07 ca
-        HEX e0 02 b0 02 a2 08 ad 8b
-        HEX 92 f0 12 30 09 c8 c0 09
-        HEX 90 0b a0 02 d0 07 88 c0
-        HEX 02 b0 02 a0 08 86 00 84
-        HEX 01 86 6c 84 6d 20 53 9c
-        HEX 4c 7f 9f 00 4c de 90 20
-        HEX 86 94 20 66 84 4c 01 9a
-        HEX ad 86 92 f0 03 4c cb 99
-        HEX 20 01 9a 20 89 9d a9 19
-        HEX 8d 51 7e a9 92 8d 52 7e
-        HEX ad 8b 92 10 06 a9 00 38
-        HEX ed 8b 92 85 ac ad 8a 92
-        HEX 10 06 a9 00 38 ed 8a 92
-        HEX 85 aa a5 aa 85 ae ad 97
-        HEX 92 20 07 a1 85 ab a5 b2
-        HEX 85 aa a5 aa 85 b2 a5 ab
-        HEX 85 b3 ad f4 93 85 b0 ad
-        HEX f5 93 20 23 a1 a5 b3 85
-        HEX ab a5 b2 85 aa a5 ac 85
-        HEX ae ad 97 92 20 07 a1 85
-        HEX ad a5 b2 85 ac a5 ac 85
-        HEX b2 a5 ad 85 b3 ad f4 93
-        HEX 85 b0 ad f5 93 20 23 a1
-        HEX a5 b3 85 ad a5 b2 85 ac
-        HEX 2c 8a 92 10 0d 38 a9 00
-        HEX e5 aa 85 aa a9 00 e5 ab
-        HEX 85 ab 2c 8b 92 10 0d 38
-        HEX a9 00 e5 ac 85 ac a9 00
-        HEX e5 ad 85 ad a5 aa 20 fc
-        HEX 8f aa 30 02 e8 8a 29 fe
-        HEX 8d 8a 92 a5 ac 20 fc 8f
-        HEX 8d 8b 92 68 68 a9 00 8d
-        HEX 8e 92 4c 53 8a 20 ee 97
-        HEX 20 19 81 7e 54 68 6f 75
-        HEX 20 6d 75 73 74 20 65 6c
-        HEX 69 6d 69 6e 61 74 65 20
-        HEX 61 6c 6c 7e 65 6e 65 6d
-        HEX 79 20 63 72 61 66 74 20
-        HEX 66 69 72 73 74 2e 00 60
-        HEX 20 a2 85 20 b4 83 20 a7
-        HEX 15 a9 1f a2 25 20 38 9a
-        HEX ca 10 fa a4 25 c8 c4 23
-        HEX b0 0f 84 25 a2 00 20 38
-        HEX 9a a2 25 20 38 9a 4c 11
-        HEX 9a a2 24 20 38 9a ca d0
-        HEX fa 20 a1 80 20 9b 15 4c
-        HEX a9 83 86 24 4c b0 15 ad
-        HEX 86 92 f0 3b a9 80 20 ac
-        HEX 9b ee f1 93 ee f1 93 f0
-        HEX 29 ad f2 93 c5 ba 90 07
-        HEX ee f2 93 d0 0a f0 1b 38
-        HEX e9 01 8d f2 93 90 13 ad
-        HEX f3 93 c5 bb 90 07 ee f3
-        HEX 93 10 33 30 05 ce f3 93
-        HEX 10 2c 2c ca 9b 10 0e a9
-        HEX 02 8d f1 93 a9 90 8d f2
-        HEX 93 8d f3 93 60 20 b9 15
-        HEX 29 7f 69 40 8d f2 93 20
-        HEX b9 15 29 3f 69 20 8d f3
-        HEX 93 a9 02 8d f1 93 a9 00
-        HEX 20 ac 9b 2c ca 9b 30 0f
-        HEX 20 b9 15 cd f1 93 b0 07
-        HEX 20 b9 15 c9 04 90 03 4c
-        HEX 9b 9b 20 19 81 41 6c 69
-        HEX 65 6e 20 66 69 72 65 73
-        HEX 21 7c 0e 00 20 b9 15 c9
-        HEX 40 b0 7e a9 05 a2 80 a0
-        HEX 7f 20 9c 9b a9 0c 20 cb
-        HEX 15 a9 02 20 cb 15 20 19
-        HEX 81 59 6f 75 27 76 65 20
-        HEX 62 65 65 6e 20 68 69 74
-        HEX 21 00 a9 04 a2 80 a0 7f
-        HEX 20 9c 9b a9 00 20 ac 9b
-        HEX 38 ad eb 7e e9 41 8d eb
-        HEX 7e ad ec 7e e9 01 8d ec
-        HEX 7e 08 b0 08 a9 00 8d eb
-        HEX 7e 8d ec 7e 20 82 a1 28
-        HEX b0 1e 20 19 81 7e 54 68
-        HEX 79 20 73 68 69 65 6c 64
-        HEX 20 69 73 20 64 72 61 69
-        HEX 6e 65 64 21 00 4c f8 88
-        HEX 20 19 81 7c 0e 00 4c 9b
-        HEX 9b 20 b9 15 aa 29 01 f0
-        HEX 11 a9 00 85 aa a9 fb 20
-        HEX be 9c 18 69 02 85 ab 4c
-        HEX 84 9b 8a 29 7f 85 aa 20
-        HEX b9 15 29 01 f0 04 a9 02
-        HEX d0 02 a9 fd 85 ab a9 05
-        HEX a6 ab a4 aa 20 9c 9b a9
-        HEX 0c 20 cb 15 a9 04 a6 ab
-        HEX a4 aa 20 9c 9b 60 86 06
-        HEX 84 07 20 d4 15 ae f2 93
-        HEX ac f3 93 4c da 15 8d f0
-        HEX 93 ae f2 93 ac f3 93 ad
-        HEX f1 93 86 6c 84 6d 4a 4a
-        HEX 4a 4a 4a 18 69 01 8d 9a
-        HEX 9d 4c e1 9d 00 17 96 32
-        HEX 96 fc 95 e1 95 bf 95 45
-        HEX 88 ee 97 ee 97 ee 97 ee
-        HEX 97 ee 97 4d 96 ee 97 f9
-        HEX 97 f2 98 ee 97 5b 88 ee
-        HEX 97 ee 97 f5 98 ee 97 ee
-        HEX 97 ee 97 fe 98 ee 97 fe
-        HEX 99 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 a4 6d b9
-        HEX 87 9c 18 65 6c a8 b9 20
-        HEX b0 8d 41 92 a2 00 48 29
-        HEX 03 9d 7f 92 68 4a 4a e8
-        HEX e0 04 90 f2 b9 99 b0 8d
-        HEX 42 92 48 29 03 9d 7f 92
-        HEX 68 4a 4a e8 e0 08 90 f2
-        HEX 60 00 0b 16 21 2c 37 42
-        HEX 4d 58 63 6e a9 3c 20 be
-        HEX 9c 18 69 22 a8 a9 b8 20
-        HEX be 9c 18 69 24 29 fe aa
-        HEX 60 a9 72 20 be 9c 18 69
-        HEX 0c a8 a9 e4 20 be 9c 18
-        HEX 69 0e 29 fe aa 60 a9 0a
-        HEX 8d 87 92 20 d4 9c cd 87
-        HEX 92 90 05 ed 87 92 b0 f6
-        HEX c9 00 8d 87 92 60 18 a5
-        HEX 4e 69 09 65 4f a6 4e 85
-        HEX 4e 86 4f 60 ae 87 9d ac
-        HEX 88 9d bd 6b 92 c9 ff f0
-        HEX 69 b9 6b 92 c9 ff f0 62
-        HEX 38 fd 6b 92 b0 07 85 a9
-        HEX 38 a9 00 e5 a9 a0 00 84
-        HEX aa 84 ab a8 aa e8 ca f0
-        HEX 0c 98 18 65 aa 85 aa 90
-        HEX f5 e6 ab b0 f1 ae 87 9d
-        HEX ac 88 9d b9 75 92 38 fd
-        HEX 75 92 b0 07 85 a9 38 a9
-        HEX 00 e5 a9 a0 00 84 ac 84
-        HEX ad a8 aa e8 ca f0 0c 98
-        HEX 18 65 ac 85 ac 90 f5 e6
-        HEX ad b0 f1 18 a5 ac 65 aa
-        HEX 85 aa a5 ad 65 ab 85 ab
-        HEX 90 05 a9 ff 85 aa 60 a0
-        HEX 01 84 ac 88 84 ad 38 a5
-        HEX aa aa e5 ac 85 aa a5 ab
-        HEX e5 ad 85 ab 90 0d c8 a5
-        HEX ac 69 01 85 ac 90 e7 e6
-        HEX ad b0 e3 84 aa 98 86 ab
-        HEX 60 00 00 a9 08 85 a7 a6
-        HEX a7 20 b9 9d c6 a7 10 f7
-        HEX 20 9e 9d 60 00 ff 00 00
-        HEX ac 7c 7e b9 fe a0 18 6d
-        HEX 3f 92 6d 8d 92 8d 9a 9d
-        HEX a5 6e 85 6c a5 6f 85 6d
-        HEX 4c d0 9d bd 6b 92 85 6c
-        HEX bd 75 92 85 6d 18 bd 57
-        HEX 92 d0 01 60 7d 61 92 8d
-        HEX 9a 9d ad f0 93 48 a9 40
-        HEX 8d f0 93 20 e1 9d 68 8d
-        HEX f0 93 60 ae 9a 9d 38 a5
-        HEX 6c fd 17 a2 85 6c 38 a5
-        HEX 6d fd 3b a2 85 6d bd 5f
-        HEX a2 8d 9c 9d bd 83 a2 8d
-        HEX 9d 9d ec 9b 9d f0 2f bd
-        HEX cf a1 85 72 bd f3 a1 85
-        HEX 73 bc a7 a2 88 b1 72 99
-        HEX 12 b1 88 c0 ff d0 f6 a9
-        HEX 12 85 70 a9 b1 85 71 ae
-        HEX 9c 9d ad 9d 9d 20 2e 9f
-        HEX ae 9a 9d 8e 9b 9d a4 6c
-        HEX b9 80 14 a0 ff c8 4a 90
-        HEX fc a9 12 85 72 a9 b1 85
-        HEX 73 88 30 0e 18 a5 72 7d
-        HEX a7 a2 85 72 90 f3 e6 73
-        HEX d0 ef a9 00 85 b9 2c 8c
-        HEX 92 10 12 20 e6 15 18 a5
-        HEX 6d 6d 9d 9d c9 7d b0 05
-        HEX a9 44 20 e9 15 2c f0 93
-        HEX 50 56 a5 72 8d 9a 9e a5
-        HEX 73 8d 9b 9e ad 9c 9d 85
-        HEX 60 a2 ff a4 6d 30 0c b9
-        HEX 10 12 85 26 b9 d0 12 85
-        HEX 27 a6 6c ad ff ff f0 13
-        HEX bc 80 13 f0 0e 85 b8 31
-        HEX 26 05 b9 85 b9 a5 b8 51
-        HEX 26 91 26 ee 9a 9e d0 03
-        HEX ee 9b 9e 18 8a 69 07 90
-        HEX 02 a9 ff aa c6 60 d0 d3
-        HEX e6 6d ce 9d 9d d0 b5 60
-        HEX a2 ff a9 31 2c f0 93 30
-        HEX 03 e8 a9 11 8e 0c 9f 8d
-        HEX 0d 9f a5 72 8d 02 9f a5
-        HEX 73 8d 03 9f ad 9c 9d 85
-        HEX 60 a2 ff a4 6d 30 0c b9
-        HEX 10 12 85 26 b9 d0 12 85
-        HEX 27 a6 6c ad ff ff f0 0b
-        HEX bc 80 13 f0 06 49 00 11
-        HEX 26 91 26 ee 02 9f d0 03
-        HEX ee 03 9f 18 8a 69 07 90
-        HEX 02 a9 ff aa c6 60 d0 db
-        HEX e6 6d ce 9d 9d d0 bd 60
-        HEX 8d 7d 9f 86 28 a5 70 85
-        HEX 72 a5 71 85 73 18 a5 72
-        HEX 6d 7d 9f 85 72 90 02 e6
-        HEX 73 ca d0 f1 a9 06 8d 7e
-        HEX 9f a0 00 ad 7d 9f 85 2a
-        HEX 18 a6 28 b1 70 2a 18 10
-        HEX 01 38 29 7f 91 72 e6 70
-        HEX d0 02 e6 71 e6 72 d0 02
-        HEX e6 73 ca d0 e6 c6 2a d0
-        HEX df ce 7e 9f d0 d5 60 00
-        HEX 00 a5 00 a4 01 85 6c 84
-        HEX 6d 20 53 9c a2 00 86 4e
-        HEX 86 4f 0a 0a 0a 0a 18 a5
-        HEX 4e 65 01 85 4e 90 02 e6
-        HEX 4f 88 d0 f2 a2 08 a9 00
-        HEX 9d 61 92 9d 57 92 a9 ff
-        HEX 9d 75 92 9d 6b 92 ca 10
-        HEX ed ad 7f 92 f0 0e 20 a7
-        HEX 9c 8e 6b 92 8c 75 92 a9
-        HEX 0b 8d 57 92 ad 80 92 f0
-        HEX 3c 85 a7 20 a7 9c 8a a6
-        HEX a7 9d 6b 92 98 9d 75 92
-        HEX a9 03 85 a8 a6 a8 e4 a7
-        HEX f0 14 bd 57 92 f0 0f 8e
-        HEX 88 9d a5 a7 8d 87 9d 20
-        HEX e2 9c c9 2d 90 d5 c6 a8
-        HEX 10 e2 a6 a7 a9 09 9d 57
-        HEX 92 c6 a7 d0 c6 ad 81 92
-        HEX f0 24 20 92 9c 8e 6f 92
-        HEX 8c 79 92 a9 04 8d 87 9d
-        HEX a9 03 8d 88 9d 20 e2 9c
-        HEX c9 1e 90 e6 ce 88 9d 10
-        HEX f4 a9 0a 8d 5b 92 a9 05
-        HEX 85 6d a9 03 85 6c a6 6c
-        HEX bd 7f 92 d0 03 4c d5 a0
-        HEX 18 65 6d 85 a8 a5 6d 85
-        HEX a7 a6 a7 e0 08 b0 71 e0
-        HEX 05 d0 17 a9 00 9d 61 92
-        HEX 18 ad 79 92 69 12 9d 75
-        HEX 92 ad 6f 92 9d 6b 92 4c
-        HEX be a0 e0 06 d0 17 a9 01
-        HEX 9d 61 92 38 ad 6f 92 e9
-        HEX 14 9d 6b 92 ad 79 92 9d
-        HEX 75 92 4c be a0 e0 07 d0
-        HEX 17 a9 02 9d 61 92 38 ad
-        HEX 79 92 e9 12 9d 75 92 ad
-        HEX 6f 92 9d 6b 92 4c be a0
-        HEX e0 08 d0 14 a9 03 9d 61
-        HEX 92 18 ad 6f 92 69 14 9d
-        HEX 6b 92 ad 79 92 9d 75 92
-        HEX a4 6c b9 01 a1 9d 57 92
-        HEX e6 a7 a5 a7 c5 a8 b0 03
-        HEX 4c 4f a0 a5 a7 85 6d e6
-        HEX 6c a5 6c c9 06 b0 03 4c
-        HEX 3c a0 20 a7 9c 86 6e 84
-        HEX 6f 8e 74 92 8c 7e 92 a9
-        HEX 09 8d 87 9d a9 08 8d 88
-        HEX 9d 20 e2 9c c9 1e 90 e2
-        HEX ce 88 9d 10 f4 60 0c 14
-        HEX 1c 08 d8 85 b0 a9 08 85
-        HEX b6 a9 00 85 b2 46 b0 90
-        HEX 03 18 65 ae 6a 66 b2 c6
-        HEX b6 d0 f2 28 60 85 b1 08
-        HEX d8 a9 10 85 b6 a9 00 85
-        HEX b4 85 b5 06 b2 26 b3 26
-        HEX b4 26 b5 a5 b4 38 e5 b0
-        HEX 85 b7 a5 b5 e5 b1 90 08
-        HEX e6 b2 85 b5 a5 b7 85 b4
-        HEX c6 b6 d0 df 28 60 85 a7
-        HEX 38 ad e9 7e e5 a7 8d e9
-        HEX 7e b0 14 ce ea 7e ad ea
-        HEX 7e c9 ff d0 17 a9 00 8d
-        HEX e9 7e 8d ea 7e f0 0a ad
-        HEX e9 7e 0d ea 7e d0 05 a9
-        HEX 00 8d 8e 92 20 b4 83 20
-        HEX a1 15 8d 49 82 a9 24 85
-        HEX 20 a9 04 85 21 ad ec 7e
-        HEX ae eb 7e 20 55 83 ad ea
-        HEX 7e ae e9 7e 20 55 83 ad
-        HEX e8 7e ae e7 7e 20 55 83
-        HEX ad d5 7e ae d4 7e 20 07
-        HEX 82 20 98 15 4c a9 83 48
-        HEX 8a 48 98 48 a0 00 a9 05
-        HEX 20 e2 82 68 a8 68 aa 68
-        HEX 60 cb d2 ee 18 5e c0 7d
-        HEX 64 75 b0 00 50 a0 f0 40
-        HEX 90 e0 30 80 d0 20 70 c0
-        HEX 10 60 b0 00 50 a0 f0 40
-        HEX 90 e0 30 80 d0 a2 a2 a2
-        HEX a3 a3 a3 a4 a5 a6 a7 a8
-        HEX a8 a8 a8 a9 a9 a9 aa aa
-        HEX aa ab ab ab ac ac ac ad
-        HEX ad ad ad ae ae ae af af
-        HEX af 00 01 01 02 03 04 05
-        HEX 06 07 0b 0b 0b 0b 0b 0b
-        HEX 0b 0b 0b 0b 0b 0b 0b 0b
-        HEX 0b 0b 0b 0b 0b 0b 0b 0b
-        HEX 0b 0b 0b 0b 0b 00 01 01
-        HEX 02 03 04 05 06 07 0a 0a
-        HEX 0a 0a 0a 0a 0a 0a 0a 0a
-        HEX 0a 0a 0a 0a 0a 0a 0a 0a
-        HEX 0a 0a 0a 0a 0a 0a 0a 0a
-        HEX 0a 01 02 02 02 02 03 03
-        HEX 03 03 04 04 04 04 04 04
-        HEX 04 04 04 04 04 04 04 04
-        HEX 04 04 04 04 04 04 04 04
-        HEX 04 04 04 04 04 01 02 03
-        HEX 05 07 09 0b 0d 0f 14 14
-        HEX 14 14 14 14 14 14 14 14
-        HEX 14 14 14 14 14 14 14 14
-        HEX 14 14 14 14 14 14 14 14
-        HEX 14 01 04 06 0a 0e 1b 21
-        HEX 27 2d 50 50 50 50 50 50
-        HEX 50 50 50 50 50 50 50 50
-        HEX 50 50 50 50 50 50 50 50
-        HEX 50 50 50 50 50 01 02 04
-        HEX 08 10 20 40 03 00 03 00
-        HEX 06 00 06 00 0c 00 0c 00
-        HEX 18 00 18 00 30 00 30 00
-        HEX 60 00 60 00 40 01 40 01
-        HEX 05 00 07 00 05 00 0a 00
-        HEX 0e 00 0a 00 14 00 1c 00
-        HEX 14 00 28 00 38 00 28 00
-        HEX 50 00 70 00 50 00 20 01
-        HEX 60 01 20 01 40 02 40 03
-        HEX 40 02 11 00 15 00 1f 00
-        HEX 15 00 11 00 22 00 2a 00
-        HEX 3e 00 2a 00 22 00 44 00
-        HEX 54 00 7c 00 54 00 44 00
-        HEX 08 01 28 01 78 01 28 01
-        HEX 08 01 10 02 50 02 70 03
-        HEX 50 02 10 02 20 04 20 05
-        HEX 60 07 20 05 20 04 40 08
-        HEX 40 0a 40 0f 40 0a 40 08
-        HEX 63 00 63 00 6b 00 7f 00
-        HEX 6b 00 63 00 63 00 46 01
-        HEX 46 01 56 01 7e 01 56 01
-        HEX 46 01 46 01 0c 03 0c 03
-        HEX 2c 03 7c 03 2c 03 0c 03
-        HEX 0c 03 18 06 18 06 58 06
-        HEX 78 07 58 06 18 06 18 06
-        HEX 30 0c 30 0c 30 0d 70 0f
-        HEX 30 0d 30 0c 30 0c 60 18
-        HEX 60 18 60 1a 60 1f 60 1a
-        HEX 60 18 60 18 40 31 40 31
-        HEX 40 35 40 3f 40 35 40 31
-        HEX 40 31 03 03 00 03 03 00
-        HEX 3b 03 00 3b 03 00 6f 03
-        HEX 00 3b 03 00 3b 03 00 03
-        HEX 03 00 03 03 00 06 06 00
-        HEX 06 06 00 76 06 00 76 06
-        HEX 00 5e 07 00 76 06 00 76
-        HEX 06 00 06 06 00 06 06 00
-        HEX 0c 0c 00 0c 0c 00 6c 0d
-        HEX 00 6c 0d 00 3c 0f 00 6c
-        HEX 0d 00 6c 0d 00 0c 0c 00
-        HEX 0c 0c 00 18 18 00 18 18
-        HEX 00 58 1b 00 58 1b 00 78
-        HEX 1e 00 58 1b 00 58 1b 00
-        HEX 18 18 00 18 18 00 30 30
-        HEX 00 30 30 00 30 37 00 30
-        HEX 37 00 70 3d 00 30 37 00
-        HEX 30 37 00 30 30 00 30 30
-        HEX 00 60 60 00 60 60 00 60
-        HEX 6e 00 60 6e 00 60 7b 00
-        HEX 60 6e 00 60 6e 00 60 60
-        HEX 00 60 60 00 40 41 01 40
-        HEX 41 01 40 5d 01 40 5d 01
-        HEX 40 77 01 40 5d 01 40 5d
-        HEX 01 40 41 01 40 41 01 03
-        HEX 0c 00 03 0c 00 73 0c 00
-        HEX 5b 0d 00 5b 0d 00 2f 0e
-        HEX 00 5b 0d 00 5b 0d 00 73
-        HEX 0c 00 03 0c 00 03 0c 00
-        HEX 06 18 00 06 18 00 66 19
-        HEX 00 36 1b 00 36 1b 00 5e
-        HEX 1c 00 36 1b 00 36 1b 00
-        HEX 66 19 00 06 18 00 06 18
-        HEX 00 0c 30 00 0c 30 00 4c
-        HEX 33 00 6c 36 00 6c 36 00
-        HEX 3c 39 00 6c 36 00 6c 36
-        HEX 00 4c 33 00 0c 30 00 0c
-        HEX 30 00 18 60 00 18 60 00
-        HEX 18 67 00 58 6d 00 58 6d
-        HEX 00 78 72 00 58 6d 00 58
-        HEX 6d 00 18 67 00 18 60 00
-        HEX 18 60 00 30 40 01 30 40
-        HEX 01 30 4e 01 30 5b 01 30
-        HEX 5b 01 70 65 01 30 5b 01
-        HEX 30 5b 01 30 4e 01 30 40
-        HEX 01 30 40 01 60 00 03 60
-        HEX 00 03 60 1c 03 60 36 03
-        HEX 60 36 03 60 4b 03 60 36
-        HEX 03 60 36 03 60 1c 03 60
-        HEX 00 03 60 00 03 40 01 06
-        HEX 40 01 06 40 39 06 40 6d
-        HEX 06 40 6d 06 40 17 07 40
-        HEX 6d 06 40 6d 06 40 39 06
-        HEX 40 01 06 40 01 06 03 30
-        HEX 00 03 30 00 63 31 00 73
-        HEX 33 00 3b 37 00 3b 37 00
-        HEX 4f 3c 00 3b 37 00 3b 37
-        HEX 00 73 33 00 63 31 00 03
-        HEX 30 00 03 30 00 06 60 00
-        HEX 06 60 00 46 63 00 66 67
-        HEX 00 76 6e 00 76 6e 00 1e
-        HEX 79 00 76 6e 00 76 6e 00
-        HEX 66 67 00 46 63 00 06 60
-        HEX 00 06 60 00 0c 40 01 0c
-        HEX 40 01 0c 47 01 4c 4f 01
-        HEX 6c 5d 01 6c 5d 01 3c 72
-        HEX 01 6c 5d 01 6c 5d 01 4c
-        HEX 4f 01 0c 47 01 0c 40 01
-        HEX 0c 40 01 18 00 03 18 00
-        HEX 03 18 0e 03 18 1f 03 58
-        HEX 3b 03 58 3b 03 78 64 03
-        HEX 58 3b 03 58 3b 03 18 1f
-        HEX 03 18 0e 03 18 00 03 18
-        HEX 00 03 30 00 06 30 00 06
-        HEX 30 1c 06 30 3e 06 30 77
-        HEX 06 30 77 06 70 49 07 30
-        HEX 77 06 30 77 06 30 3e 06
-        HEX 30 1c 06 30 00 06 30 00
-        HEX 06 60 00 0c 60 00 0c 60
-        HEX 38 0c 60 7c 0c 60 6e 0d
-        HEX 60 6e 0d 60 13 0f 60 6e
-        HEX 0d 60 6e 0d 60 7c 0c 60
-        HEX 38 0c 60 00 0c 60 00 0c
-        HEX 40 01 18 40 01 18 40 71
-        HEX 18 40 79 19 40 5d 1b 40
-        HEX 5d 1b 40 27 1e 40 5d 1b
-        HEX 40 5d 1b 40 79 19 40 71
-        HEX 18 40 01 18 40 01 18 03
-        HEX 40 01 03 40 01 43 43 01
-        HEX 63 47 01 73 4e 01 7b 5e
-        HEX 01 7b 5e 01 0f 71 01 7b
-        HEX 5e 01 7b 5e 01 73 4e 01
-        HEX 63 47 01 43 43 01 03 40
-        HEX 01 03 40 01 06 00 03 06
-        HEX 00 03 06 07 03 46 0f 03
-        HEX 66 1d 03 76 3d 03 76 3d
-        HEX 03 1e 62 03 76 3d 03 76
-        HEX 3d 03 66 1d 03 46 0f 03
-        HEX 06 07 03 06 00 03 06 00
-        HEX 03 0c 00 06 0c 00 06 0c
-        HEX 0e 06 0c 1f 06 4c 3b 06
-        HEX 6c 7b 06 6c 7b 06 3c 44
-        HEX 07 6c 7b 06 6c 7b 06 4c
-        HEX 3b 06 0c 1f 06 0c 0e 06
-        HEX 0c 00 06 0c 00 06 18 00
-        HEX 0c 18 00 0c 18 1c 0c 18
-        HEX 3e 0c 18 77 0c 58 77 0d
-        HEX 58 77 0d 78 08 0f 58 77
-        HEX 0d 58 77 0d 18 77 0c 18
-        HEX 3e 0c 18 1c 0c 18 00 0c
-        HEX 18 00 0c 30 00 18 30 00
-        HEX 18 30 38 18 30 7c 18 30
-        HEX 6e 19 30 6f 1b 30 6f 1b
-        HEX 70 11 1e 30 6f 1b 30 6f
-        HEX 1b 30 6e 19 30 7c 18 30
-        HEX 38 18 30 00 18 30 00 18
-        HEX 60 00 30 60 00 30 60 70
-        HEX 30 60 78 31 60 5c 33 60
-        HEX 5e 37 60 5e 37 60 23 3c
-        HEX 60 5e 37 60 5e 37 60 5c
-        HEX 33 60 78 31 60 70 30 60
-        HEX 00 30 60 00 30 40 01 60
-        HEX 40 01 60 40 61 61 40 71
-        HEX 63 40 39 67 40 3d 6f 40
-        HEX 3d 6f 40 47 78 40 3d 6f
-        HEX 40 3d 6f 40 39 67 40 71
-        HEX 63 40 61 61 40 01 60 40
-        HEX 01 60 00 00 00 00 00 00
-        HEX 00 00 00 7f 00 00 60 55
-        HEX 03 00 30 51 06 00 18 50
-        HEX 0c 00 0c 10 1a 00 0c 54
-        HEX 18 00 06 14 30 00 0e 51
-        HEX 30 00 06 55 32 00 06 55
-        HEX 30 00 0c 14 18 00 0c 14
-        HEX 18 00 18 15 0c 00 30 15
-        HEX 06 00 60 55 03 00 00 7f
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 33 00 00 00 33
-        HEX 00 00 00 1e 00 00 60 7f
-        HEX 01 00 70 73 03 00 30 00
-        HEX 03 00 30 00 03 00 37 0c
-        HEX 3b 00 3f 0c 3f 00 0c 33
-        HEX 0c 00 0c 33 0c 00 3f 0c
-        HEX 3f 00 37 0c 3b 00 30 00
-        HEX 03 00 30 00 03 00 70 73
-        HEX 03 00 60 7f 01 00 00 1e
-        HEX 00 00 00 33 00 00 00 33
-        HEX 00 00 00 00 00 00 40 31
-        HEX 00 00 40 31 00 00 00 1b
-        HEX 00 00 0c 1b 06 00 18 00
-        HEX 03 00 30 40 01 00 03 0a
-        HEX 18 00 4c 2a 06 00 40 2a
-        HEX 00 00 40 2a 00 00 4c 2a
-        HEX 06 00 03 0a 18 00 30 40
-        HEX 01 00 18 00 03 00 0c 1b
-        HEX 06 00 00 1b 00 00 40 31
-        HEX 00 00 40 31 00 00 00 00
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 12 00 00 00 33
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 40 7f 00 00 60 7f
-        HEX 01 00 70 7f 03 00 78 7f
-        HEX 07 00 78 7f 07 00 60 61
-        HEX 01 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 60 00
-        HEX 00 00 60 01 00 00 70 03
-        HEX 00 00 70 07 00 00 70 7f
-        HEX 07 00 60 7f 3f 00 60 7f
-        HEX 73 01 60 7f 73 01 60 7f
-        HEX 3f 00 60 7f 07 00 70 07
-        HEX 00 00 70 03 00 00 70 01
-        HEX 00 00 60 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 60 61 01 00 78 7f
-        HEX 07 00 78 7f 07 00 70 7f
-        HEX 03 00 60 7f 01 00 40 7f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 33 00 00 00 12
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 06 00 00 00 07 00 00 40
-        HEX 0f 00 00 60 0f 00 60 7f
-        HEX 0f 00 7c 7f 07 00 4f 7f
-        HEX 07 00 4f 7f 07 00 7c 7f
-        HEX 07 00 60 7f 0f 00 00 60
-        HEX 0f 00 00 40 0f 00 00 00
-        HEX 07 00 00 00 06 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 12 00 00 00 33
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 40 7f 00 00 60 7f
-        HEX 01 00 70 7f 03 00 78 7f
-        HEX 07 00 78 7f 07 00 50 20
-        HEX 01 00 70 60 01 00 40 20
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 60 00
-        HEX 00 00 60 01 00 00 74 03
-        HEX 00 00 76 07 00 00 75 7f
-        HEX 07 00 60 7f 3f 00 60 7f
-        HEX 73 01 60 7f 73 01 60 7f
-        HEX 3f 00 60 7f 07 00 75 07
-        HEX 00 00 76 03 00 00 74 01
-        HEX 00 00 60 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 40 20 00 00 70 60
-        HEX 01 00 50 20 01 00 78 7f
-        HEX 07 00 78 7f 07 00 70 7f
-        HEX 03 00 60 7f 01 00 40 7f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 3f 00 00 00 3f
-        HEX 00 00 00 33 00 00 00 12
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 06 00 00 00 07 00 00 40
-        HEX 17 00 00 60 37 00 60 7f
-        HEX 57 00 7c 7f 07 00 4f 7f
-        HEX 07 00 4f 7f 07 00 7c 7f
-        HEX 07 00 60 7f 07 00 00 60
-        HEX 57 00 00 40 37 00 00 00
-        HEX 17 00 00 00 06 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 1e
-        HEX 00 00 00 1e 00 00 0c 1e
-        HEX 0c 00 0c 1e 0c 00 0c 1e
-        HEX 0c 00 0c 3f 0c 00 0c 33
-        HEX 0c 00 5c 6d 0e 00 7c 6d
-        HEX 0f 00 7c 7f 0f 00 6c 7f
-        HEX 0d 00 0c 3f 0c 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 78 7f 01 00 78 7f
-        HEX 01 00 00 07 00 00 40 03
-        HEX 00 00 40 07 00 00 60 1f
-        HEX 00 00 60 79 07 00 70 77
-        HEX 7f 01 70 77 7f 01 70 79
-        HEX 07 00 60 1f 00 00 40 07
-        HEX 00 00 40 03 00 00 00 07
-        HEX 00 00 78 7f 01 00 78 7f
-        HEX 01 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 0c 3f
-        HEX 0c 00 6c 7f 0d 00 7c 7f
-        HEX 0f 00 7c 6d 0f 00 5c 6d
-        HEX 0e 00 0c 33 0c 00 0c 3f
-        HEX 0c 00 0c 1e 0c 00 0c 1e
-        HEX 0c 00 0c 1e 0c 00 00 1e
-        HEX 00 00 00 1e 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 7f 1f 00 00 7f
-        HEX 1f 00 00 60 01 00 00 40
-        HEX 03 00 00 60 03 00 00 78
-        HEX 07 00 60 1f 07 00 7f 6f
-        HEX 07 00 7f 6f 07 00 60 1f
-        HEX 07 00 00 78 07 00 00 60
-        HEX 03 00 00 40 03 00 00 60
-        HEX 01 00 00 7f 1f 00 00 7f
-        HEX 1f 00 00 00 00 00 00 00
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 1e
-        HEX 00 00 00 1e 00 00 0c 1e
-        HEX 0c 00 0c 1e 0c 00 0c 1e
-        HEX 0c 00 0c 3f 0c 00 0c 33
-        HEX 0c 00 5c 6d 0e 00 7c 6d
-        HEX 0f 00 7c 7f 0f 00 6c 7f
-        HEX 0d 00 0c 3f 0c 00 04 0a
-        HEX 04 00 44 20 04 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 7d 7f 01 00 7d 7f
-        HEX 01 00 00 07 00 00 40 03
-        HEX 00 00 40 07 00 00 60 1f
-        HEX 00 00 61 79 07 00 74 77
-        HEX 7f 01 74 77 7f 01 74 79
-        HEX 07 00 61 1f 00 00 40 07
-        HEX 00 00 40 03 00 00 00 07
-        HEX 00 00 7d 7f 01 00 7d 7f
-        HEX 01 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 44 20
-        HEX 04 00 04 0a 04 00 0c 3f
-        HEX 0c 00 6c 7f 0d 00 7c 7f
-        HEX 0f 00 7c 6d 0f 00 5c 6d
-        HEX 0e 00 0c 33 0c 00 0c 3f
-        HEX 0c 00 0c 1e 0c 00 0c 1e
-        HEX 0c 00 0c 1e 0c 00 00 1e
-        HEX 00 00 00 1e 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 7f 5f 00 00 7f
-        HEX 5f 00 00 60 01 00 00 60
-        HEX 03 00 00 60 03 00 00 78
-        HEX 07 00 60 1f 47 00 7f 6f
-        HEX 17 00 7f 6f 17 00 60 1f
-        HEX 17 00 00 78 47 00 00 60
-        HEX 03 00 00 40 03 00 00 60
-        HEX 01 00 00 7f 5f 00 00 7f
-        HEX 5f 00 00 00 00 00 00 00
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 33 00 00 00 3f
-        HEX 00 00 04 3f 08 00 0e 3f
-        HEX 1c 00 4e 7f 1c 00 6e 7f
-        HEX 1d 00 7e 7f 1f 00 6e 7f
-        HEX 1d 00 6e 7f 1d 00 6e 7f
-        HEX 1d 00 7e 7f 1f 00 6e 7f
-        HEX 1d 00 0e 3f 1c 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 60 7f
-        HEX 01 00 60 7f 03 00 60 7f
-        HEX 01 00 00 11 00 00 40 3f
-        HEX 00 00 40 7f 00 00 60 7f
-        HEX 0f 00 60 7f 3f 00 60 7f
-        HEX 77 01 60 7f 77 01 60 7f
-        HEX 3f 00 60 7f 0f 00 40 7f
-        HEX 00 00 40 3f 00 00 00 11
-        HEX 00 00 60 7f 01 00 60 7f
-        HEX 03 00 60 7f 01 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 0e 3f
-        HEX 1c 00 6e 7f 1d 00 7e 7f
-        HEX 1f 00 6e 7f 1d 00 6e 7f
-        HEX 1d 00 6e 7f 1d 00 7e 7f
-        HEX 1f 00 6e 7f 1d 00 4e 7f
-        HEX 1c 00 0e 3f 1c 00 04 3f
-        HEX 08 00 00 3f 00 00 00 33
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 00 00 00 00 7f
-        HEX 07 00 40 7f 07 00 00 7f
-        HEX 07 00 00 08 01 00 00 7c
-        HEX 03 00 00 7e 03 00 70 7f
-        HEX 07 00 7c 7f 07 00 6f 7f
-        HEX 07 00 6f 7f 07 00 7c 7f
-        HEX 07 00 70 7f 07 00 00 7e
-        HEX 03 00 00 7c 03 00 00 08
-        HEX 01 00 00 7f 07 00 40 7f
-        HEX 07 00 00 7f 07 00 00 00
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 33 00 00 00 3f
-        HEX 00 00 04 3f 08 00 0e 3f
-        HEX 1c 00 4e 7f 1c 00 6e 7f
-        HEX 1d 00 7e 7f 1f 00 6e 7f
-        HEX 1d 00 6e 7f 1d 00 6e 7f
-        HEX 1d 00 7e 7f 1f 00 6e 7f
-        HEX 1d 00 0e 3f 1c 00 00 0a
-        HEX 00 00 40 2a 00 00 40 2a
-        HEX 00 00 00 00 00 00 60 7f
-        HEX 01 00 60 7f 03 00 60 7f
-        HEX 01 00 00 11 00 00 40 3f
-        HEX 00 00 40 7f 00 00 61 7f
-        HEX 0f 00 71 7f 3f 00 75 7f
-        HEX 77 01 75 7f 77 01 75 7f
-        HEX 3f 00 71 7f 0f 00 41 7f
-        HEX 00 00 40 3f 00 00 00 11
-        HEX 00 00 60 7f 01 00 60 7f
-        HEX 03 00 60 7f 01 00 00 00
-        HEX 00 00 40 2a 00 00 40 2a
-        HEX 00 00 00 0a 00 00 0e 3f
-        HEX 1c 00 6e 7f 1d 00 7e 7f
-        HEX 1f 00 6e 7f 1d 00 6e 7f
-        HEX 1d 00 6e 7f 1d 00 7e 7f
-        HEX 1f 00 6e 7f 1d 00 4e 7f
-        HEX 1c 00 0e 3f 1c 00 04 3f
-        HEX 08 00 00 3f 00 00 00 33
-        HEX 00 00 00 1e 00 00 00 1e
-        HEX 00 00 00 0c 00 00 00 0c
-        HEX 00 00 00 00 00 00 00 7f
-        HEX 07 00 40 7f 07 00 00 7f
-        HEX 07 00 00 08 01 00 00 7c
-        HEX 03 00 00 7e 03 00 70 7f
-        HEX 47 00 7c 7f 47 00 6f 7f
-        HEX 57 00 6f 7f 57 00 7c 7f
-        HEX 57 00 70 7f 47 00 00 7e
-        HEX 43 00 00 7c 03 00 00 08
-        HEX 01 00 00 7f 07 00 40 7f
-        HEX 07 00 00 7f 07 00 00 00
-        HEX 00 00
-@ %def SPA_BLOB
+OVERLAY_ENTRY
+        SUBROUTINE
+        ; Overlay entry: lift the ship off and run the space loop.
+        ;
+        ; Behavior:
+        ;   Seed the RNG from the saved space position, point DIR_STR_PTR at
+        ;   the flight-command names (Thrust/Retro/Clockwise/Counter), zero the
+        ;   BSS above the file, run the "10..9..8.." liftoff countdown (any key
+        ;   aborts), draw the Shld|Fuel status, seed the 42-star field and the
+        ;   enemy grid, place the actors for this sector, then fall into the
+        ;   main loop.
+        ;
+        ; Clobbers: A, X, Y
+        LDA PLR_SPACE_X
+        STA ZP_RNG
+        LDA PLR_SPACE_Y
+        STA ZP_RNG+1
+        LDA #$19
+        STA DIR_STR_PTR
+        LDA #$92
+        STA DIR_STR_PTR+1
+        LDA #$00
+        LDY #$F2
+.L896E
+        STA BSS_TOP,Y
+        DEY
+        BNE .L896E
+        LDA #$00
+        STA ZP_PAGE_XOR
+        JSR PUTCH_NL_COND
+        LDA #$0A
+        STA ZP_T0
+        LDA #$00
+        STA NUM_PAD
+LIFTOFF_COUNT
+        LDA ZP_T0
+        JSR PRINT_NUM8
+        DEC ZP_T0
+        BEQ .L89A7
+        JSR KEY_PENDING
+        BNE .L89A7
+        JSR MSG_PRINT
+        DC.B "..",0
+        LDA #$06
+        STA ZP_T1
+.L899C
+        LDA #$00
+        JSR VDELAY
+        DEC ZP_T1
+        BNE .L899C
+        BEQ LIFTOFF_COUNT
+.L89A7
+        JSR KBD_CLEAR
+        JSR VIEW_WIPE
+        JSR WIN_SAVE
+        JSR WIN_STATS
+        JSR MSG_PRINT
+        DC.B "Shld|Fuel",0
+        JSR WIN_RESTORE
+        JSR WIN_STATS_DRAW
+        LDY #$29
+.L89C8
+        JSR RND
+        STA STAR_X,Y
+        JSR RND
+        LSR
+        STA STAR_Y,Y
+        DEY
+        BPL .L89C8
+        LDA #$05
+        STA ZP_X
+        STA ZP_Y
+        LDA #$08
+        STA ZP_CY
+.L89E2
+        LDA #$08
+        STA ZP_CX
+.L89E6
+        JSR RND_SECTOR
+        JSR CELL_DECODE
+        LDX RND_MOD
+        LDA ENEMY_INIT_LO,X
+        STA ENEMY_GRID_LO,Y
+        LDA ENEMY_INIT_HI,X
+        STA ENEMY_GRID_HI,Y
+        DEC ZP_CX
+        LDA ZP_CX
+        CMP #$02
+        BCS .L89E6
+        DEC ZP_CY
+        LDA ZP_CY
+        CMP #$02
+        BCS .L89E2
+        LDA #$03
+        STA ZP_CX
+        STA ZP_CY
+        JSR CELL_DECODE
+        LDA #$00
+        STA ENEMY_GRID_LO,Y
+        LDA #$C0
+        STA ENEMY_GRID_HI,Y
+        LDA ZP_X
+        STA ZP_CX
+        LDA ZP_Y
+        STA ZP_CY
+        JSR CELL_DECODE
+        LDA #$15
+        STA ENEMY_GRID_LO,Y
+        LDA #$05
+        STA ENEMY_GRID_HI,Y
+        JSR MSG_PRINT
+        DC.B "~Thou hast lifted off!",0
+        JSR PLACE_ACTORS
+        JSR DRAW_ALL_ACTORS
+@
+
+<<spa main loop>>=
+        ORG $8A53
+SPA_LOOP
+        SUBROUTINE
+        ; The space main loop: status, input, dispatch, physics.
+        ;
+        ; Behavior:
+        ;   Refresh the status line, poll the keyboard (KEY_GET), translate the
+        ;   key to a command (GET_COMMAND).  A flight command (index < 8) is
+        ;   gated on fuel and dispatched by self-modifying its handler address
+        ;   (from DISPATCH_TBL) into the JMP at DISP_OP.  Other commands jump
+        ;   straight to their handler.  Then PHYSICS integrates motion.
+        ;
+        ; Clobbers: A, X, Y
+        LDA MON_CH
+        CMP #$02
+        BCC .L8A5F
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+.L8A5F
+        JSR KEY_GET
+        BEQ PHYSICS
+        JSR SPEND_TURN
+        JSR GET_COMMAND
+        BCS PHYSICS
+        CPX #$08
+        BCS DISPATCH_PATCH
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BNE DISPATCH_PATCH
+        JSR MSG_PRINT
+        DC.B "~No fuel!!~Wilt thou drift forever?!?",0
+        JMP PHYSICS
+DISPATCH_PATCH
+        LDA DISPATCH_TBL,X
+        STA DISP_OP
+        LDA DISPATCH_TBL+1,X
+        STA DISP_OP+1
+DISP_OP = *+1
+        JMP SPA_LOOP
+@
+
+<<spa physics>>=
+        ORG $8AB3
+PHYSICS
+        SUBROUTINE
+        ; One physics step: move the ship, the base, and the enemy.
+        ;
+        ; Behavior:
+        ;   Skip while docked.  Add the velocity vector (ZP_VX,ZP_VY) to the
+        ;   ship position (SHIP_X,SHIP_Y) on a torus that wraps at $0E/$F4,
+        ;   advance the rotation animation timer, redraw, then test the ship
+        ;   against the docking base and the enemy craft.  A position match
+        ;   with the base means docking (DOCK); with the enemy, a collision
+        ;   (COLLIDE).  Falls through to the star-proximity hazard.
+        ;
+        ; Clobbers: A, X, Y
+        LDA IN_DOCK
+        BNE SPA_LOOP
+PHYSICS_MOVE
+        CLC
+        LDA REL_X
+        ADC ZP_VX
+        STA SHIP_X
+        CLC
+        LDA REL_Y
+        ADC ZP_VY
+        AND #$7F
+        STA SHIP_Y
+        LDA SHIP_X
+        CMP #$0E
+        BCS .L8ADA
+        LDA #$F4
+        STA SHIP_X
+        BNE .L8AE3
+.L8ADA
+        CMP #$F5
+        BCC .L8AE3
+        LDA #$0E
+        STA SHIP_X
+.L8AE3
+        DEC DRAW_FLAG
+        JSR DRAW_SHIP_NAV
+        LDA SHIP_X
+        STA ZP_VX
+        LDA SHIP_Y
+        STA ZP_VY
+        LDA HEAD_NEW
+        STA HEAD_CUR
+        LDA ROT_TIMER
+        BEQ .L8B03
+        DEC ROT_TIMER
+        LDA #$04
+.L8B03
+        STA ROT_STEP
+        INC DRAW_FLAG
+        JSR DRAW_SHIP_NAV
+        LDA REL_X
+        BNE .L8B31
+        LDX HEAD_CUR
+        LDA REL_Y
+        CMP BASE_AXIS,X
+        BNE .L8B56
+        LDA ZP_VX
+        CMP BASE_X
+        BNE .L8B56
+        CLC
+        LDA BASE_Y
+        ADC BASE_RADIUS,X
+        CMP ZP_VY
+        BNE .L8B56
+        JMP DOCK
+.L8B31
+        LDA REL_Y
+        BNE .L8B56
+        LDX HEAD_CUR
+        LDA REL_X
+        CMP BASE_AXIS,X
+        BNE .L8B56
+        LDA ZP_VY
+        CMP BASE_Y
+        BNE .L8B56
+        CLC
+        LDA BASE_X
+        ADC BASE_RADIUS,X
+        CMP ZP_VX
+        BNE .L8B56
+        JMP DOCK
+.L8B56
+        LDA ZP_BLIT_HIT
+        BNE STAR_HAZARD
+        JMP SPA_LOOP
+@
+
+<<spa star hazard>>=
+        ORG $8B5D
+STAR_HAZARD
+        SUBROUTINE
+        ; Heat damage from flying too near the central star.
+        ;
+        ; Behavior:
+        ;   Measure how close the ship is to the star.  Within the lethal
+        ;   radius the ship melts (RESPAWN); within the warning band the shield
+        ;   drains (SFX); otherwise the loop continues.
+        ;
+        ; Clobbers: A, X, Y
+        LDA ZP_VX
+        STA ACTOR_X+9
+        LDA ZP_VY
+        STA ACTOR_Y+9
+        LDA #$09
+        STA DIST_A
+        LDA #$08
+        STA DIST_B
+.L8B71
+        JSR ACTOR_DIST
+        CMP #$15
+        BCC .L8B85
+        DEC DIST_B
+        BPL .L8B71
+        LDA #$0C
+        JSR SFX_PLAY
+        JMP SPA_LOOP
+.L8B85
+        LDA DIST_B
+        BNE .L8BAE
+        JSR MSG_PRINT
+        DC.B "Thy ship melts near the star!",0
+        JMP RESPAWN
+.L8BAE
+        CMP #$04
+        BCS COLLIDE
+        JMP LAND
+@
+
+<<spa collide>>=
+        ORG $8BB5
+COLLIDE
+        SUBROUTINE
+        ; Ran into an actor: bounce off and take shield damage.
+        ;
+        ; Behavior:
+        ;   Print "Crunch!", negate the velocity (bounce), subtract a shield hit
+        ;   scaled by the impact, and RESPAWN if the shield is exhausted.
+        ;
+        ; Clobbers: A, X, Y
+        LDA MON_CH
+        CMP #$02
+        BCC .L8BBE
+        JSR PUTCH_NL_COL1
+.L8BBE
+        JSR MSG_PRINT
+        DC.B "Crunch!",0
+        LDA #$0E
+        JSR SFX_PLAY
+        LDA #$0E
+        JSR SFX_PLAY
+        LDA #$00
+        SEC
+        SBC REL_X
+        STA REL_X
+        LDA #$00
+        SEC
+        SBC REL_Y
+        STA REL_Y
+        LDA PLR_SHIELD
+        STA ZP_M0
+        LDA PLR_SHIELD+1
+        STA ZP_M1
+        LSR ZP_M1
+        ROR ZP_M0
+        LSR ZP_M1
+        ROR ZP_M0
+        CLC
+        LDA #$05
+        ADC ZP_M0
+        STA ZP_M0
+        LDA #$00
+        ADC ZP_M1
+        STA ZP_M1
+        SEC
+        LDA PLR_SHIELD
+        SBC ZP_M0
+        STA PLR_SHIELD
+        LDA PLR_SHIELD+1
+        SBC ZP_M1
+        STA PLR_SHIELD+1
+        PHP
+        BCS .L8C20
+        LDA #$00
+        STA PLR_SHIELD
+        STA PLR_SHIELD+1
+.L8C20
+        JSR WIN_STATS_DRAW
+        PLP
+        BCS .L8C44
+        JSR MSG_PRINT
+        DC.B "~Thy shield is drained!",0
+        JMP RESPAWN
+.L8C44
+        JMP SPA_LOOP
+@
+
+<<spa base geom>>=
+        ORG $8C47
+BASE_RADIUS
+        HEX 12ecee12
+BASE_AXIS
+        HEX ff0201fe
+@
+
+<<spa dock>>=
+        ORG $8C4F
+DOCK
+        SUBROUTINE
+        ; Docked at a base: pay the fee, refuel, open the bay.
+        ;
+        ; Behavior:
+        ;   Freeze the ship (IN_DOCK), require the 500p docking fee unless the
+        ;   coin purse already covers it, then -- if the player is heat-shielded
+        ;   (a shuttle) -- open the spacedoors and offer to stow/swap ships.
+        ;
+        ; Clobbers: A, X, Y
+        JSR MSG_PRINT
+        DC.B "Docked! Welcome to Base!",0
+        LDA #$00
+        STA REL_X
+        STA REL_Y
+        LDA #$01
+        STA IN_DOCK
+        DEC DRAW_FLAG
+        JSR DRAW_SHIP_NAV
+        INC DRAW_FLAG
+        LDA #$00
+        STA ROT_TIMER
+        STA ROT_STEP
+        JSR DRAW_SHIP_NAV
+        LDA PLR_COIN+1
+        CMP #$01
+        BNE .L8C98
+        LDA PLR_COIN
+        CMP #$F4
+.L8C98
+        BCS .L8CED
+        JSR MSG_PRINT
+        DC.B "~Sorry, but thou canst not~refuel thy ship without~the 500p Docking Fee. ",0
+        JSR KEY_WAIT
+        JMP SPA_LOOP
+.L8CED
+        LDA READY_ARMOUR
+        CMP #$05
+        BEQ STOW_SHIP
+        CMP #$04
+        BEQ STOW_SHIP
+        JSR MSG_PRINT
+        DC.B "~The spacedoors open, exposing~thee to a complete vacuum!",0
+        JMP RESPAWN
+@
+
+<<spa stow ship>>=
+        ORG $8D38
+STOW_SHIP
+        SUBROUTINE
+        ; Store the current craft into a free berth at the base.
+        ;
+        ; Behavior:
+        ;   Record the craft's shape, heading and position into one of the four
+        ;   berth slots (top/bottom/left/right of the base), refund nothing, and
+        ;   fall into CHOOSE_SHIP to pick what to fly next.
+        ;
+        ; Clobbers: A, X, Y
+        CLC
+        LDA HEAD_CUR
+        ADC #$05
+        TAX
+        LDA ZP_VX
+        STA ACTOR_X,X
+        LDA ZP_VY
+        STA ACTOR_Y,X
+        LDA HEAD_CUR
+        STA ACTOR_HEAD,X
+        SEC
+        LDA PLR_COIN
+        SBC #$F4
+        STA PLR_COIN
+        LDA PLR_COIN+1
+        SBC #$01
+        STA PLR_COIN+1
+        LDA ZP_X
+        STA ZP_CX
+        LDA ZP_Y
+        STA ZP_CY
+        LDY READY_ARMOUR+1
+        LDA XPORT_FRAME,Y
+        STA ACTOR_SHAPE,X
+        LDA #$40
+        STA ZP_M0
+        LDA #$00
+        STA ZP_M1
+        TYA
+        SEC
+        SBC #$06
+        TAX
+.L8D7E
+        DEX
+        BMI .L8D8C
+        ASL ZP_M0
+        ROL ZP_M1
+        ASL ZP_M0
+        ROL ZP_M1
+        JMP .L8D7E
+.L8D8C
+        JSR CELL_DECODE
+        LDA ENEMY_GRID_LO,Y
+        ORA ZP_M0
+        STA ENEMY_GRID_LO,Y
+        LDA ENEMY_GRID_HI,Y
+        ORA ZP_M1
+        STA ENEMY_GRID_HI,Y
+        JSR CELL_DECODE
+@
+
+<<spa choose ship>>=
+        ORG $8DA2
+CHOOSE_SHIP
+        SUBROUTINE
+        ; "Choose thy ship": pick a berthed craft to board.
+        ;
+        ; Behavior:
+        ;   Read a direction key; if a craft is berthed in that slot, board it
+        ;   (BOARD_SHIP), else complain.  The four ACTOR_SHAPE+4..+8 flags mark
+        ;   which berths are occupied.
+        ;
+        ; Clobbers: A, X, Y
+        JSR MSG_PRINT
+        DC.B "~Choose thy ship: ",0
+.L8DB8
+        JSR KEY_GET
+        BEQ .L8DB8
+        JSR KEY_ALIAS
+        CMP #$0B
+        BNE .L8DC7
+        JMP .L8DE2
+.L8DC7
+        CMP #$0A
+        BNE .L8DCE
+        JMP .L8E0D
+.L8DCE
+        CMP #$15
+        BNE .L8DD5
+        JMP .L8E38
+.L8DD5
+        CMP #$08
+        BNE .L8DDC
+        JMP .L8E62
+.L8DDC
+        JSR QUERY_MARK
+        JMP CHOOSE_SHIP
+.L8DE2
+        LDA ACTOR_SHAPE+7
+        BNE .L8DEA
+        JMP .L8E8B
+.L8DEA
+        JSR MSG_PRINT
+        DC.B "~Thou art in the top ship.",0
+        LDX #$07
+        JMP BOARD_SHIP
+.L8E0D
+        LDA ACTOR_SHAPE+5
+        BEQ .L8E8B
+        JSR MSG_PRINT
+        DC.B "~Thou art in the bottom ship.",0
+        LDX #$05
+        JMP BOARD_SHIP
+.L8E38
+        LDA ACTOR_SHAPE+8
+        BEQ .L8E8B
+        JSR MSG_PRINT
+        DC.B "~Thou art in the right ship.",0
+        LDX #$08
+        JMP BOARD_SHIP
+.L8E62
+        LDA ACTOR_SHAPE+6
+        BEQ .L8E8B
+        JSR MSG_PRINT
+        DC.B "~Thou art in the left ship.",0
+        LDX #$06
+        JMP BOARD_SHIP
+.L8E8B
+        JSR MSG_PRINT
+        DC.B "~That port is not available.",0
+        JMP CHOOSE_SHIP
+@
+
+<<spa board ship>>=
+        ORG $8EAE
+BOARD_SHIP
+        SUBROUTINE
+        ; Board the chosen craft: load its fuel, shield and heading.
+        ;
+        ; Behavior:
+        ;   Map the craft's shape to its CRAFT_TYPE, set READY_TRANSPORT, copy
+        ;   the berth's heading and position into the live ship state, clear the
+        ;   berth, and load this craft's starting fuel/shield from SHIP_FUEL and
+        ;   SHIP_SHIELD.
+        ;
+        ; Clobbers: A, X, Y
+        LDA ACTOR_SHAPE,X
+        LDY #$02
+.L8EB3
+        CMP CRAFT_TYPE,Y
+        BEQ .L8EBC
+        DEY
+        BPL .L8EB3
+        INY
+.L8EBC
+        TYA
+        PHA
+        CLC
+        ADC #$06
+        STA READY_ARMOUR+1
+        LDA ACTOR_X,X
+        STA ZP_VX
+        LDA ACTOR_Y,X
+        STA ZP_VY
+        LDA ACTOR_HEAD,X
+        STA HEAD_CUR
+        STA HEAD_NEW
+        LDA #$00
+        STA ACTOR_SHAPE,X
+        STA ACTOR_HEAD,X
+        LDA #$FF
+        STA ACTOR_X,X
+        STA ACTOR_Y,X
+        LDA #$BF
+        STA ZP_M0
+        LDA #$FF
+        STA ZP_M1
+        LDA ZP_X
+        STA ZP_CX
+        LDA ZP_Y
+        STA ZP_CY
+        PLA
+        PHA
+        TAX
+.L8EFA
+        DEX
+        BMI .L8F0A
+        SEC
+        ROL ZP_M0
+        ROL ZP_M1
+        SEC
+        ROL ZP_M0
+        ROL ZP_M1
+        JMP .L8EFA
+.L8F0A
+        JSR CELL_DECODE
+        LDA ENEMY_GRID_LO,Y
+        AND ZP_M0
+        STA ENEMY_GRID_LO,Y
+        LDA ENEMY_GRID_HI,Y
+        AND ZP_M1
+        STA ENEMY_GRID_HI,Y
+        JSR CELL_DECODE
+        PLA
+        TAX
+        LDA SHIP_FUEL,X
+        STA PLR_FUEL
+        LDA SHIP_FUEL+3,X
+        STA PLR_FUEL+1
+        LDA SHIP_SHIELD,X
+        STA PLR_SHIELD
+        LDA SHIP_SHIELD+3,X
+        STA PLR_SHIELD+1
+        JSR WIN_STATS_DRAW
+        JMP SPA_LOOP
+@
+
+<<spa ship tables>>=
+        ORG $8F40
+SHIP_FUEL
+        HEX e8c488030913
+SHIP_SHIELD
+        HEX e888e8031303
+@
+
+<<spa land>>=
+        ORG $8F4C
+LAND
+        SUBROUTINE
+        ; Land on a planet (shuttles only) and exit to the overworld.
+        ;
+        ; Behavior:
+        ;   Only the space shuttle is heat-shielded for re-entry; any other
+        ;   craft burns up (RESPAWN).  A shuttle lands safely and EXIT_TO_OUT
+        ;   returns the player to the overworld.
+        ;
+        ; Clobbers: A, X, Y
+        LDA READY_ARMOUR+1
+        CMP #$06
+        BEQ .L8F8D
+        JSR MSG_PRINT
+        DC.B "Only space shuttles are heat~shielded for landings!",0
+        JMP RESPAWN
+.L8F8D
+        JSR MSG_PRINT
+        DC.B "Thou hast landed safely! ",0
+        JMP EXIT_TO_OUT
+@
+
+<<spa thrust>>=
+        ORG $8FAD
+CMD_THRUST
+        SUBROUTINE
+        ; Thrust: accelerate the ship along its heading.
+        ;
+        ; Behavior:
+        ;   Add the heading's THRUST_DX/THRUST_DY delta to the velocity vector,
+        ;   clamp each component (CLAMP_VEL), play the engine sound, burn fuel,
+        ;   and re-enter PHYSICS.
+        ;
+        ; Clobbers: A, X, Y
+        LDA IN_DOCK
+        BEQ .L8FBA
+        LDA #$00
+        JSR SFX_PLAY
+        JMP COLLIDE
+.L8FBA
+        LDX HEAD_CUR
+        CLC
+        LDA REL_X
+        ADC THRUST_DX,X
+        JSR CLAMP_VEL
+        STA REL_X
+        CLC
+        LDA REL_Y
+        ADC THRUST_DY,X
+        JSR CLAMP_VEL
+        STA REL_Y
+        LDA #$00
+        JSR SFX_PLAY
+        LDA #$08
+        ADC ROT_TIMER
+        AND #$7F
+        STA ROT_TIMER
+        LDA #$05
+        JSR FUEL_BURN
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        JMP PHYSICS
+@
+
+<<spa thrust tables>>=
+        ORG $8FF4
+THRUST_DX
+        HEX 000200fe
+THRUST_DY
+        HEX ff000100
+@
+
+<<spa clamp vel>>=
+        ORG $8FFC
+CLAMP_VEL
+        SUBROUTINE
+        ; Clamp a signed velocity/position component to its bounds.
+        ;
+        ; Behavior:
+        ;   Limit A to the range [+8 .. -8] (i.e. $08..$F8), holding the value
+        ;   at the rail when it would overflow.  Used for both velocity and the
+        ;   torus-wrapped projection.
+        ;
+        ; Outputs: A = clamped value
+        ; Clobbers: A
+        CMP #$80
+        BCS .L9007
+        CMP #$09
+        BCC .L900D
+        LDA #$08
+        RTS
+.L9007
+        CMP #$F8
+        BCS .L900D
+        LDA #$F8
+.L900D
+        RTS
+@
+
+<<spa retro>>=
+        ORG $900E
+CMD_RETRO
+        SUBROUTINE
+        ; Retro: decelerate (thrust opposite the heading).
+        ;
+        ; Behavior:
+        ;   Like CMD_THRUST but with the RETRO_DX/RETRO_DY deltas, and it also
+        ;   clears the rotation timer so the ship faces forward.
+        ;
+        ; Clobbers: A, X, Y
+        LDX HEAD_CUR
+        CLC
+        LDA REL_X
+        ADC RETRO_DX,X
+        JSR CLAMP_VEL
+        STA REL_X
+        CLC
+        LDA REL_Y
+        ADC RETRO_DY,X
+        JSR CLAMP_VEL
+        STA REL_Y
+        LDA #$00
+        JSR SFX_PLAY
+        LDA #$00
+        STA ROT_TIMER
+        STA IN_DOCK
+        LDA #$05
+        JSR FUEL_BURN
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        JMP PHYSICS
+@
+
+<<spa retro tables>>=
+        ORG $9046
+RETRO_DX
+        HEX 00fe0002
+RETRO_DY
+        HEX 0100ff00
+@
+
+<<spa rotate>>=
+        ORG $904E
+CMD_CLOCKWISE
+        SUBROUTINE
+        ; Clockwise / Counter-Clockwise: turn the ship 90 degrees.
+        ;
+        ; Behavior:
+        ;   Increment (clockwise) or decrement (counter) the heading mod 4, kick
+        ;   the rotation animation, and re-enter the physics at PHYSICS_MOVE.
+        ;   CMD_COUNTER follows immediately.
+        ;
+        ; Clobbers: A, X, Y
+        LDA IN_DOCK
+        BEQ .L9056
+        JMP COLLIDE
+.L9056
+        LDA HEAD_CUR
+        CLC
+        ADC #$01
+        AND #$03
+        STA HEAD_NEW
+        LDA #$00
+        STA ROT_TIMER
+        LDA #$02
+        JSR FUEL_BURN
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        JMP PHYSICS_MOVE
+CMD_COUNTER
+        LDA IN_DOCK
+        BEQ .L907C
+        JMP COLLIDE
+.L907C
+        LDX HEAD_CUR
+        DEX
+        BPL .L9084
+        LDX #$03
+.L9084
+        STX HEAD_NEW
+        LDA #$00
+        STA ROT_TIMER
+        LDA #$02
+        JSR FUEL_BURN
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        JMP PHYSICS_MOVE
+@
+
+<<spa hyper blocked>>=
+        ORG $909A
+CMD_HYPER_BLOCKED
+        SUBROUTINE
+        ; HyperJump is rejected in overhead-nav view.
+        ;
+        ; Behavior:
+        ;   Beep and explain that HyperJump only works in front view, then
+        ;   return to the loop.
+        ;
+        ; Clobbers: A
+        JSR QUERY_MARK
+        JSR MSG_PRINT
+        DC.B "~HyperJump can only be~used in front view mode.|",$0E,0
+        JMP PHYSICS
+@
+
+<<spa scan>>=
+        ORG $90D5
+CMD_SCAN
+        SUBROUTINE
+        ; Sector-Scan command: draw the radar grid.
+        ;
+        ; Behavior:
+        ;   Call SECTOR_SCAN to paint an 8x8 map of the sector's cells with the
+        ;   ship blinking at its location, then redraw and return.
+        ;
+        ; Clobbers: A, X, Y
+        JSR SECTOR_SCAN
+        JSR DRAW_ALL_ACTORS
+        JMP SPA_LOOP
+SECTOR_SCAN
+        JSR POPUP_FRAME
+        JSR MSG_PRINT
+        DC.B "Sector Scan:|",0
+        LDA #$07
+        JSR COLOR_SET
+        LDA #$5F
+        STA ZP_PX
+        LDA #$23
+        STA ZP_PY
+        LDX #$9A
+        LDY ZP_PY
+        JSR LINE_TO
+        LDX ZP_PX
+        LDY #$64
+        JSR LINE_TO
+        LDX #$5E
+        LDY ZP_PY
+        JSR LINE_TO
+        LDX ZP_PX
+        LDY #$23
+        JSR LINE_TO
+        LDA #$02
+        STA ZP_CY
+.L911F
+        LDA #$02
+        STA ZP_CX
+        JSR PUTCH_NL_COL1
+        LDA #$0C
+        STA MON_CH
+.L912A
+        JSR CELL_DECODE
+        LDX #$03
+        LDA CELL_ENEMY
+        BNE .L9141
+        DEX
+        LDA CELL_SW
+        BNE .L9141
+        DEX
+        LDA CELL_NW
+        BNE .L9141
+        DEX
+.L9141
+        LDA SCAN_CELLGLYPH,X
+        LDX ZP_X
+        CPX ZP_CX
+        BNE .L915D
+        LDY ZP_Y
+        CPY ZP_CY
+        BNE .L915D
+        STA SCAN_GLYPH
+        LDX MON_CH
+        STX SCAN_COL
+        LDY MON_CV
+        STY SCAN_ROW
+.L915D
+        JSR CHAR_OUT
+        INC ZP_CX
+        LDA ZP_CX
+        CMP #$09
+        BCC .L912A
+        INC ZP_CY
+        LDA ZP_CY
+        CMP #$09
+        BCC .L911F
+        LDA SCAN_ROW
+        STA MON_CV
+.L9175
+        LDA SCAN_COL
+        STA MON_CH
+        LDA #$FF
+        JSR VDELAY
+        JSR KEY_PENDING
+        BNE .L91A1
+        LDA #$20
+        JSR CHAR_OUT
+        LDA SCAN_COL
+        STA MON_CH
+        LDA #$FF
+        JSR VDELAY
+        JSR KEY_PENDING
+        BNE .L91A1
+        LDA SCAN_GLYPH
+        JSR CHAR_OUT
+        JMP .L9175
+.L91A1
+        JSR WIN_RESTORE
+        JSR VIEW_WIPE
+        JSR KEY_WAIT
+        LDA ZP_X
+        STA ZP_CX
+        LDA ZP_Y
+        STA ZP_CY
+        JSR CELL_DECODE
+        RTS
+@
+
+<<spa scan data>>=
+        ORG $91B6
+SCAN_GLYPH
+        HEX 00
+SCAN_COL
+        HEX 00
+SCAN_ROW
+        HEX 00
+SCAN_CELLGLYPH
+        HEX 3c2a5d5b205b884c
+        HEX b38a20a28520019a
+        HEX 20899da90285244c
+        HEX 538a
+@
+
+<<spa dispatch table>>=
+        ORG $91D3
+DISPATCH_TBL
+        HEX ad8f0e904e907490
+        HEX 0792139207920792
+        HEX 0792079207920792
+        HEX 07929a90d5900792
+        HEX bd91079207920792
+        HEX 0792079207929892
+        HEX 0792c391
+@
+
+<<spa trampolines>>=
+        ORG $9207
+        JSR QUERY_MARK
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        JMP PHYSICS
+        JSR SOUND_TOGGLE
+        JMP PHYSICS
+@
+
+<<spa dir strings>>=
+        ORG $9219
+DIR_STR_FLIGHT
+        HEX 5468727573f45265
+        HEX 7472ef436c6f636b
+        HEX 776973e5436f756e
+        HEX 7465722d436c6f63
+        HEX 6b776973e5
+HEAD_NEW
+        HEX 03
+HEAD_CUR
+        HEX 03
+IN_DOCK
+        HEX 00
+CELL_LO
+        HEX 00
+CELL_HI
+        HEX 00
+@
+
+<<spa physics bss>>=
+        ORG $9243
+ENEMY_INIT_LO
+        HEX 5100110000010100
+        HEX 0000
+ENEMY_INIT_HI
+        HEX 00004500000000c0
+        HEX 0080
+ACTOR_SHAPE
+        HEX 0000000000000000
+        HEX 0000
+ACTOR_HEAD
+        HEX 0000000000000000
+        HEX 0000
+ACTOR_X
+        HEX 00000000
+BASE_X
+        HEX 000000000000
+ACTOR_Y
+        HEX 00000000
+BASE_Y
+        HEX 000000000000
+CELL_NW
+        HEX 00
+CELL_NE
+        HEX 00
+CELL_SW
+        HEX 0000000000
+CELL_ENEMY
+        HEX 00
+RND_MOD
+        HEX 00
+SHIP_X
+        HEX 00
+SHIP_Y
+        HEX 00
+REL_X
+        HEX 00
+REL_Y
+        HEX 00
+DRAW_FLAG
+        HEX 00
+ROT_STEP
+        HEX 00
+ROT_TIMER
+        HEX 00
+SCALE_TBL
+        HEX 8070605040302010
+        HEX 00
+@
+
+<<spa view>>=
+        ORG $9298
+        LDA IN_DOCK
+        BEQ .L92D5
+        JSR QUERY_MARK
+        JSR MSG_PRINT
+        DC.B "~View can't be changed~whilst in space dock.|",$0E,0
+        JMP PHYSICS
+.L92D5
+        LDA REL_X
+        ORA REL_Y
+        BNE .L9318
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BNE .L92F1
+        JSR MSG_NOFUEL
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        JMP PHYSICS
+.L92F1
+        LDX HEAD_CUR
+        CLC
+        LDA REL_X
+        ADC THRUST_DX,X
+        JSR CLAMP_VEL
+        STA REL_X
+        CLC
+        LDA REL_Y
+        ADC THRUST_DY,X
+        JSR CLAMP_VEL
+        STA REL_Y
+        LDA #$00
+        JSR SFX_PLAY
+        LDA #$05
+        JSR FUEL_BURN
+.L9318
+        LDA REL_Y
+        BPL .L9323
+        LDA #$00
+        SEC
+        SBC REL_Y
+.L9323
+        STA ZP_T0
+        LDA REL_X
+        BPL .L9330
+        LDA #$00
+        SEC
+        SBC REL_X
+.L9330
+        CMP ZP_T0
+        BCS .L9336
+        LDA ZP_T0
+.L9336
+        TAX
+        LDA ROT_TIMER,X
+        STA SPEED
+        STA SCALE_TBL+8
+        JSR WIN_SAVE
+        JSR VIEW_WIPE
+        JSR WIN_RESTORE
+        LDX #$02
+        STX AI_AGGRO
+        LDA #$DE
+        STA DIR_STR_PTR
+        LDA #$93
+        STA DIR_STR_PTR+1
+        JSR PAN_RESET
+.L935B
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+.L9361
+        JSR IDLE_POLL
+        BEQ .L9361
+        JSR SPEND_TURN
+        TAX
+        SEC
+        SBC #$31
+        BCC .L93B5
+        CMP #$08
+        BCS .L93B5
+        PHA
+        JSR MSG_PRINT
+        DC.B "Speed ",0
+        PLA
+        PHA
+        CLC
+        ADC #$01
+        JSR PRINT_DIGIT
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        TAX
+        PLA
+        CPX #$00
+        BNE .L9398
+        JSR MSG_NOFUEL
+        JMP .L935B
+.L9398
+        TAX
+        LDA SCALE_TBL,X
+        TAY
+        SEC
+        SBC SPEED
+        STY SPEED
+        BCS .L93AD
+        STA ZP_T0
+        LDA #$00
+        SEC
+        SBC ZP_T0
+.L93AD
+        LSR
+        LSR
+        JSR FUEL_BURN
+        JMP .L935B
+.L93B5
+        TXA
+        LDY SFX_ON
+        STY SFX_SAVE
+        LDY #$00
+        STY SFX_ON
+        JSR GET_COMMAND
+        LDY SFX_SAVE
+        STY SFX_ON
+        BCS .L935B
+        LDA INFORM_TBL,X
+        STA INFORM_JSR
+        LDA INFORM_TBL+1,X
+        STA INFORM_JSR+1
+INFORM_JSR = *+1
+        JSR RTS_HOOK
+        JMP .L935B
+@
+
+<<spa speed strings>>=
+        ORG $93DE
+DIR_STR_SPEED
+        HEX 436c696de2446976
+        HEX e552696768f44c65
+        HEX 66f4
+DRAW_MODE
+        HEX 00
+AI_AGGRO
+        HEX 02
+AI_RET_X
+        HEX 80
+AI_RET_Y
+        HEX 40
+SPEED
+        HEX 80
+SPEED_SUB
+        HEX 00
+STAR_IDX
+        HEX 3f
+CUR_RET_X
+        HEX 80
+CUR_RET_Y
+        HEX 40
+PAN_DX
+        HEX 00
+PAN_DY
+        HEX 00
+RNG_SAVE
+        HEX 3b67
+SFX_SAVE
+        HEX ff
+@
+
+<<spa reticle draw>>=
+        ORG $93FE
+RETICLE_DRAW
+        SUBROUTINE
+        ; Erase the old reticle box and draw it at the new position.
+        ;
+        ; Behavior:
+        ;   If the reticle moved, XOR-erase the previous box, record the new
+        ;   centre, and stroke a small box of dots around it (RETICLE_PLOT).
+        ;
+        ; Clobbers: A, X, Y
+        LDX CUR_RET_X
+        LDY CUR_RET_Y
+        CPX ZP_RET_X
+        BNE .L940C
+        CPY ZP_RET_Y
+        BEQ RETICLE_PLOT
+.L940C
+        LDA #$04
+        JSR .L941D
+RETICLE_PLOT
+        LDX ZP_RET_X
+        STX CUR_RET_X
+        LDY ZP_RET_Y
+        STY CUR_RET_Y
+        LDA #$07
+.L941D
+        STX ZP_PX
+        DEY
+        DEY
+        STY ZP_PY
+        JSR COLOR_SET
+        JSR PLOT
+        INC ZP_PY
+        JSR PLOT
+        INC ZP_PY
+        JSR PLOT
+        INC ZP_PY
+        JSR PLOT
+        INC ZP_PY
+        JSR PLOT
+        DEC ZP_PY
+        DEC ZP_PY
+        DEC ZP_PX
+        DEC ZP_PX
+        JSR PLOT
+        CLC
+        LDA ZP_PX
+        ADC #$04
+        STA ZP_PX
+        JMP PLOT
+RNG_TO_PIXEL
+        LDA RNG_SAVE
+        STA ZP_RNG
+        LDA RNG_SAVE+1
+        STA ZP_RNG+1
+        LDA #$C8
+        STA ZP_RET_CNT
+        RTS
+@
+
+<<spa rng pixel>>=
+        ORG $9461
+RNG_STEP_PIX
+        SUBROUTINE
+        ; Advance the RNG and fold it into a signed pixel delta.
+        ;
+        ; Behavior:
+        ;   RNG_STEP_PIX runs one Fibonacci step on ZP_RNG and returns a small
+        ;   signed offset used to jitter the starfield.
+        ;
+        ; Outputs: A = signed pixel delta
+        ; Clobbers: A, X
+        CLC
+        LDA ZP_RNG
+        ADC #$09
+        ADC ZP_RNG+1
+        LDX ZP_RNG
+        STA ZP_RNG
+        STX ZP_RNG+1
+        LSR
+        BCC .L9475
+        LSR
+        SBC #$20
+        RTS
+.L9475
+        ASL
+        RTS
+@
+
+<<spa idle poll>>=
+        ORG $9477
+IDLE_TICK
+        SUBROUTINE
+        ; Poll for a key while animating the starfield.
+        ;
+        ; Behavior:
+        ;   IDLE_TICK flashes the cursor and pans the starfield one frame;
+        ;   IDLE_POLL repeats it up to SCAN_TIMEOUT times waiting for a key, so
+        ;   the view drifts when the player is idle.
+        ;
+        ; Outputs: Z clear if a key is waiting
+        ; Clobbers: A, X, Y
+        JSR CURSOR_FLASH
+        JSR STARFIELD_PAN
+        JSR KEY_PENDING
+        BNE .L9483
+        RTS
+.L9483
+        JMP KEY_WAIT
+IDLE_POLL
+        LDA #$32
+        STA SCAN_TIMEOUT
+.L948B
+        JSR IDLE_TICK
+        BNE .L9495
+        DEC SCAN_TIMEOUT
+        BNE .L948B
+.L9495
+        RTS
+SCAN_TIMEOUT
+        HEX 32
+@
+
+<<spa starfield>>=
+        ORG $9497
+STARFIELD_PAN
+        SUBROUTINE
+        ; Pan and redraw the 42-star field one frame.
+        ;
+        ; Behavior:
+        ;   Scroll the pan offset (ZP_RET_X/Y) by the current PAN_DX/PAN_DY,
+        ;   clamp it to the play area, then for each of the 42 stars recompute
+        ;   its screen position from STAR_X/STAR_Y and the pan, erasing and
+        ;   re-plotting it; near stars twinkle (speaker clicks).
+        ;
+        ; Clobbers: A, X, Y
+        LDX #$00
+        CLC
+        LDA PAN_DX
+        ADC ZP_RET_X
+        CMP #$F7
+        BCC .L94AA
+        LDA #$F7
+        STX PAN_DX
+        BNE .L94B3
+.L94AA
+        CMP #$09
+        BCS .L94B3
+        LDA #$09
+        STX PAN_DX
+.L94B3
+        STA ZP_RET_X
+        CLC
+        LDA PAN_DY
+        ADC ZP_RET_Y
+        CMP #$78
+        BCC .L94C6
+        LDA #$78
+        STX PAN_DY
+        BNE .L94CF
+.L94C6
+        CMP #$09
+        BCS .L94CF
+        LDA #$09
+        STX PAN_DY
+.L94CF
+        STA ZP_RET_Y
+        JSR RETICLE_DRAW
+        JSR KEY_POLL
+        LDA #$29
+        STA STAR_IDX
+.L94DC
+        LDY STAR_IDX
+        LDA STAR_Y,Y
+        STA ZP_PY
+        LDA STAR_X,Y
+        STA ZP_PX
+        SEC
+        SBC ZP_RET_X
+        BCC .L94FA
+        LSR
+        LSR
+        LSR
+        SEC
+        ADC ZP_PX
+        STA ZP_TX
+        BCC .L953F
+        BCS .L950B
+.L94FA
+        SEC
+        LDA ZP_RET_X
+        SBC ZP_PX
+        LSR
+        LSR
+        LSR
+        STA ZP_TX
+        CLC
+        LDA ZP_PX
+        SBC ZP_TX
+        BCS .L953F
+.L950B
+        LDA SFX_ON
+        BEQ .L9513
+        BIT SPEAKER
+.L9513
+        JSR RNG_STEP_PIX
+        ADC ZP_RET_X
+        STA ZP_TX
+        JSR RNG_STEP_PIX
+        CMP #$80
+        ROR
+        ADC ZP_RET_Y
+        STA ZP_TY
+        LDA SFX_ON
+        BEQ .L9567
+        LDA #$80
+        CMP SPEED
+        BCC .L9567
+        CMP ZP_RET_X
+        BNE .L9567
+        LSR
+        CMP ZP_RET_Y
+        BNE .L9567
+        BIT SPEAKER
+        JMP .L9567
+.L953F
+        STA ZP_TX
+        SEC
+        LDA ZP_PY
+        SBC ZP_RET_Y
+        BMI .L9553
+        LSR
+        LSR
+        LSR
+        LSR
+        SEC
+        ADC ZP_PY
+        BPL .L9565
+        BMI .L950B
+.L9553
+        SEC
+        LDA ZP_RET_Y
+        SBC ZP_PY
+        LSR
+        LSR
+        LSR
+        LSR
+        STA ZP_TY
+        CLC
+        LDA ZP_PY
+        SBC ZP_TY
+        BMI .L950B
+.L9565
+        STA ZP_TY
+.L9567
+        LDX SPEED
+        DEX
+        BEQ .L957A
+        LDA #$04
+        JSR COLOR_SET
+        JSR PLOT
+        LDA #$06
+        JSR COLOR_SET
+.L957A
+        LDY STAR_IDX
+        LDA ZP_TX
+        STA ZP_PX
+        STA STAR_X,Y
+        LDA ZP_TY
+        STA ZP_PY
+        STA STAR_Y,Y
+        JSR PLOT
+        DEC STAR_IDX
+        BMI .L95A5
+        LDA SFX_ON
+        BEQ .L95A2
+        LDA SPEED
+        CMP #$03
+        BCC .L95A2
+        BIT SPEAKER
+.L95A2
+        JMP .L94DC
+.L95A5
+        JSR ENEMY_AI
+        JSR RETICLE_PLOT
+        BIT TXTCLR
+        LDA SPEED
+        BEQ .L95B6
+        JSR VDELAY
+.L95B6
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BEQ PAN_RESET
+        RTS
+@
+
+<<spa scan center>>=
+        ORG $95BF
+SCAN_CENTER
+        SUBROUTINE
+        ; Recentre the radar pan on the ship and clear the deltas.
+        ;
+        ; Behavior:
+        ;   Print "Center", reset the pan position to the screen middle and the
+        ;   pan deltas to zero.  PAN_RESET does the reset without the message.
+        ;
+        ; Clobbers: A
+        JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "Center",0
+        JSR CLR_EOL
+@
+
+<<spa pan reset>>=
+        ORG $95CF
+PAN_RESET
+        SUBROUTINE
+        ; Reset the radar pan offset to centre on the ship.
+        ;
+        ; Behavior:
+        ;   Park the pan position at the screen middle and zero the pan
+        ;   deltas, so the next starfield frame draws centred on the ship.
+        ;
+        ; Clobbers: A
+        LDA #$80
+        STA ZP_RET_CNT
+        STA ZP_RET_X
+        LSR
+        STA ZP_RET_Y
+        LDA #$00
+        STA PAN_DX
+        STA PAN_DY
+        RTS
+@
+
+<<spa pan>>=
+        ORG $95E1
+PAN_WEST
+        SUBROUTINE
+        ; The four pan commands: scroll the nav view W/E/N/S.
+        ;
+        ; Behavior:
+        ;   Each gated on fuel; sets the pan delta (PAN_DX/PAN_DY) one notch in
+        ;   the chosen direction and spends a little fuel so the view drifts that
+        ;   way on the next starfield frame.  PAN_WEST/EAST/NORTH/SOUTH.
+        ;
+        ; Clobbers: A
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BNE .L95EC
+        JMP MSG_NOFUEL
+.L95EC
+        LDA #$02
+        JSR FUEL_BURN
+        LDA #$FC
+        STA PAN_DX
+        LDA #$00
+        STA PAN_DY
+        RTS
+PAN_EAST
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BNE .L9607
+        JMP MSG_NOFUEL
+.L9607
+        LDA #$02
+        JSR FUEL_BURN
+        LDA #$04
+        STA PAN_DX
+        LDA #$00
+        STA PAN_DY
+        RTS
+PAN_NORTH
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BNE .L9622
+        JMP MSG_NOFUEL
+.L9622
+        LDA #$02
+        JSR FUEL_BURN
+        LDA #$FC
+        STA PAN_DY
+        LDA #$00
+        STA PAN_DX
+        RTS
+PAN_SOUTH
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BNE .L963D
+        JMP MSG_NOFUEL
+.L963D
+        LDA #$02
+        JSR FUEL_BURN
+        LDA #$04
+        STA PAN_DY
+        LDA #$00
+        STA PAN_DX
+        RTS
+@
+
+<<spa fire>>=
+        ORG $964D
+CMD_FIRE
+        SUBROUTINE
+        ; Fire the laser: hit-test the reticle against the enemy.
+        ;
+        ; Behavior:
+        ;   Gated on fuel.  Reset the reticle, stroke the laser, and if the
+        ;   reticle lies within the enemy craft's hit box (the per-scale
+        ;   SHAPE_XOFF/SHAPE_YOFF extents) the shot connects: fall into EXPLODE
+        ;   then HIT_ENEMY.
+        ;
+        ; Clobbers: A, X, Y
+        LDA PLR_FUEL+1
+        CMP #$00
+        BNE .L9659
+        LDA PLR_FUEL
+        CMP #$0A
+.L9659
+        BCS .L965E
+        JMP MSG_NOFUEL
+.L965E
+        LDA #$0A
+        JSR FUEL_BURN
+        LDA #$00
+        STA PAN_DX
+        STA PAN_DY
+        LDA #$05
+        JSR RETICLE_STROKE
+        LDA #$0C
+        JSR SFX_PLAY
+        LDA CELL_ENEMY
+        BNE .L967D
+.L967A
+        JMP RETICLE_RESET
+.L967D
+        LDA AI_AGGRO
+        LSR
+        LSR
+        LSR
+        LSR
+        LSR
+        TAX
+        INX
+        LDA AI_RET_X
+        SEC
+        SBC SHAPE_XOFF,X
+        CMP ZP_RET_X
+        BCS .L967A
+        LDA AI_RET_X
+        CLC
+        ADC SHAPE_XOFF,X
+        CMP ZP_RET_X
+        BCC .L967A
+        LDA AI_RET_Y
+        SEC
+        SBC SHAPE_YOFF,X
+        CMP ZP_RET_Y
+        BCS .L967A
+        LDA AI_RET_Y
+        CLC
+        ADC SHAPE_YOFF,X
+        CMP ZP_RET_Y
+        BCC .L967A
+        LDA #$02
+        JSR SFX_PLAY
+        LDA #$F8
+        STA DRAW_FLAG
+@
+
+<<spa hit enemy>>=
+        ORG $96BD
+EXPLODE
+        SUBROUTINE
+        ; A hit lands: flash, award exp, and count the kill.
+        ;
+        ; Behavior:
+        ;   EXPLODE plays the hit flash.  HIT_ENEMY drains the enemy's HP; once
+        ;   it dies it awards +100 experience (capped at 9999) and increments
+        ;   PLR_VESSELS -- the destroyed-craft counter the castle's princess
+        ;   rescue gates on.  Reaching exactly 20 ($14) announces "the rank of
+        ;   Space Ace"; beyond that prints "still a Space Ace".
+        ;
+        ; Modifies: PLR_EXP, PLR_VESSELS
+        ; Clobbers: A, X, Y
+        LDA #$00
+        JSR ENEMY_PROJECT
+        JSR FRAME_SYNC
+        LDA #$80
+        JSR ENEMY_PROJECT
+        JSR FRAME_SYNC
+        INC DRAW_FLAG
+        BMI EXPLODE
+        LDA #$02
+        STA AI_AGGRO
+        LDA #$90
+        STA AI_RET_X
+        STA AI_RET_Y
+        JSR MSG_PRINT
+        DC.B "~Hit!!!",0
+        LDA ZP_X
+        STA ZP_CX
+        LDA ZP_Y
+        STA ZP_CY
+        JSR CELL_DECODE
+        DEC CELL_ENEMY
+        BPL .L9700
+        INC CELL_ENEMY
+        JMP RETICLE_RESET
+.L9700
+        LDA ENEMY_GRID_HI,Y
+        SEC
+        SBC #$40
+        STA ENEMY_GRID_HI,Y
+        CLC
+        LDA PLR_EXP
+        ADC #$64
+        STA PLR_EXP
+        LDA PLR_EXP+1
+        ADC #$00
+        STA PLR_EXP+1
+        LDA PLR_EXP+1
+        CMP #$27
+        BNE .L9726
+        LDA PLR_EXP
+        CMP #$10
+.L9726
+        BCC .L9732
+        LDA #$0F
+        STA PLR_EXP
+        LDA #$27
+        STA PLR_EXP+1
+.L9732
+        INC PLR_VESSELS
+        BNE .L973A
+        DEC PLR_VESSELS
+.L973A
+        LDA PLR_VESSELS
+        CMP #$14
+        BCC .L9763
+        BEQ .L9766
+        JSR MSG_PRINT
+        DC.B "~Thou art still a Space Ace!",0
+.L9763
+        JMP RETICLE_RESET
+.L9766
+        JSR POPUP_FRAME
+        LDA #$07
+        STA MON_CV
+        LDA #$06
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "Thou hast achieved~~",0
+        LDA #$09
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "the rank of~~",0
+        LDA #$0A
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "Space Ace!",0
+        JSR PAUSE_ABORTABLE
+        JSR WIN_RESTORE
+        JSR VIEW_WIPE
+@
+
+<<spa reticle reset>>=
+        ORG $97B9
+RETICLE_RESET
+        SUBROUTINE
+        ; Restore the targeting reticle to screen centre.
+        ;
+        ; Behavior:
+        ;   Set the crosshair colour, stroke the two diagonals from the screen
+        ;   corners through the reticle (DRAW_CROSSHAIR), and redraw the reticle
+        ;   box (RETICLE_PLOT).  RETICLE_STROKE is the entry that takes the
+        ;   colour already in A (used to erase by re-stroking).
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$04
+RETICLE_STROKE
+        JSR COLOR_SET
+        LDX #$20
+        JSR DRAW_CROSSHAIR
+        LDX #$E0
+        JSR DRAW_CROSSHAIR
+        JMP RETICLE_PLOT
+DRAW_CROSSHAIR
+        STX ZP_PX
+        LDY #$7F
+        STY ZP_PY
+        LDX ZP_RET_X
+        LDY ZP_RET_Y
+        JMP LINE_TO
+@
+
+<<spa msg nofuel>>=
+        ORG $97D8
+MSG_NOFUEL
+        SUBROUTINE
+        ; "Not enough fuel!" message helper.
+        ;
+        ; Behavior:
+        ;   Print the no-fuel notice and return; BEEP_BAD additionally draws a
+        ;   '?' glyph and flushes the keyboard for an unrecognised key.
+        ;
+        ; Clobbers: A
+        JSR MSG_PRINT
+        DC.B "~Not enough fuel!",0
+        RTS
+BEEP_BAD
+        JSR CURSOR_TO_TEXT
+        LDA #$3F
+        JSR FONT_DRAW
+        JMP KBD_CLEAR
+@
+
+<<spa hyperjump>>=
+        ORG $97F9
+CMD_HYPER
+        SUBROUTINE
+        ; HyperJump: the light-speed warp animation.
+        ;
+        ; Behavior:
+        ;   Require a minimum cruise speed, then ramp the starfield to "light
+        ;   speed", flip to the alternate page, hold, and ramp back down to
+        ;   "complete", repositioning the ship one sector along its heading.
+        ;
+        ; Clobbers: A, X, Y
+        LDA PLR_FUEL+1
+        CMP #$00
+        BNE .L9805
+        LDA PLR_FUEL
+        CMP #$64
+.L9805
+        BCC MSG_NOFUEL
+        LDA MON_CH
+        PHA
+        JSR MSG_PRINT
+        DC.B "...",0
+        LDA SPEED
+        STA HYPER_SPEED
+        LDA #$80
+        STA AI_FIXED
+        LDA #$00
+        STA PAN_DX
+        STA PAN_DY
+.L9824
+        JSR STARFIELD_PAN
+        DEC SPEED
+        LDA SPEED
+        CMP #$01
+        BNE .L9824
+        JSR MSG_PRINT
+        DC.B " light speed!",0
+        LDA #$64
+        JSR FUEL_BURN
+        PLA
+        STA MON_CH
+        LDA ZP_RNG
+        STA RNG_SAVE
+        LDA ZP_RNG+1
+        STA RNG_SAVE+1
+        LDX #$2A
+.L9856
+        LDA STAR_X,X
+        STA HGR2,X
+        LDA STAR_Y,X
+        STA HGR2+42,X
+        DEX
+        BPL .L9856
+        JSR RNG_TO_PIXEL
+.L9868
+        JSR STARFIELD_PAN
+        DEC ZP_RET_CNT
+        BNE .L9868
+        LDX #$2A
+.L9871
+        LDA HGR2,X
+        STA STAR_X,X
+        LDA HGR2+42,X
+        STA STAR_Y,X
+        DEX
+        BPL .L9871
+        JSR RNG_TO_PIXEL
+        INC SPEED
+.L9886
+        JSR STARFIELD_PAN
+        DEC ZP_RET_CNT
+        BNE .L9886
+.L988D
+        JSR STARFIELD_PAN
+        INC SPEED
+        LDA SPEED
+        CMP HYPER_SPEED
+        BNE .L988D
+        JSR MSG_PRINT
+        DC.B " complete.",0
+        JSR CLR_EOL
+        LDA #$00
+        STA AI_FIXED
+        LDX ZP_X
+        LDY ZP_Y
+        LDA REL_X
+        BEQ .L98CC
+        BMI .L98C5
+        INX
+        CPX #$09
+        BCC .L98CC
+        LDX #$02
+        BNE .L98CC
+.L98C5
+        DEX
+        CPX #$02
+        BCS .L98CC
+        LDX #$08
+.L98CC
+        LDA REL_Y
+        BEQ .L98E3
+        BMI .L98DC
+        INY
+        CPY #$09
+        BCC .L98E3
+        LDY #$02
+        BNE .L98E3
+.L98DC
+        DEY
+        CPY #$02
+        BCS .L98E3
+        LDY #$08
+.L98E3
+        STX ZP_X
+        STY ZP_Y
+        STX ZP_CX
+        STY ZP_CY
+        JSR CELL_DECODE
+        JMP PLACE_ACTORS
+HYPER_SPEED
+        HEX 00
+        JMP SECTOR_SCAN
+        JSR IDLE_POLL
+        JSR READY_CMD
+        JMP VIEW_WIPE
+@
+
+<<spa view toggle>>=
+        ORG $98FE
+CMD_VIEW
+        SUBROUTINE
+        ; View: toggle between the front view and the nav view.
+        ;
+        ; Behavior:
+        ;   In front view, project the enemy via the rotation/trig helpers onto
+        ;   the reticle plane; in nav view, draw the overhead map of actors.
+        ;   Refuses to switch while enemy craft remain (VIEW_BLOCKED) or in dock.
+        ;
+        ; Clobbers: A, X, Y
+        LDA CELL_ENEMY
+        BEQ .L9906
+        JMP VIEW_BLOCKED
+.L9906
+        JSR VIEW_WIPE
+        JSR DRAW_ALL_ACTORS
+        LDA #$19
+        STA DIR_STR_PTR
+        LDA #$92
+        STA DIR_STR_PTR+1
+        LDA REL_Y
+        BPL .L9921
+        LDA #$00
+        SEC
+        SBC REL_Y
+.L9921
+        STA ZP_M2
+        LDA REL_X
+        BPL .L992E
+        LDA #$00
+        SEC
+        SBC REL_X
+.L992E
+        STA ZP_M0
+        LDA ZP_M0
+        STA ZP_MUL_B
+        LDA SCALE_TBL+8
+        JSR MUL8_FIXED
+        STA ZP_M1
+        LDA ZP_FX2
+        STA ZP_M0
+        LDA ZP_M0
+        STA ZP_FX2
+        LDA ZP_M1
+        STA ZP_FX3
+        LDA SPEED
+        STA ZP_FX0
+        LDA SPEED_SUB
+        JSR DIV16
+        LDA ZP_FX3
+        STA ZP_M1
+        LDA ZP_FX2
+        STA ZP_M0
+        LDA ZP_M2
+        STA ZP_MUL_B
+        LDA SCALE_TBL+8
+        JSR MUL8_FIXED
+        STA ZP_M3
+        LDA ZP_FX2
+        STA ZP_M2
+        LDA ZP_M2
+        STA ZP_FX2
+        LDA ZP_M3
+        STA ZP_FX3
+        LDA SPEED
+        STA ZP_FX0
+        LDA SPEED_SUB
+        JSR DIV16
+        LDA ZP_FX3
+        STA ZP_M3
+        LDA ZP_FX2
+        STA ZP_M2
+        BIT REL_X
+        BPL .L9998
+        SEC
+        LDA #$00
+        SBC ZP_M0
+        STA ZP_M0
+        LDA #$00
+        SBC ZP_M1
+        STA ZP_M1
+.L9998
+        BIT REL_Y
+        BPL .L99AA
+        SEC
+        LDA #$00
+        SBC ZP_M2
+        STA ZP_M2
+        LDA #$00
+        SBC ZP_M3
+        STA ZP_M3
+.L99AA
+        LDA ZP_M0
+        JSR CLAMP_VEL
+        TAX
+        BMI .L99B4
+        INX
+        TXA
+.L99B4
+        AND #$FE
+        STA REL_X
+        LDA ZP_M2
+        JSR CLAMP_VEL
+        STA REL_Y
+        PLA
+        PLA
+        LDA #$00
+        STA ROT_TIMER
+        JMP SPA_LOOP
+VIEW_BLOCKED
+        JSR BEEP_BAD
+        JSR MSG_PRINT
+        DC.B "~Thou must eliminate all~enemy craft first.",0
+        RTS
+@
+
+<<spa ztats>>=
+        ORG $99FE
+CMD_ZTATS
+        SUBROUTINE
+        ; Ztats: show the player's inventory popup.
+        ;
+        ; Behavior:
+        ;   Call the engine INVENTORY popup, then redraw the view.
+        ;
+        ; Clobbers: A, X, Y
+        JSR INVENTORY
+@
+
+<<spa view wipe>>=
+        ORG $9A01
+VIEW_WIPE
+        SUBROUTINE
+        ; Clear and redraw the viewport border (an iris wipe).
+        ;
+        ; Behavior:
+        ;   Save the window, set it to the viewport, paint the framing glyphs
+        ;   from the centre outward (the characteristic iris), then restore.
+        ;
+        ; Clobbers: A, X, Y
+        JSR WIN_SAVE
+        JSR WIN_VIEW
+        LDA #$1F
+        LDX #$25
+.L9A0B
+        JSR .L9A38
+        DEX
+        BPL .L9A0B
+.L9A11
+        LDY MON_CV
+        INY
+        CPY MON_WNDBTM
+        BCS .L9A27
+        STY MON_CV
+        LDX #$00
+        JSR .L9A38
+        LDX #$25
+        JSR .L9A38
+        JMP .L9A11
+.L9A27
+        LDX #$24
+.L9A29
+        JSR .L9A38
+        DEX
+        BNE .L9A29
+        JSR WIN_SHRINK
+        JSR CLR_WINDOW
+        JMP WIN_RESTORE
+.L9A38
+        STX MON_CH
+        JMP FONT_DRAW
+@
+
+<<spa enemy ai>>=
+        ORG $9A3D
+ENEMY_AI
+        SUBROUTINE
+        ; The enemy's turn: home its reticle and maybe shoot back.
+        ;
+        ; Behavior:
+        ;   If an enemy is in this cell, step the enemy reticle (AI_RET_X/Y)
+        ;   toward the ship, redraw it, then with a probability rising with
+        ;   AI_AGGRO decide to fire (ALIEN_FIRES).  Otherwise it idles.
+        ;
+        ; Clobbers: A, X, Y
+        LDA CELL_ENEMY
+        BEQ .L9A7D
+        LDA #$80
+        JSR ENEMY_PROJECT
+        INC AI_AGGRO
+        INC AI_AGGRO
+        BEQ .L9A78
+        LDA AI_RET_X
+        CMP ZP_RET_X
+        BCC .L9A5D
+        INC AI_RET_X
+        BNE .L9A65
+        BEQ .L9A78
+.L9A5D
+        SEC
+        SBC #$01
+        STA AI_RET_X
+        BCC .L9A78
+.L9A65
+        LDA AI_RET_Y
+        CMP ZP_RET_Y
+        BCC .L9A73
+        INC AI_RET_Y
+        BPL .L9AA4
+        BMI .L9A78
+.L9A73
+        DEC AI_RET_Y
+        BPL .L9AA4
+.L9A78
+        BIT AI_FIXED
+        BPL .L9A8B
+.L9A7D
+        LDA #$02
+        STA AI_AGGRO
+        LDA #$90
+        STA AI_RET_X
+        STA AI_RET_Y
+        RTS
+.L9A8B
+        JSR RND
+        AND #$7F
+        ADC #$40
+        STA AI_RET_X
+        JSR RND
+        AND #$3F
+        ADC #$20
+        STA AI_RET_Y
+        LDA #$02
+        STA AI_AGGRO
+.L9AA4
+        LDA #$00
+        JSR ENEMY_PROJECT
+        BIT AI_FIXED
+        BMI .L9ABD
+        JSR RND
+        CMP AI_AGGRO
+        BCS .L9ABD
+        JSR RND
+        CMP #$04
+        BCC ALIEN_FIRES
+.L9ABD
+        JMP .L9B9B
+ALIEN_FIRES
+        JSR MSG_PRINT
+        DC.B "Alien fires!|",$0E,0
+        JSR RND
+        CMP #$40
+        BCS .L9B57
+        LDA #$05
+        LDX #$80
+        LDY #$7F
+        JSR DRAW_SHOT
+        LDA #$0C
+        JSR SFX_PLAY
+        LDA #$02
+        JSR SFX_PLAY
+        JSR MSG_PRINT
+        DC.B "You've been hit!",0
+        LDA #$04
+        LDX #$80
+        LDY #$7F
+        JSR DRAW_SHOT
+        LDA #$00
+        JSR ENEMY_PROJECT
+        SEC
+        LDA PLR_SHIELD
+        SBC #$41
+        STA PLR_SHIELD
+        LDA PLR_SHIELD+1
+        SBC #$01
+        STA PLR_SHIELD+1
+        PHP
+        BCS .L9B2A
+        LDA #$00
+        STA PLR_SHIELD
+        STA PLR_SHIELD+1
+.L9B2A
+        JSR WIN_STATS_DRAW
+        PLP
+        BCS .L9B4E
+        JSR MSG_PRINT
+        DC.B "~Thy shield is drained!",0
+        JMP RESPAWN
+.L9B4E
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        JMP .L9B9B
+.L9B57
+        JSR RND
+        TAX
+        AND #$01
+        BEQ .L9B70
+        LDA #$00
+        STA ZP_M0
+        LDA #$FB
+        JSR RND_RANGE
+        CLC
+        ADC #$02
+        STA ZP_M1
+        JMP .L9B84
+.L9B70
+        TXA
+        AND #$7F
+        STA ZP_M0
+        JSR RND
+        AND #$01
+        BEQ .L9B80
+        LDA #$02
+        BNE .L9B82
+.L9B80
+        LDA #$FD
+.L9B82
+        STA ZP_M1
+.L9B84
+        LDA #$05
+        LDX ZP_M1
+        LDY ZP_M0
+        JSR DRAW_SHOT
+        LDA #$0C
+        JSR SFX_PLAY
+        LDA #$04
+        LDX ZP_M1
+        LDY ZP_M0
+        JSR DRAW_SHOT
+.L9B9B
+        RTS
+@
+
+<<spa draw shot>>=
+        ORG $9B9C
+DRAW_SHOT
+        SUBROUTINE
+        ; Stroke a laser line from a screen corner to the reticle.
+        ;
+        ; Behavior:
+        ;   Set the colour and draw a line ending at the enemy reticle
+        ;   (AI_RET_X/Y); used for both the player's and the alien's shots.
+        ;
+        ; Clobbers: A, X, Y
+        STX ZP_PX
+        STY ZP_PY
+        JSR COLOR_SET
+        LDX AI_RET_X
+        LDY AI_RET_Y
+        JMP LINE_TO
+@
+
+<<spa enemy project>>=
+        ORG $9BAC
+ENEMY_PROJECT
+        SUBROUTINE
+        ; Project the enemy onto the front view and draw it.
+        ;
+        ; Behavior:
+        ;   Pick the enemy's draw scale from its packed grid contents, look up
+        ;   its sprite shape, and blit it at the reticle through the shape
+        ;   blitter.  Drives the size-with-distance effect.
+        ;
+        ; Clobbers: A, X, Y
+        STA DRAW_MODE
+        LDX AI_RET_X
+        LDY AI_RET_Y
+        LDA AI_AGGRO
+        STX ZP_CX
+        STY ZP_CY
+        LSR
+        LSR
+        LSR
+        LSR
+        LSR
+        CLC
+        ADC #$01
+        STA BLIT_SHAPE
+        JMP BLIT_SHAPE_AT
+@
+
+<<spa star bss>>=
+        ORG $9BCA
+AI_FIXED
+        HEX 00
+INFORM_TBL
+        HEX 17963296fc95e195
+INFORM_CODE
+        HEX bf954588ee97ee97
+        HEX ee97ee97ee974d96
+        HEX ee97f997f298ee97
+        HEX 5b88ee97ee97f598
+        HEX ee97ee97ee97fe98
+        HEX ee97fe99
+STAR_X
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000
+STAR_Y
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000
+@
+
+<<spa cell decode>>=
+        ORG $9C53
+CELL_DECODE
+        SUBROUTINE
+        ; Decode the sector grid cell at (ZP_CX,ZP_CY).
+        ;
+        ; Behavior:
+        ;   Index the 8x8 enemy grid (ENEMY_GRID_LO/HI) by row offset, unpack
+        ;   the two bytes into eight 2-bit quadrant counts (CELL_NW..), and note
+        ;   whether the cell holds an enemy (CELL_ENEMY).
+        ;
+        ; Clobbers: A, X, Y
+        LDY ZP_CY
+        LDA GRID_ROW_OFF_DATA,Y
+        CLC
+        ADC ZP_CX
+        TAY
+        LDA ENEMY_GRID_LO,Y
+        STA CELL_LO
+        LDX #$00
+.L9C64
+        PHA
+        AND #$03
+        STA CELL_NW,X
+        PLA
+        LSR
+        LSR
+        INX
+        CPX #$04
+        BCC .L9C64
+        LDA ENEMY_GRID_HI,Y
+        STA CELL_HI
+.L9C78
+        PHA
+        AND #$03
+        STA CELL_NW,X
+        PLA
+        LSR
+        LSR
+        INX
+        CPX #$08
+        BCC .L9C78
+        RTS
+@
+
+<<spa grid offsets>>=
+        ORG $9C87
+GRID_ROW_OFF_DATA
+        HEX 000b16212c37424d
+        HEX 58636e
+@
+
+<<spa rng helpers>>=
+        ORG $9C92
+RND_BASE_POS
+        SUBROUTINE
+        ; Random positions and the Fibonacci RNG.
+        ;
+        ; Behavior:
+        ;   RND_BASE_POS / RND_ACTOR_POS pick a random torus position; RND_SECTOR
+        ;   a random sector cell; RND_RANGE returns RND mod A; RNG_STEP runs one
+        ;   Fibonacci add-swap on ZP_RNG; ACTOR_DIST returns a squared distance
+        ;   between two actor slots (or $FF if either is empty).
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$3C
+        JSR RND_RANGE
+        CLC
+        ADC #$22
+        TAY
+        LDA #$B8
+        JSR RND_RANGE
+        CLC
+        ADC #$24
+        AND #$FE
+        TAX
+        RTS
+RND_ACTOR_POS
+        LDA #$72
+        JSR RND_RANGE
+        CLC
+        ADC #$0C
+        TAY
+        LDA #$E4
+        JSR RND_RANGE
+        CLC
+        ADC #$0E
+        AND #$FE
+        TAX
+        RTS
+RND_SECTOR
+        LDA #$0A
+RND_RANGE
+        STA RND_MOD
+        JSR RNG_STEP
+.L9CC4
+        CMP RND_MOD
+        BCC .L9CCE
+        SBC RND_MOD
+        BCS .L9CC4
+.L9CCE
+        CMP #$00
+        STA RND_MOD
+        RTS
+RNG_STEP
+        CLC
+        LDA ZP_RNG
+        ADC #$09
+        ADC ZP_RNG+1
+        LDX ZP_RNG
+        STA ZP_RNG
+        STX ZP_RNG+1
+        RTS
+ACTOR_DIST
+        LDX DIST_A
+        LDY DIST_B
+        LDA ACTOR_X,X
+        CMP #$FF
+        BEQ .L9D58
+        LDA ACTOR_X,Y
+        CMP #$FF
+        BEQ .L9D58
+        SEC
+        SBC ACTOR_X,X
+        BCS .L9D03
+        STA ZP_T2
+        SEC
+        LDA #$00
+        SBC ZP_T2
+.L9D03
+        LDY #$00
+        STY ZP_M0
+        STY ZP_M1
+        TAY
+        TAX
+        INX
+.L9D0C
+        DEX
+        BEQ .L9D1B
+        TYA
+        CLC
+        ADC ZP_M0
+        STA ZP_M0
+        BCC .L9D0C
+        INC ZP_M1
+        BCS .L9D0C
+.L9D1B
+        LDX DIST_A
+        LDY DIST_B
+        LDA ACTOR_Y,Y
+        SEC
+        SBC ACTOR_Y,X
+        BCS .L9D31
+        STA ZP_T2
+        SEC
+        LDA #$00
+        SBC ZP_T2
+.L9D31
+        LDY #$00
+        STY ZP_M2
+        STY ZP_M3
+        TAY
+        TAX
+        INX
+.L9D3A
+        DEX
+        BEQ .L9D49
+        TYA
+        CLC
+        ADC ZP_M2
+        STA ZP_M2
+        BCC .L9D3A
+        INC ZP_M3
+        BCS .L9D3A
+.L9D49
+        CLC
+        LDA ZP_M2
+        ADC ZP_M0
+        STA ZP_M0
+        LDA ZP_M3
+        ADC ZP_M1
+        STA ZP_M1
+        BCC .L9D5D
+.L9D58
+        LDA #$FF
+        STA ZP_M0
+        RTS
+.L9D5D
+        LDY #$01
+        STY ZP_M2
+        DEY
+        STY ZP_M3
+.L9D64
+        SEC
+        LDA ZP_M0
+        TAX
+        SBC ZP_M2
+        STA ZP_M0
+        LDA ZP_M1
+        SBC ZP_M3
+        STA ZP_M1
+        BCC .L9D81
+        INY
+        LDA ZP_M2
+        ADC #$01
+        STA ZP_M2
+        BCC .L9D64
+        INC ZP_M3
+        BCS .L9D64
+.L9D81
+        STY ZP_M0
+        TYA
+        STX ZP_M1
+        RTS
+@
+
+<<spa dist storage>>=
+        ORG $9D87
+DIST_A
+        HEX 00
+DIST_B
+        HEX 00
+@
+
+<<spa draw actors>>=
+        ORG $9D89
+DRAW_ALL_ACTORS
+        SUBROUTINE
+        ; Draw every actor and the ship into the nav view.
+        ;
+        ; Behavior:
+        ;   DRAW_ALL_ACTORS loops the actor slots calling DRAW_ACTOR_NAV, then
+        ;   DRAW_SHIP_NAV.  Each computes the marker's shape from the craft type
+        ;   and heading and blits it (BLIT_SETUP / BLIT_SHAPE_AT).
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$08
+        STA ZP_T0
+.L9D8D
+        LDX ZP_T0
+        JSR DRAW_ACTOR_NAV
+        DEC ZP_T0
+        BPL .L9D8D
+        JSR DRAW_SHIP_NAV
+        RTS
+@
+
+<<spa blit storage>>=
+        ORG $9D9A
+BLIT_SHAPE
+        HEX 00
+BLIT_SHAPE_PREV
+        HEX ff
+BLIT_W
+        HEX 00
+BLIT_DX
+        HEX 00
+@
+
+<<spa blit>>=
+        ORG $9D9E
+DRAW_SHIP_NAV
+        SUBROUTINE
+        ; The nav-view markers and the XOR shape blitter.
+        ;
+        ; Behavior:
+        ;   DRAW_SHIP_NAV / DRAW_ACTOR_NAV set up a shape index and fall into
+        ;   BLIT_SETUP -> BLIT_SHAPE_AT, which fetches the shape (self-modified
+        ;   SHAPE_SMC pointer), pre-shifts it (SHAPE_PRESHIFT) and XOR-blits it
+        ;   through the hi-res row tables, accumulating any collision in
+        ;   ZP_BLIT_HIT.
+        ;
+        ; Clobbers: A, X, Y
+        LDY READY_ARMOUR+1
+        LDA XPORT_FRAME,Y
+        CLC
+        ADC HEAD_CUR
+        ADC ROT_STEP
+        STA BLIT_SHAPE
+        LDA ZP_VX
+        STA ZP_CX
+        LDA ZP_VY
+        STA ZP_CY
+        JMP BLIT_SETUP
+DRAW_ACTOR_NAV
+        LDA ACTOR_X,X
+        STA ZP_CX
+        LDA ACTOR_Y,X
+        STA ZP_CY
+        CLC
+        LDA ACTOR_SHAPE,X
+        BNE .L9DCA
+        RTS
+.L9DCA
+        ADC ACTOR_HEAD,X
+        STA BLIT_SHAPE
+BLIT_SETUP
+        LDA DRAW_MODE
+        PHA
+        LDA #$40
+        STA DRAW_MODE
+        JSR BLIT_SHAPE_AT
+        PLA
+        STA DRAW_MODE
+        RTS
+BLIT_SHAPE_AT
+        LDX BLIT_SHAPE
+        SEC
+        LDA ZP_CX
+        SBC SHAPE_XOFF,X
+        STA ZP_CX
+        SEC
+        LDA ZP_CY
+        SBC SHAPE_YOFF,X
+        STA ZP_CY
+        LDA SHAPE_WID,X
+        STA BLIT_W
+        LDA SHAPE_DX,X
+        STA BLIT_DX
+        CPX BLIT_SHAPE_PREV
+        BEQ .L9E34
+        LDA SHAPE_PTR_LO,X
+        STA ZP_SHP_DST
+        LDA SHAPE_PTR_HI,X
+        STA ZP_SHP_DST+1
+        LDY SHAPE_HGT,X
+        DEY
+.L9E13
+        LDA (ZP_SHP_DST),Y
+        STA SHAPE_BUF,Y
+        DEY
+        CPY #$FF
+        BNE .L9E13
+        LDA #$12
+        STA ZP_SHP_SRC
+        LDA #$B1
+        STA ZP_SHP_SRC+1
+        LDX BLIT_W
+        LDA BLIT_DX
+        JSR SHAPE_PRESHIFT
+        LDX BLIT_SHAPE
+        STX BLIT_SHAPE_PREV
+.L9E34
+        LDY ZP_CX
+        LDA PRESHIFT_TBL,Y
+        LDY #$FF
+.L9E3B
+        INY
+        LSR
+        BCC .L9E3B
+        LDA #$12
+        STA ZP_SHP_DST
+        LDA #$B1
+        STA ZP_SHP_DST+1
+.L9E47
+        DEY
+        BMI .L9E58
+        CLC
+        LDA ZP_SHP_DST
+        ADC SHAPE_HGT,X
+        STA ZP_SHP_DST
+        BCC .L9E47
+        INC ZP_SHP_DST+1
+        BNE .L9E47
+.L9E58
+        LDA #$00
+        STA ZP_BLIT_HIT
+        BIT DRAW_FLAG
+        BPL .L9E73
+        JSR FRAME_SYNC
+        CLC
+        LDA ZP_CY
+        ADC BLIT_DX
+        CMP #$7D
+        BCS .L9E73
+        LDA #$44
+        JSR VDELAY
+.L9E73
+        BIT DRAW_MODE
+        BVC .L9ECE
+        LDA ZP_SHP_DST
+        STA SHAPE_SMC
+        LDA ZP_SHP_DST+1
+        STA SHAPE_SMC+1
+.L9E82
+        LDA BLIT_W
+        STA ZP_CNT
+        LDX #$FF
+        LDY ZP_CY
+        BMI .L9E99
+        LDA HGR_ROW_LO,Y
+        STA ZP_HGR_PTR
+        LDA HGR_ROW_HI,Y
+        STA ZP_HGR_PTR+1
+        LDX ZP_CX
+.L9E99
+SHAPE_SMC = *+1
+        LDA STALE_FFFF
+        BEQ .L9EB1
+        LDY HGR_ROW_BIT,X
+        BEQ .L9EB1
+        STA ZP_BLIT_A
+        AND (ZP_HGR_PTR),Y
+        ORA ZP_BLIT_HIT
+        STA ZP_BLIT_HIT
+        LDA ZP_BLIT_A
+        EOR (ZP_HGR_PTR),Y
+        STA (ZP_HGR_PTR),Y
+.L9EB1
+        INC SHAPE_SMC
+        BNE .L9EB9
+        INC SHAPE_SMC+1
+.L9EB9
+        CLC
+        TXA
+        ADC #$07
+        BCC .L9EC1
+        LDA #$FF
+.L9EC1
+        TAX
+        DEC ZP_CNT
+        BNE .L9E99
+        INC ZP_CY
+        DEC BLIT_DX
+        BNE .L9E82
+        RTS
+.L9ECE
+        LDX #$FF
+        LDA #$31
+        BIT DRAW_MODE
+        BMI .L9EDA
+        INX
+        LDA #$11
+.L9EDA
+        STX BLIT_EOR
+        STA BLIT_OP
+        LDA ZP_SHP_DST
+        STA SHAPE_SMC2
+        LDA ZP_SHP_DST+1
+        STA SHAPE_SMC2+1
+.L9EEA
+        LDA BLIT_W
+        STA ZP_CNT
+        LDX #$FF
+        LDY ZP_CY
+        BMI .L9F01
+        LDA HGR_ROW_LO,Y
+        STA ZP_HGR_PTR
+        LDA HGR_ROW_HI,Y
+        STA ZP_HGR_PTR+1
+        LDX ZP_CX
+.L9F01
+SHAPE_SMC2 = *+1
+        LDA STALE_FFFF
+        BEQ .L9F11
+        LDY HGR_ROW_BIT,X
+        BEQ .L9F11
+BLIT_EOR = *+1
+        EOR #$00
+BLIT_OP = *+0
+        ORA (ZP_HGR_PTR),Y
+        STA (ZP_HGR_PTR),Y
+.L9F11
+        INC SHAPE_SMC2
+        BNE .L9F19
+        INC SHAPE_SMC2+1
+.L9F19
+        CLC
+        TXA
+        ADC #$07
+        BCC .L9F21
+        LDA #$FF
+.L9F21
+        TAX
+        DEC ZP_CNT
+        BNE .L9F01
+        INC ZP_CY
+        DEC BLIT_DX
+        BNE .L9EEA
+        RTS
+@
+
+<<spa preshift>>=
+        ORG $9F2E
+SHAPE_PRESHIFT
+        SUBROUTINE
+        ; Pre-shift a shape into hi-res byte alignment.
+        ;
+        ; Behavior:
+        ;   Rotate each row of the shape buffer right by the column's sub-byte
+        ;   pixel offset (preserving the high artifact bit), producing the byte-
+        ;   aligned copy the blitter ORs onto the screen.
+        ;
+        ; Clobbers: A, X, Y
+        STA SHIFT_SCRATCH
+        STX ZP_SHIFT_CNT
+        LDA ZP_SHP_SRC
+        STA ZP_SHP_DST
+        LDA ZP_SHP_SRC+1
+        STA ZP_SHP_DST+1
+.L9F3B
+        CLC
+        LDA ZP_SHP_DST
+        ADC SHIFT_SCRATCH
+        STA ZP_SHP_DST
+        BCC .L9F47
+        INC ZP_SHP_DST+1
+.L9F47
+        DEX
+        BNE .L9F3B
+        LDA #$06
+        STA SHIFT_SCRATCH+1
+        LDY #$00
+.L9F51
+        LDA SHIFT_SCRATCH
+        STA ZP_SHIFT_ROW
+.L9F56
+        CLC
+        LDX ZP_SHIFT_CNT
+.L9F59
+        LDA (ZP_SHP_SRC),Y
+        ROL
+        CLC
+        BPL .L9F60
+        SEC
+.L9F60
+        AND #$7F
+        STA (ZP_SHP_DST),Y
+        INC ZP_SHP_SRC
+        BNE .L9F6A
+        INC ZP_SHP_SRC+1
+.L9F6A
+        INC ZP_SHP_DST
+        BNE .L9F70
+        INC ZP_SHP_DST+1
+.L9F70
+        DEX
+        BNE .L9F59
+        DEC ZP_SHIFT_ROW
+        BNE .L9F56
+        DEC SHIFT_SCRATCH+1
+        BNE .L9F51
+        RTS
+@
+
+<<spa shift storage>>=
+        ORG $9F7D
+SHIFT_SCRATCH
+        HEX 0000
+@
+
+<<spa place actors>>=
+        ORG $9F7F
+PLACE_ACTORS
+        SUBROUTINE
+        ; Populate the actor table from the current sector cell.
+        ;
+        ; Behavior:
+        ;   Decode the cell, then for each quadrant that holds something (enemy,
+        ;   base, planet) place an actor at a random or fixed torus position and
+        ;   give it a shape; the base also gets its four berth offsets.
+        ;
+        ; Clobbers: A, X, Y
+        LDA ZP_X
+        LDY ZP_Y
+        STA ZP_CX
+        STY ZP_CY
+        JSR CELL_DECODE
+        LDX #$00
+        STX ZP_RNG
+        STX ZP_RNG+1
+        ASL
+        ASL
+        ASL
+        ASL
+.L9F94
+        CLC
+        LDA ZP_RNG
+        ADC ZP_Y
+        STA ZP_RNG
+        BCC .L9F9F
+        INC ZP_RNG+1
+.L9F9F
+        DEY
+        BNE .L9F94
+        LDX #$08
+.L9FA4
+        LDA #$00
+        STA ACTOR_HEAD,X
+        STA ACTOR_SHAPE,X
+        LDA #$FF
+        STA ACTOR_Y,X
+        STA ACTOR_X,X
+        DEX
+        BPL .L9FA4
+        LDA CELL_NW
+        BEQ .L9FCA
+        JSR RND_ACTOR_POS
+        STX ACTOR_X
+        STY ACTOR_Y
+        LDA #$0B
+        STA ACTOR_SHAPE
+.L9FCA
+        LDA CELL_NE
+        BEQ .LA00B
+        STA ZP_T0
+.L9FD1
+        JSR RND_ACTOR_POS
+        TXA
+        LDX ZP_T0
+        STA ACTOR_X,X
+        TYA
+        STA ACTOR_Y,X
+        LDA #$03
+        STA ZP_T1
+.L9FE2
+        LDX ZP_T1
+        CPX ZP_T0
+        BEQ .L9FFC
+        LDA ACTOR_SHAPE,X
+        BEQ .L9FFC
+        STX DIST_B
+        LDA ZP_T0
+        STA DIST_A
+        JSR ACTOR_DIST
+        CMP #$2D
+        BCC .L9FD1
+.L9FFC
+        DEC ZP_T1
+        BPL .L9FE2
+        LDX ZP_T0
+        LDA #$09
+        STA ACTOR_SHAPE,X
+        DEC ZP_T0
+        BNE .L9FD1
+.LA00B
+        LDA CELL_SW
+        BEQ .LA034
+.LA010
+        JSR RND_BASE_POS
+        STX BASE_X
+        STY BASE_Y
+        LDA #$04
+        STA DIST_A
+        LDA #$03
+        STA DIST_B
+.LA023
+        JSR ACTOR_DIST
+        CMP #$1E
+        BCC .LA010
+        DEC DIST_B
+        BPL .LA023
+        LDA #$0A
+        STA ACTOR_SHAPE+4
+.LA034
+        LDA #$05
+        STA ZP_CY
+        LDA #$03
+        STA ZP_CX
+.LA03C
+        LDX ZP_CX
+        LDA CELL_NW,X
+        BNE .LA046
+        JMP .LA0D5
+.LA046
+        CLC
+        ADC ZP_CY
+        STA ZP_T1
+        LDA ZP_CY
+        STA ZP_T0
+.LA04F
+        LDX ZP_T0
+        CPX #$08
+        BCS .LA0C6
+        CPX #$05
+        BNE .LA070
+        LDA #$00
+        STA ACTOR_HEAD,X
+        CLC
+        LDA BASE_Y
+        ADC #$12
+        STA ACTOR_Y,X
+        LDA BASE_X
+        STA ACTOR_X,X
+        JMP .LA0BE
+.LA070
+        CPX #$06
+        BNE .LA08B
+        LDA #$01
+        STA ACTOR_HEAD,X
+        SEC
+        LDA BASE_X
+        SBC #$14
+        STA ACTOR_X,X
+        LDA BASE_Y
+        STA ACTOR_Y,X
+        JMP .LA0BE
+.LA08B
+        CPX #$07
+        BNE .LA0A6
+        LDA #$02
+        STA ACTOR_HEAD,X
+        SEC
+        LDA BASE_Y
+        SBC #$12
+        STA ACTOR_Y,X
+        LDA BASE_X
+        STA ACTOR_X,X
+        JMP .LA0BE
+.LA0A6
+        CPX #$08
+        BNE .LA0BE
+        LDA #$03
+        STA ACTOR_HEAD,X
+        CLC
+        LDA BASE_X
+        ADC #$14
+        STA ACTOR_X,X
+        LDA BASE_Y
+        STA ACTOR_Y,X
+.LA0BE
+        LDY ZP_CX
+        LDA XPORT_FRAME+3,Y
+        STA ACTOR_SHAPE,X
+.LA0C6
+        INC ZP_T0
+        LDA ZP_T0
+        CMP ZP_T1
+        BCS .LA0D1
+        JMP .LA04F
+.LA0D1
+        LDA ZP_T0
+        STA ZP_CY
+.LA0D5
+        INC ZP_CX
+        LDA ZP_CX
+        CMP #$06
+        BCS .LA0E0
+        JMP .LA03C
+.LA0E0
+        JSR RND_ACTOR_POS
+        STX ZP_VX
+        STY ZP_VY
+        STX ACTOR_X+9
+        STY ACTOR_Y+9
+        LDA #$09
+        STA DIST_A
+        LDA #$08
+        STA DIST_B
+        JSR ACTOR_DIST
+        CMP #$1E
+        BCC .LA0E0
+@
+
+<<spa xport tables>>=
+        ORG $A0FE
+XPORT_FRAME
+        HEX ce889d10f460
+CRAFT_TYPE
+        HEX 0c141c
+@
+
+<<spa fixed math>>=
+        ORG $A107
+MUL8_FIXED
+        SUBROUTINE
+        ; Fixed-point multiply and divide for the projection.
+        ;
+        ; Behavior:
+        ;   MUL8_FIXED multiplies A by ZP_MUL_B into a 16-bit product; DIV16
+        ;   divides the 16-bit ZP_FX2 by ZP_FX0.  Together they rotate and scale
+        ;   the enemy position into the front view.
+        ;
+        ; Clobbers: A, X
+        PHP
+        CLD
+        STA ZP_FX0
+        LDA #$08
+        STA ZP_FX_CNT
+        LDA #$00
+        STA ZP_FX2
+.LA113
+        LSR ZP_FX0
+        BCC .LA11A
+        CLC
+        ADC ZP_MUL_B
+.LA11A
+        ROR
+        ROR ZP_FX2
+        DEC ZP_FX_CNT
+        BNE .LA113
+        PLP
+        RTS
+DIV16
+        STA ZP_FX1
+        PHP
+        CLD
+        LDA #$10
+        STA ZP_FX_CNT
+        LDA #$00
+        STA ZP_FX4
+        STA ZP_FX5
+.LA131
+        ASL ZP_FX2
+        ROL ZP_FX3
+        ROL ZP_FX4
+        ROL ZP_FX5
+        LDA ZP_FX4
+        SEC
+        SBC ZP_FX0
+        STA ZP_FX_T
+        LDA ZP_FX5
+        SBC ZP_FX1
+        BCC .LA14E
+        INC ZP_FX2
+        STA ZP_FX5
+        LDA ZP_FX_T
+        STA ZP_FX4
+.LA14E
+        DEC ZP_FX_CNT
+        BNE .LA131
+        PLP
+        RTS
+@
+
+<<spa fuel burn>>=
+        ORG $A154
+FUEL_BURN
+        SUBROUTINE
+        ; Subtract a fuel cost, clamping at empty.
+        ;
+        ; Behavior:
+        ;   FUEL_BURN takes A units off the 16-bit PLR_FUEL, clamping at zero and
+        ;   clearing the rotation timer when the tank runs dry, then falls into
+        ;   the status redraw.
+        ;
+        ; Modifies: PLR_FUEL
+        ; Clobbers: A
+        STA ZP_T0
+        SEC
+        LDA PLR_FUEL
+        SBC ZP_T0
+        STA PLR_FUEL
+        BCS .LA175
+        DEC PLR_FUEL+1
+        LDA PLR_FUEL+1
+        CMP #$FF
+        BNE WIN_STATS_DRAW
+        LDA #$00
+        STA PLR_FUEL
+        STA PLR_FUEL+1
+        BEQ .LA17F
+.LA175
+        LDA PLR_FUEL
+        ORA PLR_FUEL+1
+        BNE WIN_STATS_DRAW
+        LDA #$00
+.LA17F
+        STA ROT_TIMER
+@
+
+<<spa stats panel>>=
+        ORG $A182
+WIN_STATS_DRAW
+        SUBROUTINE
+        ; Draw the Shld | Fuel | Exp | Coin status panel.
+        ;
+        ; Behavior:
+        ;   Print the four 16-bit ship/player figures into the stats window,
+        ;   each via PRINT_STAT16 (which highlights low values), then restore.
+        ;
+        ; Clobbers: A, X, Y
+        JSR WIN_SAVE
+        JSR WIN_STATS
+        STA NUM_PAD
+        LDA #$24
+        STA MON_WNDLFT
+        LDA #$04
+        STA MON_WNDWDTH
+        LDA PLR_SHIELD+1
+        LDX PLR_SHIELD
+        JSR PRINT_STAT16
+        LDA PLR_FUEL+1
+        LDX PLR_FUEL
+        JSR PRINT_STAT16
+        LDA PLR_EXP+1
+        LDX PLR_EXP
+        JSR PRINT_STAT16
+        LDA PLR_COIN+1
+        LDX PLR_COIN
+        JSR PRINT_NUM16
+        JSR CLR_EOL
+        JMP WIN_RESTORE
+@
+
+<<spa spend turn>>=
+        ORG $A1BD
+SPEND_TURN
+        SUBROUTINE
+        ; Spend a game turn at a fixed time cost.
+        ;
+        ; Behavior:
+        ;   Preserve the registers and call the engine TICK with a fixed move
+        ;   count, so a space action advances the world clock.
+        ;
+        ; Clobbers: nothing (registers preserved)
+        PHA
+        TXA
+        PHA
+        TYA
+        PHA
+        LDY #$00
+        LDA #$05
+        JSR TICK
+        PLA
+        TAY
+        PLA
+        TAX
+        PLA
+        RTS
+@
+
+<<spa sprite tables>>=
+        ORG $A1CF
+SHAPE_PTR_LO
+        HEX cbd2ee185ec07d64
+        HEX 75b00050a0f04090
+        HEX e03080d02070c010
+        HEX 60b00050a0f04090
+        HEX e03080d0
+SHAPE_PTR_HI
+        HEX a2a2a2a3a3a3a4a5
+        HEX a6a7a8a8a8a8a9a9
+        HEX a9aaaaaaabababac
+        HEX acacadadadadaeae
+        HEX aeafafaf
+SHAPE_XOFF
+        HEX 0001010203040506
+        HEX 070b0b0b0b0b0b0b
+        HEX 0b0b0b0b0b0b0b0b
+        HEX 0b0b0b0b0b0b0b0b
+        HEX 0b0b0b0b
+SHAPE_YOFF
+        HEX 0001010203040506
+        HEX 070a0a0a0a0a0a0a
+        HEX 0a0a0a0a0a0a0a0a
+        HEX 0a0a0a0a0a0a0a0a
+        HEX 0a0a0a0a
+SHAPE_WID
+        HEX 0102020202030303
+        HEX 0304040404040404
+        HEX 0404040404040404
+        HEX 0404040404040404
+        HEX 04040404
+SHAPE_DX
+        HEX 0102030507090b0d
+        HEX 0f14141414141414
+        HEX 1414141414141414
+        HEX 1414141414141414
+        HEX 14141414
+SHAPE_HGT
+        HEX 0104060a0e1b2127
+        HEX 2d50505050505050
+        HEX 5050505050505050
+        HEX 5050505050505050
+        HEX 50505050
+SHAPE_PIXELS
+        HEX 0102040810204003
+        HEX 000300060006000c
+        HEX 000c001800180030
+        HEX 0030006000600040
+        HEX 0140010500070005
+        HEX 000a000e000a0014
+        HEX 001c001400280038
+        HEX 0028005000700050
+        HEX 0020016001200140
+        HEX 0240034002110015
+        HEX 001f001500110022
+        HEX 002a003e002a0022
+        HEX 00440054007c0054
+        HEX 0044000801280178
+        HEX 0128010801100250
+        HEX 0270035002100220
+        HEX 0420056007200520
+        HEX 044008400a400f40
+        HEX 0a4008630063006b
+        HEX 007f006b00630063
+        HEX 004601460156017e
+        HEX 015601460146010c
+        HEX 030c032c037c032c
+        HEX 030c030c03180618
+        HEX 0658067807580618
+        HEX 061806300c300c30
+        HEX 0d700f300d300c30
+        HEX 0c60186018601a60
+        HEX 1f601a6018601840
+        HEX 3140314035403f40
+        HEX 3540314031030300
+        HEX 0303003b03003b03
+        HEX 006f03003b03003b
+        HEX 0300030300030300
+        HEX 0606000606007606
+        HEX 007606005e070076
+        HEX 0600760600060600
+        HEX 0606000c0c000c0c
+        HEX 006c0d006c0d003c
+        HEX 0f006c0d006c0d00
+        HEX 0c0c000c0c001818
+        HEX 00181800581b0058
+        HEX 1b00781e00581b00
+        HEX 581b001818001818
+        HEX 0030300030300030
+        HEX 3700303700703d00
+        HEX 3037003037003030
+        HEX 0030300060600060
+        HEX 6000606e00606e00
+        HEX 607b00606e00606e
+        HEX 0060600060600040
+        HEX 4101404101405d01
+        HEX 405d01407701405d
+        HEX 01405d0140410140
+        HEX 4101030c00030c00
+        HEX 730c005b0d005b0d
+        HEX 002f0e005b0d005b
+        HEX 0d00730c00030c00
+        HEX 030c000618000618
+        HEX 00661900361b0036
+        HEX 1b005e1c00361b00
+        HEX 361b006619000618
+        HEX 000618000c30000c
+        HEX 30004c33006c3600
+        HEX 6c36003c39006c36
+        HEX 006c36004c33000c
+        HEX 30000c3000186000
+        HEX 186000186700586d
+        HEX 00586d0078720058
+        HEX 6d00586d00186700
+        HEX 1860001860003040
+        HEX 01304001304e0130
+        HEX 5b01305b01706501
+        HEX 305b01305b01304e
+        HEX 0130400130400160
+        HEX 0003600003601c03
+        HEX 603603603603604b
+        HEX 0360360360360360
+        HEX 1c03600003600003
+        HEX 4001064001064039
+        HEX 06406d06406d0640
+        HEX 1707406d06406d06
+        HEX 4039064001064001
+        HEX 0603300003300063
+        HEX 31007333003b3700
+        HEX 3b37004f3c003b37
+        HEX 003b370073330063
+        HEX 3100033000033000
+        HEX 0660000660004663
+        HEX 00666700766e0076
+        HEX 6e001e7900766e00
+        HEX 766e006667004663
+        HEX 000660000660000c
+        HEX 40010c40010c4701
+        HEX 4c4f016c5d016c5d
+        HEX 013c72016c5d016c
+        HEX 5d014c4f010c4701
+        HEX 0c40010c40011800
+        HEX 03180003180e0318
+        HEX 1f03583b03583b03
+        HEX 786403583b03583b
+        HEX 03181f03180e0318
+        HEX 0003180003300006
+        HEX 300006301c06303e
+        HEX 0630770630770670
+        HEX 4907307706307706
+        HEX 303e06301c063000
+        HEX 0630000660000c60
+        HEX 000c60380c607c0c
+        HEX 606e0d606e0d6013
+        HEX 0f606e0d606e0d60
+        HEX 7c0c60380c60000c
+        HEX 60000c4001184001
+        HEX 1840711840791940
+        HEX 5d1b405d1b40271e
+        HEX 405d1b405d1b4079
+        HEX 1940711840011840
+        HEX 0118034001034001
+        HEX 434301634701734e
+        HEX 017b5e017b5e010f
+        HEX 71017b5e017b5e01
+        HEX 734e016347014343
+        HEX 0103400103400106
+        HEX 0003060003060703
+        HEX 460f03661d03763d
+        HEX 03763d031e620376
+        HEX 3d03763d03661d03
+        HEX 460f030607030600
+        HEX 030600030c00060c
+        HEX 00060c0e060c1f06
+        HEX 4c3b066c7b066c7b
+        HEX 063c44076c7b066c
+        HEX 7b064c3b060c1f06
+        HEX 0c0e060c00060c00
+        HEX 0618000c18000c18
+        HEX 1c0c183e0c18770c
+        HEX 58770d58770d7808
+        HEX 0f58770d58770d18
+        HEX 770c183e0c181c0c
+        HEX 18000c18000c3000
+        HEX 1830001830381830
+        HEX 7c18306e19306f1b
+        HEX 306f1b70111e306f
+        HEX 1b306f1b306e1930
+        HEX 7c18303818300018
+        HEX 3000186000306000
+        HEX 3060703060783160
+        HEX 5c33605e37605e37
+        HEX 60233c605e37605e
+        HEX 37605c3360783160
+        HEX 7030600030600030
+        HEX 4001604001604061
+        HEX 6140716340396740
+        HEX 3d6f403d6f404778
+        HEX 403d6f403d6f4039
+        HEX 6740716340616140
+        HEX 0160400160000000
+        HEX 0000000000007f00
+        HEX 0060550300305106
+        HEX 0018500c000c101a
+        HEX 000c541800061430
+        HEX 000e513000065532
+        HEX 00065530000c1418
+        HEX 000c14180018150c
+        HEX 0030150600605503
+        HEX 00007f0000000000
+        HEX 0000000000003300
+        HEX 0000330000001e00
+        HEX 00607f0100707303
+        HEX 0030000300300003
+        HEX 00370c3b003f0c3f
+        HEX 000c330c000c330c
+        HEX 003f0c3f00370c3b
+        HEX 0030000300300003
+        HEX 0070730300607f01
+        HEX 00001e0000003300
+        HEX 0000330000000000
+        HEX 0040310000403100
+        HEX 00001b00000c1b06
+        HEX 0018000300304001
+        HEX 00030a18004c2a06
+        HEX 00402a0000402a00
+        HEX 004c2a0600030a18
+        HEX 0030400100180003
+        HEX 000c1b0600001b00
+        HEX 0040310000403100
+        HEX 0000000000000c00
+        HEX 00000c0000001e00
+        HEX 00001e0000001200
+        HEX 0000330000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000407f00
+        HEX 00607f0100707f03
+        HEX 00787f0700787f07
+        HEX 0060610100000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0060000000600100
+        HEX 0070030000700700
+        HEX 00707f0700607f3f
+        HEX 00607f7301607f73
+        HEX 01607f3f00607f07
+        HEX 0070070000700300
+        HEX 0070010000600000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000606101
+        HEX 00787f0700787f07
+        HEX 00707f0300607f01
+        HEX 00407f0000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000003300
+        HEX 0000120000001e00
+        HEX 00001e0000000c00
+        HEX 00000c0000000000
+        HEX 0000000000000000
+        HEX 0000000600000007
+        HEX 0000400f0000600f
+        HEX 00607f0f007c7f07
+        HEX 004f7f07004f7f07
+        HEX 007c7f0700607f0f
+        HEX 0000600f0000400f
+        HEX 0000000700000006
+        HEX 0000000000000000
+        HEX 0000000000000c00
+        HEX 00000c0000001e00
+        HEX 00001e0000001200
+        HEX 0000330000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000407f00
+        HEX 00607f0100707f03
+        HEX 00787f0700787f07
+        HEX 0050200100706001
+        HEX 0040200000000000
+        HEX 0000000000000000
+        HEX 0060000000600100
+        HEX 0074030000760700
+        HEX 00757f0700607f3f
+        HEX 00607f7301607f73
+        HEX 01607f3f00607f07
+        HEX 0075070000760300
+        HEX 0074010000600000
+        HEX 0000000000000000
+        HEX 0000000000402000
+        HEX 0070600100502001
+        HEX 00787f0700787f07
+        HEX 00707f0300607f01
+        HEX 00407f0000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000003f00
+        HEX 00003f0000003300
+        HEX 0000120000001e00
+        HEX 00001e0000000c00
+        HEX 00000c0000000000
+        HEX 0000000000000000
+        HEX 0000000600000007
+        HEX 0000401700006037
+        HEX 00607f57007c7f07
+        HEX 004f7f07004f7f07
+        HEX 007c7f0700607f07
+        HEX 0000605700004037
+        HEX 0000001700000006
+        HEX 0000000000000000
+        HEX 0000000000000c00
+        HEX 00000c0000000c00
+        HEX 00000c0000000c00
+        HEX 00001e0000001e00
+        HEX 000c1e0c000c1e0c
+        HEX 000c1e0c000c3f0c
+        HEX 000c330c005c6d0e
+        HEX 007c6d0f007c7f0f
+        HEX 006c7f0d000c3f0c
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000787f01
+        HEX 00787f0100000700
+        HEX 0040030000400700
+        HEX 00601f0000607907
+        HEX 0070777f0170777f
+        HEX 0170790700601f00
+        HEX 0040070000400300
+        HEX 0000070000787f01
+        HEX 00787f0100000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 000c3f0c006c7f0d
+        HEX 007c7f0f007c6d0f
+        HEX 005c6d0e000c330c
+        HEX 000c3f0c000c1e0c
+        HEX 000c1e0c000c1e0c
+        HEX 00001e0000001e00
+        HEX 00000c0000000c00
+        HEX 00000c0000000c00
+        HEX 00000c0000000000
+        HEX 0000000000007f1f
+        HEX 00007f1f00006001
+        HEX 0000400300006003
+        HEX 0000780700601f07
+        HEX 007f6f07007f6f07
+        HEX 00601f0700007807
+        HEX 0000600300004003
+        HEX 0000600100007f1f
+        HEX 00007f1f00000000
+        HEX 0000000000000c00
+        HEX 00000c0000000c00
+        HEX 00000c0000000c00
+        HEX 00001e0000001e00
+        HEX 000c1e0c000c1e0c
+        HEX 000c1e0c000c3f0c
+        HEX 000c330c005c6d0e
+        HEX 007c6d0f007c7f0f
+        HEX 006c7f0d000c3f0c
+        HEX 00040a0400442004
+        HEX 0000000000000000
+        HEX 00000000007d7f01
+        HEX 007d7f0100000700
+        HEX 0040030000400700
+        HEX 00601f0000617907
+        HEX 0074777f0174777f
+        HEX 0174790700611f00
+        HEX 0040070000400300
+        HEX 00000700007d7f01
+        HEX 007d7f0100000000
+        HEX 0000000000000000
+        HEX 0044200400040a04
+        HEX 000c3f0c006c7f0d
+        HEX 007c7f0f007c6d0f
+        HEX 005c6d0e000c330c
+        HEX 000c3f0c000c1e0c
+        HEX 000c1e0c000c1e0c
+        HEX 00001e0000001e00
+        HEX 00000c0000000c00
+        HEX 00000c0000000c00
+        HEX 00000c0000000000
+        HEX 0000000000007f5f
+        HEX 00007f5f00006001
+        HEX 0000600300006003
+        HEX 0000780700601f47
+        HEX 007f6f17007f6f17
+        HEX 00601f1700007847
+        HEX 0000600300004003
+        HEX 0000600100007f5f
+        HEX 00007f5f00000000
+        HEX 0000000000000c00
+        HEX 00000c0000001e00
+        HEX 00001e0000003300
+        HEX 00003f0000043f08
+        HEX 000e3f1c004e7f1c
+        HEX 006e7f1d007e7f1f
+        HEX 006e7f1d006e7f1d
+        HEX 006e7f1d007e7f1f
+        HEX 006e7f1d000e3f1c
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 00607f0100607f03
+        HEX 00607f0100001100
+        HEX 00403f0000407f00
+        HEX 00607f0f00607f3f
+        HEX 00607f7701607f77
+        HEX 01607f3f00607f0f
+        HEX 00407f0000403f00
+        HEX 0000110000607f01
+        HEX 00607f0300607f01
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 000e3f1c006e7f1d
+        HEX 007e7f1f006e7f1d
+        HEX 006e7f1d006e7f1d
+        HEX 007e7f1f006e7f1d
+        HEX 004e7f1c000e3f1c
+        HEX 00043f0800003f00
+        HEX 0000330000001e00
+        HEX 00001e0000000c00
+        HEX 00000c0000000000
+        HEX 00007f0700407f07
+        HEX 00007f0700000801
+        HEX 00007c0300007e03
+        HEX 00707f07007c7f07
+        HEX 006f7f07006f7f07
+        HEX 007c7f0700707f07
+        HEX 00007e0300007c03
+        HEX 0000080100007f07
+        HEX 00407f0700007f07
+        HEX 0000000000000c00
+        HEX 00000c0000001e00
+        HEX 00001e0000003300
+        HEX 00003f0000043f08
+        HEX 000e3f1c004e7f1c
+        HEX 006e7f1d007e7f1f
+        HEX 006e7f1d006e7f1d
+        HEX 006e7f1d007e7f1f
+        HEX 006e7f1d000e3f1c
+        HEX 00000a0000402a00
+        HEX 00402a0000000000
+        HEX 00607f0100607f03
+        HEX 00607f0100001100
+        HEX 00403f0000407f00
+        HEX 00617f0f00717f3f
+        HEX 00757f7701757f77
+        HEX 01757f3f00717f0f
+        HEX 00417f0000403f00
+        HEX 0000110000607f01
+        HEX 00607f0300607f01
+        HEX 0000000000402a00
+        HEX 00402a0000000a00
+        HEX 000e3f1c006e7f1d
+        HEX 007e7f1f006e7f1d
+        HEX 006e7f1d006e7f1d
+        HEX 007e7f1f006e7f1d
+        HEX 004e7f1c000e3f1c
+        HEX 00043f0800003f00
+        HEX 0000330000001e00
+        HEX 00001e0000000c00
+        HEX 00000c0000000000
+        HEX 00007f0700407f07
+        HEX 00007f0700000801
+        HEX 00007c0300007e03
+        HEX 00707f47007c7f47
+        HEX 006f7f57006f7f57
+        HEX 007c7f5700707f47
+        HEX 00007e4300007c03
+        HEX 0000080100007f07
+        HEX 00407f0700007f07
+        HEX 00000000
+BSS_TOP
+        HEX 00
+@
+
+
+\subsection{The enemy ship sprites}
+
+The enemy craft is stored as a sprite atlas at the file tail: nine
+distance scales (a single dot at the farthest range growing to a
+three-column, forty-five-row craft at point-blank) followed by
+twenty-seven rotation frames. Six parallel 36-entry tables describe each
+shape: [[SHAPE_PTR_LO]]/[[SHAPE_PTR_HI]] give the pixel pointer,
+[[SHAPE_WID]]/[[SHAPE_HGT]] the dimensions in 7-pixel columns and rows,
+and [[SHAPE_XOFF]]/[[SHAPE_YOFF]] the centring offsets (which double as
+the firing hit box). [[SHAPE_PIXELS]] holds the packed hi-res bytes. The
+blitter ([[BLIT_SHAPE_AT]]) pre-shifts a shape into byte alignment and
+XOR-draws it, so the same routine both draws and erases.
+Figure~\ref{fig:spa-ships} shows the nine distance scales of the enemy
+craft, and Figure~\ref{fig:spa-shapes-all} the full atlas including its
+rotation frames.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.85\textwidth]{images/spa_ships.png}
+\caption{The enemy ship at its nine drawing scales (\texttt{SPA}
+shapes~0--8): a far dot grows into the recognisable craft --- two
+outboard pods flanking a central diamond cockpit --- as range closes.
+Rendered from [[SHAPE_PIXELS]] by
+\texttt{.claude/scripts/render\_spa\_ships.py}.}
+\label{fig:spa-ships}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.7\textwidth]{images/spa_shapes_all.png}
+\caption{The full \texttt{SPA} shape atlas (all 36 entries): the nine
+distance scales across the top, then the twenty-seven rotation frames
+of the craft and the planet/sun disc used in the navigation view.}
+\label{fig:spa-shapes-all}
+\end{figure}
 
 <<spa.asm>>=
         PROCESSOR 6502
-<<spa blob>>
+<<spa defines>>
+<<spa entry>>
+<<spa main loop>>
+<<spa physics>>
+<<spa star hazard>>
+<<spa collide>>
+<<spa base geom>>
+<<spa dock>>
+<<spa stow ship>>
+<<spa choose ship>>
+<<spa board ship>>
+<<spa ship tables>>
+<<spa land>>
+<<spa thrust>>
+<<spa thrust tables>>
+<<spa clamp vel>>
+<<spa retro>>
+<<spa retro tables>>
+<<spa rotate>>
+<<spa hyper blocked>>
+<<spa scan>>
+<<spa scan data>>
+<<spa dispatch table>>
+<<spa trampolines>>
+<<spa dir strings>>
+<<spa physics bss>>
+<<spa view>>
+<<spa speed strings>>
+<<spa reticle draw>>
+<<spa rng pixel>>
+<<spa idle poll>>
+<<spa starfield>>
+<<spa scan center>>
+<<spa pan reset>>
+<<spa pan>>
+<<spa fire>>
+<<spa hit enemy>>
+<<spa reticle reset>>
+<<spa msg nofuel>>
+<<spa hyperjump>>
+<<spa view toggle>>
+<<spa ztats>>
+<<spa view wipe>>
+<<spa enemy ai>>
+<<spa draw shot>>
+<<spa enemy project>>
+<<spa star bss>>
+<<spa cell decode>>
+<<spa grid offsets>>
+<<spa rng helpers>>
+<<spa dist storage>>
+<<spa draw actors>>
+<<spa blit storage>>
+<<spa blit>>
+<<spa preshift>>
+<<spa shift storage>>
+<<spa place actors>>
+<<spa xport tables>>
+<<spa fixed math>>
+<<spa fuel burn>>
+<<spa stats panel>>
+<<spa spend turn>>
+<<spa sprite tables>>
 @
 
 \section{GEN}

@@ -1,12 +1,55 @@
 ---
 name: spa-subsystem
-description: Ultima I SPA space-combat overlay -- rotation/thrust flight sim, enemy craft, the Space Ace counter (scouted round 20)
+description: Ultima I SPA space-combat overlay -- rotation/thrust flight sim, enemy craft, the Space Ace counter (DECOMPOSED round 21, byte-perfect)
 metadata:
   type: project
 ---
 
 SPA ($8956-$B01F, 9930 bytes) is the SPACE COMBAT overlay -- the ace-pilot
-layer the pub lore and CAS both reference. Scouted round 20; decompose next.
+layer the pub lore and CAS both reference. DECOMPOSED round 21 (byte-perfect,
+62 chunks); scout below kept for the architecture summary.
+
+**Round-21 decomposition facts (proven byte-perfect):**
+- Pipeline cloned from gen_cas: .claude/scripts/gen_spa.py + spa_symmap.py +
+  spa_labels.py + gen_chapter_spa.py. INLINE map is trivially just MSG_PRINT
+  ($8119, 45 calls); no STR_* inline-word calls, no patched-JSR dispatch.
+- SMC sites: DISP_OP (the JMP at $8AB0 patched from DISPATCH_TBL),
+  SHAPE_SMC/$9E9A + SHAPE_SMC2/$9F02 (the two unrolled blit loops' shape
+  pointers), BLIT_EOR/$9F0C + BLIT_OP/$9F0D (EOR mask + patched ORA opcode in
+  the draw blit), INFORM_JSR/$93D9 (the Inform sub-handler JSR operand). All
+  use `= *+N` anchors; STALE_FFFF EQU $FFFF emits the stale on-disk operand.
+- THE blitter has TWO copies: $9E99 = collision-test pass (AND/ORA into
+  ZP_BLIT_HIT), $9F01 = draw pass (EOR/ORA to screen). BIT $93F0 (DRAW_MODE
+  bit6) selects which. SHAPE_PRESHIFT/$9F2E rotates rows into byte alignment.
+- ENGINE addresses corrected vs the scout: PRINT_STAT16 = $8355 (NOT $8230);
+  POPUP_FRAME = $841E. WIN_STATS = $15A1 (STUPH). $A107 = MUL8_FIXED (8x8 ->
+  16 fixed mul), $A123 = DIV16, $A154 = FUEL_BURN, $A182 = WIN_STATS_DRAW,
+  $A1BD = SPEND_TURN (JSR TICK).
+- Cross-chunk locals promoted to globals (4): PHYSICS_MOVE/$8AB8,
+  RETICLE_PLOT/$9411, RETICLE_STROKE/$97BB (else separate SUBROUTINE scopes
+  break the branches). Same lesson as CAS/round-12.
+- DATA SPANS pinned: $8C47 base geom, $8F40 ship fuel/shield, $8FF4/$9046
+  thrust/retro deltas, $91B6-$9207 scan-state+SCAN_CELLGLYPH+DISPATCH_TBL (26
+  words), $9219 DIR strings, $9243-$9298 physics/actor BSS (incl SCALE_TBL
+  ramp $928F-$9297), $93DE speed strings, $9BCA-$9C53 starfield BSS, $9C87
+  grid offsets, $A0FE xport, $A1CF-$B01F the sprite/projection tables.
+- SPRITE ATLAS RENDERED: 36 entries in 6 parallel 36-entry tables
+  (SHAPE_PTR_LO/HI $A1CF/$A1F3, XOFF/YOFF $A217/$A23B = also the firing hit
+  box, WID/HGT $A25F/$A2A7, DX $A283), pixels at $A2CB. Shapes 0-8 = enemy at
+  9 distance scales (1x1 dot -> 3x45), shapes 9-35 = 27 rotation frames +
+  planet/sun disc. Renderer .claude/scripts/render_spa_ships.py ->
+  images/spa_ships.png + spa_shapes_all.png. The craft is a TIE-fighter shape:
+  two outboard pods + central diamond cockpit. 7-pixel-per-byte hi-res, low
+  bit leftmost, bit7 (artifact) masked by the blitter.
+- THE KILL COUNTER confirmed in code: HIT_ENEMY $96E2 drains enemy HP
+  ($B099,Y -= $40), awards +100 exp (cap 9999 at $7EE8=$27/PLR_EXP=$0F), then
+  INC PLR_VESSELS/$7EB6 (saturates via BNE/DEC). CMP #$14 BEQ -> "rank of
+  Space Ace" popup; >$14 -> "still a Space Ace". This is the ONLY writer of
+  PLR_VESSELS; CAS reads it for the princess-rescue TM_REVEAL gate.
+- PLR_FUEL/$7EE9 and PLR_SHIELD/$7EEB reuse the food/?? player slots; both
+  16-bit. FUEL_BURN clamps at 0 and clears the rotation timer when empty.
+
+----- original round-20 scout (architecture reference) -----
 
 **Why:** it is the largest remaining overlay, structurally unlike the
 town/castle/dungeon overlays (a real-time rotation+thrust flight sim, no
