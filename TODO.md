@@ -9,6 +9,30 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D6 (2026-06-13): The two makeindata RLE decompressors as flowcharts
+
+- Two targeted flowcharts in the MAKE.INDATA section (sec:makeindata,
+  Implementation part's Game-data chapter):
+  * fig:mi-decode -- the MI_DECODE stream decompressor as a per-call state
+    machine: resume vertical run / resume background run / else fetch byte
+    -> sentinel A (vertical (length,value) run) / sentinel B (background
+    (rows,span) run + MI_BACK back-reference replay) / literal; all paths
+    converge on .store_ret. Placed after the MI_DECODE chunk.
+  * fig:mi-payload -- the $8700 payload's high-bit-flagged RLE: zero the
+    $9600-$B5FF buffer -> fetch byte -> bit7 set = (value,count) run else
+    literal -> OR $80 onto each output byte -> stop at dest page $B7. Placed
+    after the MI_PAYLOAD_IMAGE blob; cross-refs fig:mi-decode.
+- Both faithful to the asm + makeindata_subsystem.md: fig:mi-decode from the
+  MI_DECODE 3-mode interwoven scope (the two run flags MI_F_RUN/MI_F_BACK,
+  the .startA/.back continuations, the shared .store_ret exit); fig:mi-payload
+  from the payload prose (bit7 literal/run split, ORA #$80 on output, dest-hi
+  == $B7 stop).
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs; both labels resolve + \ref'd from prose. PDF 1030 -> 1032.
+- NEXT: per-mode loop variants (OUT/DNG/SPA); the remaining structural
+  call/memory graphs (STUPH jump-vector table, overlay->engine directions,
+  GAME_LOAD internals, resident memory map + disk layout).
+
 ### Round D5 (2026-06-13): Rendering-pipeline diagrams (ch:rendering)
 
 - Four conceptual figures, all in ch:rendering (Design part) -- the first
@@ -1336,9 +1360,10 @@ Priority families (do in this rough order):
       (fig:mode-loop, ch:architecture, round D2). STILL TODO: targeted
       variants beside the OUT / DNG / SPA loops in the Implementation part
       (each differs only in dispatch + tick contents).
-- [ ] (b cont.) the two RLE decompressors (makeindata MI_DECOMP column-major
-      RLE + the $8700 high-bit RLE; makeindata_subsystem.md) as flowcharts,
-      beside the MAKE.INDATA section.
+- [x] (b cont.) the two RLE decompressors (makeindata MI_DECODE column-major
+      RLE state machine = fig:mi-decode + the $8700 high-bit RLE = fig:mi-payload;
+      makeindata_subsystem.md) as flowcharts, in the MAKE.INDATA section.
+      DONE round D6.
 - [~] (b cont.) boot/overlay-load flow: the boot chain (fig:bootflow,
       ch:architecture) DONE round D4. STILL TODO: a GAME_LOAD-internals flow
       (reset stack -> load overlay via /RAM cache -> redraw frame -> jump to

@@ -36731,7 +36731,8 @@ a \emph{background run} (a [[(rows, span)]] pair that fills many rows with
 a value, can repeat across a span, and saves a back-reference so a region
 can be replayed); otherwise the byte is a literal cell. The two run states
 ([[.run]] for sentinel~A, [[.back]] for sentinel~B) resume mid-run on the
-next call without re-reading the header.
+next call without re-reading the header. Figure~\ref{fig:mi-decode} draws
+the decoder as a flowchart.
 
 <<makeindata decode>>=
         ORG $1E47
@@ -36847,6 +36848,52 @@ MI_DECODE:
         RTS
 @ %def MI_DECODE
 
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 14mm]
+  \node[dgterminal] (entry) {MI\_DECODE\\\scriptsize emit one cell};
+  \node[dgdecision, below=of entry] (rrun) {in a\\vertical run?};
+  \node[dgprocess, right=22mm of rrun] (resA)
+        {paint MI\_VAL down the column\\\scriptsize MI\_RUNLEN -= 1};
+  \node[dgdecision, below=of rrun] (rback) {in a\\background run?};
+  \node[dgprocess, right=22mm of rback] (resB)
+        {fill MI\_VAL across the span\\\scriptsize MI\_ROWS/MI\_SPAN; replay via MI\_BACK};
+  \node[dgio, below=of rback] (fetch) {fetch stream byte\\\scriptsize -> MI\_VAL};
+  \node[dgdecision, below=of fetch] (isA) {== MI\_SENT\_A?};
+  \node[dgprocess, right=22mm of isA] (startA)
+        {start vertical run\\\scriptsize read MI\_RUNLEN, MI\_VAL\\set MI\_F\_RUN};
+  \node[dgdecision, below=of isA] (isB) {== MI\_SENT\_B?};
+  \node[dgprocess, right=22mm of isB] (startB)
+        {start background run\\\scriptsize read MI\_ROWS, MI\_SPAN\\save MI\_BACK; set MI\_F\_BACK};
+  \node[dgprocess, below=of isB] (lit) {literal: store MI\_VAL};
+  \node[dgterminal, below=of lit] (ret) {store cell, advance,\\return (.store\_ret)};
+
+  \draw[->] (entry)--(rrun);
+  \draw[->] (rrun) -- node[dgnote,above]{yes} (resA);
+  \draw[->] (rrun) -- node[dgnote,left]{no} (rback);
+  \draw[->] (rback) -- node[dgnote,above]{yes} (resB);
+  \draw[->] (rback) -- node[dgnote,left]{no} (fetch);
+  \draw[->] (fetch)--(isA);
+  \draw[->] (isA) -- node[dgnote,above]{yes} (startA);
+  \draw[->] (isA) -- node[dgnote,left]{no} (isB);
+  \draw[->] (isB) -- node[dgnote,above]{yes} (startB);
+  \draw[->] (isB) -- node[dgnote,left]{no} (lit);
+  \draw[->] (lit)--(ret);
+  \draw[->] (resA) |- (ret); \draw[->] (resB) |- (ret);
+  \draw[->] (startA) |- (ret); \draw[->] (startB) |- (ret);
+\end{tikzpicture}
+\caption{The stream decompressor [[MI_DECODE]], one cell per call. The two
+  run flags let a run resume across calls without re-reading the header. In
+  the idle state it fetches a byte: equal to sentinel~A it begins a
+  \emph{vertical run} (a [[(length, value)]] pair painted down the column);
+  equal to sentinel~B it begins a \emph{background run} (a [[(rows, span)]]
+  pair that fills a region and saves [[MI_BACK]] so the stream can be
+  replayed); otherwise the byte is a literal cell. All paths converge on
+  the common store-and-advance exit. The driver [[MI_DECOMP]] calls this
+  once per row, column by column.}
+\label{fig:mi-decode}
+\end{figure}
+
 \subsection{The page-copy helper}
 
 [[MI_PAGE_COPY]] copies [[MI_PAGES]] whole pages from [[(MI_VAL)]] to
@@ -36896,6 +36943,7 @@ every output byte, and stops when the destination reaches page [[$B7]]. The
 result is the \textsc{Origin Systems} logo image at [[LOGO_BUF]] that the
 fizzle reveals. We keep the whole region as one labelled blob; it is data
 within this file (it executes only after relocation to [[$8700]]).
+Figure~\ref{fig:mi-payload} draws this second, simpler decompressor.
 
 <<makeindata payload image>>=
         ORG $2000
@@ -37149,6 +37197,44 @@ MI_PAYLOAD_IMAGE:
         HEX 55 2a 55 2a 55 0a 80 16
         HEX 20 80 59 33 00
 @ %def MI_PAYLOAD_IMAGE
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
+  \node[dgterminal] (entry) {payload at [[$8700]]};
+  \node[dgprocess, below=of entry] (zero) {zero [[$9600]]--[[$B5FF]]};
+  \node[dgio, below=of zero] (fetch) {fetch stream byte};
+  \node[dgdecision, below=of fetch] (bit7) {bit 7 set?};
+  \node[dgprocess, right=24mm of bit7] (run)
+        {run: read (value, count)\\\scriptsize emit value count times};
+  \node[dgprocess, below=of bit7] (lit) {literal: emit the byte};
+  \node[dgprocess, below=of lit] (orh)
+        {OR [[$80]] onto each output byte\\\scriptsize set the hi-res palette bit};
+  \node[dgdecision, below=of orh] (done) {dest page\\= [[$B7]]?};
+  \node[dgterminal, below=of done] (ret) {logo ready at LOGO\_BUF};
+
+  \draw[->] (entry)--(zero); \draw[->] (zero)--(fetch);
+  \draw[->] (fetch)--(bit7);
+  \draw[->] (bit7) -- node[dgnote,above]{yes} (run);
+  \draw[->] (bit7) -- node[dgnote,left]{no} (lit);
+  \draw[->] (lit)--(orh);
+  \draw[->] (run) |- (orh);
+  \draw[->] (orh)--(done);
+  \draw[->] (done) -- node[dgnote,right]{no} ($(done.east)+(30mm,0)$) |- (fetch.east);
+  \draw[->] (done) -- node[dgnote,left]{yes} (ret);
+\end{tikzpicture}
+\caption{The payload decompressor (the [[$8700]] stamp). The eight pages
+  the builder copies to [[MI_PAYLOAD]] are a self-contained unpacker plus
+  its own stream. It clears the [[$9600]]--[[$B5FF]] buffer, then walks a
+  high-bit-flagged \textsc{rle}: a byte with bit~7 clear is a literal, a
+  byte with bit~7 set introduces a [[(value, count)]] run. Bit~7 is forced
+  on every emitted byte (the hi-res palette bit), and the loop stops when
+  the destination crosses into page [[$B7]]. The result is the
+  \textsc{Origin Systems} logo at [[LOGO_BUF]], which [[MI_FIZZLE]] then
+  dissolves onto the screen. Contrast the screen-targeted column-major
+  decompressor in Figure~\ref{fig:mi-decode}.}
+\label{fig:mi-payload}
+\end{figure}
 
 \subsection{The intro artwork}
 
