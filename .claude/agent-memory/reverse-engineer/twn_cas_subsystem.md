@@ -87,3 +87,35 @@ intricate and shared with CAS; the TCMAPS grid dimension was wrong in round 16.
   insulted/aggro flag (set when caught stealing -> "None will talk to thee"),
   $A934 NPC loop idx, $A935 digit count, $A937 hit NPC slot, $A939/A price16,
   $A93D shop item loop, $A93E/F/40 transport-avail counts, $A941 pub visits.
+
+CAS ($8956-$9EE9, 5524 bytes) -- scouted round 18, decompose next:
+- Near-twin of TWN. Same loader, main loop, patched-JSR dispatch (table
+  $8A5F), and BYTE-IDENTICAL draw/helper structure: MAP_DRAW $9B06,
+  FONT_SWAP $9B6E, NPC_DRAW, PLOT_GLYPH $9BA8, CELL_PROBE $9BC0, NPC_AT
+  $9BD9, NPC_DIST $9D47, ISQRT, same 38x18 grid + $B6AC NPC arrays.
+  Reuse the entire TWN engine-EQU block + gen_twn.py pipeline. CAS NPC
+  glyph table at $9EDC; per-row ptrs at $9EA9/$9EB9.
+- Castle index $9E3B = PLR_PLACE mod $15 + 2*PLR_CONT (continent-adjusted),
+  even/odd parity flip. TCMAPS dir read at $4000,X/$4001,X.
+- THE QUEST SYSTEM (Transact $927C = audience with King, NPC type $6C):
+  "pence or service?". Pence = gold->HP (1.5x). Service ASSIGN ($93FB):
+  INC QUEST_FLAGS[castle]; EVEN castle = find-a-place quest (STR_PLACES),
+  ODD = kill-a-monster quest (STR_MONSTERS, PLR_CONT*5+$1E). COMPLETE
+  ($94E7, QUEST_FLAGS high bit set): clear flag; EVEN reward = strength
+  ((99-STR)/8), ODD reward = a per-continent hint (self-mod JSR table
+  $95D6) that ALSO gives the quest GEM (OWNED_GEMS $7E75-78: red/green/
+  blue/white) with lore: green="time machine must be used to win",
+  blue="princess helps a space ace through time", white="take nine items
+  from storerooms - but only nine!" (sets $9E3D=9, the Get permission).
+- PRINCESS RESCUE in the move handler ($8AAF): reaching the cell ->
+  "saved the Princess <name>" + 500 HP/pence/exp; princess names
+  (Cassandra/Marsha/Donna/Melissa/Beth/Lori/Julia/Dianne) at $9E63,
+  fixed-width. "Space ace" (PLR_VESSELS>=$14) = time-travel unlock.
+  Pins TM_REVEAL.
+- GET ($90D4) = take from castle storeroom, gated/decremented on $9E3D
+  (the white-gem "nine items" permission counter).
+- CAS state vars $9E29-$9E3E (zero on disk): $9E29 idle, $9E2A king-reject,
+  $9E2B NPC loop, $9E32/33 pence amount, $9E3B castle index, $9E3C abs,
+  $9E3D storeroom permission, $9E3E combat temp. Data tail $9E40-$9EE9:
+  NPC names, 8 princess names $9E63, MAP_ROW ptrs $9EA9/B9, WEAPON_HITKIND
+  $9ECB, NPC_GLYPH $9EDC, per-castle quest params $9EE2.

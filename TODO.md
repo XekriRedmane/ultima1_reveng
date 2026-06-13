@@ -9,6 +9,61 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 18 scout (2026-06-13): CAS scouted end-to-end (quest system pinned)
+
+CAS (5524 bytes, $8956-$9EE9) is a near-twin of TWN: same loader
+skeleton, same main loop, same patched-JSR dispatch (table $8A5F,
+26 words, patched JSR $8A56), and BYTE-IDENTICAL draw/helper
+structure -- MAP_DRAW $9B06, FONT_SWAP $9B6E, NPC_DRAW, PLOT_GLYPH
+$9BA8, CELL_PROBE $9BC0, NPC_AT $9BD9, all the same 38x18 grid +
+$B6AC NPC arrays as TWN. CAS-local NPC glyph table at $9EDC. Reuse
+the entire TWN engine-EQU block and the gen pipeline.
+
+Entry differences: castle index = PLR_PLACE mod $15, then
++2*PLR_CONT into $9E3B (continent-adjusted), with an even/odd
+parity flip ($06-idx). TCMAPS dir read at $4000,X/$4001,X (vs TWN's
++4). Map copy + draw via $9B06.
+
+Dispatch (CAS handlers): move $8A93-8AA8, Pass $8C4C, Attack $8C56,
+Cast $8E3C, Drop $8E5B, Get $90D4, Inform $9AFA, Quit $9134, Ready
+$9159, Steal $916F, Transact $927C (= TALK TO KING), Unlock $975E,
+Ztats $97FE. Board/Enter/Fire/HyperJump/K-limb/Open/View/X-it ->
+QUERY_MARK; Accel/Noise -> engine toggles.
+
+THE QUEST SYSTEM (Transact $927C = audience with the King, NPC type
+$6C):
+- $9E2A = king-rejects flag. $9E3B = castle index -> QUEST_FLAGS,X.
+- "Dost thou offer pence or service?" P = give gold for HP (1.5x,
+  like TWN drop-pence). S = accept/complete a quest.
+- ASSIGN ($93FB): INC QUEST_FLAGS,X. EVEN castle -> "Go forth and
+  find <place>" (STR_PLACES, continent math). ODD castle -> "Go now
+  and kill a <monster>" (STR_MONSTERS, PLR_CONT*5+$1E). $9EE2,X =
+  per-castle display column.
+- COMPLETE ($94E7, entered when QUEST_FLAGS,X high bit set): clear
+  the flag, reward. EVEN -> strength points ((99-STR)/8). ODD ->
+  a per-continent hint via self-modified JSR (table $95D6) that
+  ALSO GIVES THE QUEST GEM: green ($7E76)="time machine must be
+  used to win", blue ($7E77)="princess helps a space ace through
+  time", white ($7E78)="take nine items from storerooms - but only
+  nine!" (sets $9E3D=9, the Get permission counter). Red gem path
+  too. OWNED_GEMS=$7E75.
+- PRINCESS RESCUE (in the move handler $8AAF, reaching the throne/
+  cell): "Thou hast saved the Princess <name>!" -> +500 HP, pence,
+  exp ($9E06 = add-with-cap helper); "space ace" (PLR_VESSELS>=$14)
+  unlocks the time-travel bonus. Pins TM_REVEAL.
+- GET ($90D4) = take from the storeroom, gated on $9E3D (king's
+  permission, the white-gem "nine items" counter); each Get
+  decrements it.
+
+CAS BSS state: $9E29 idle-msg, $9E2A king-reject, $9E2E?, $9E32/33
+pence amount, $9E37, $9E3B castle index, $9E3D storeroom-permission
+counter. Data tail from ~$9E40: kings' names ($9E63), NPC glyphs
+($9EDC), per-castle params ($9EE2), continent hint pointers ($95D6).
+
+Next session: decompose CAS with the TWN gen pipeline (gen_twn.py +
+twn_symmap/twn_labels as templates). It will pin QUEST_FLAGS /
+TM_REVEAL / COURT_CELLS quest semantics fully.
+
 ### Round 17 (2026-06-13): TWN fully decomposed, byte-perfect
 
 - The whole town overlay is annotated across 28 chunks: entry/
