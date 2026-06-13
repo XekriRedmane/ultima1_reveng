@@ -9,6 +9,53 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 19 (2026-06-13): CAS fully decomposed, byte-perfect
+
+- The castle overlay is annotated across 25 chunks (entry/loader,
+  command table + dispatch, the move handler with the Princess
+  rescue, attack, cast/drop, the King audience, quest assign/
+  complete, the four gem prophecies, get/steal/unlock storeroom,
+  the castle tick, and the shared map/helper/math engine).
+  byte-perfect (5524/5524); full doc tangles + builds.
+- THE QUEST SYSTEM is now pinned in code, not just scouted:
+  CMD_TRANSACT $927C (King audience, NPC kind $6C) gates on
+  KING_REJECT; pence path donates gold for HP at 1.5x; service path
+  QUEST_ASSIGN marks QUEST_FLAGS[CASTLE_IDX] and -- by castle parity
+  -- sends the player to FIND a place (even) or KILL a monster
+  (odd, STR_MONSTERS idx = 5*PLR_CONT+$1E). QUEST_COMPLETE clears
+  the flag: even reward = strength ((99-STR)/8); odd reward =
+  QUEST_REWARD_HINT, a per-continent prophecy from GEM_HINT_TBL that
+  ALSO hands over a gem (red/green/blue/white in OWNED_GEMS; white
+  sets STORE_PERMIT=9, the King's "nine items" permission).
+- PRINCESS RESCUE folded into CMD_MOVE: stepping into the throne
+  wall (ZP_X=0) with the King slot near awards +500 HP/pence/exp via
+  ADD_CAP; the space-ace gate (PLR_VESSELS>=$14 plus experience)
+  sets TM_REVEAL and announces the time machine "to the northwest".
+  Together with the gems this is the whole endgame breadcrumb trail.
+- STOREROOMS: CMD_GET (gated on STORE_PERMIT, the white-gem counter)
+  and CMD_STEAL (thief class auto-succeeds; caught -> KING_REJECT)
+  share STOREROOM_FIND -- armour/food/weapon by faced cell kind.
+  CMD_UNLOCK opens a door ($6A silver/$6B gold) with a key dropped
+  by a slain guard (KEY_KIND set in the attack handler).
+- CASTLE_TICK forks on KING_REJECT: angered -> GUARD_HOME +
+  GUARD_COMBAT (death -> CAS_DEATH/RESPAWN); calm -> NPC_WANDER with
+  Gwino the Jester (sings "I've got the key!" / filches a weapon).
+- Gen pipeline kept for reuse: .claude/scripts/gen_cas.py +
+  cas_symmap.py + cas_labels.py + gen_chapter_cas.py (twin of the
+  gen_twn trio; the chapter author script in /tmp is disposable).
+  Pitfalls recorded in agent memory: DROP_PICK 5 inline-arg bytes,
+  two cross-chunk locals promoted to globals (CAS_DEATH/
+  STOREROOM_FIND), the GEM_HINT_TBL data-span-in-code.
+- All 16 targets byte-perfect. Hygiene: 0 EQU stubs, 0 raw-hex
+  operands, 0 missing plates (247 routines), 0 placement violations,
+  1 TODO-SYM (intro art, resolves with makeindata). ORG stubs 5 ->
+  4 (spa, gen, tm, makeindata). PDF 767 pages, clean (0 errors, 0
+  undefined refs).
+- Next session: SPA (9930 bytes) -- the space/shuttle combat
+  overlay; then GEN (8932, character generation / new game) and TM
+  (8123, the time machine endgame); then makeindata (world-map
+  render, resolves the last TODO-SYM); then the synthesis chapters.
+
 ### Round 18 scout (2026-06-13): CAS scouted end-to-end (quest system pinned)
 
 CAS (5524 bytes, $8956-$9EE9) is a near-twin of TWN: same loader
@@ -564,18 +611,23 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
 - [x] TWN overlay: DONE (Round 17, byte-perfect, 28 chunks). NPC
       format = 5x16-byte arrays at grid offset 684; map 38x18; shop
       system = 6 classes; pub = 8 hints; pricing = index^2 * CHA.
-- [ ] CAS overlay: shares TWN's loader, NPC format, COURT_CELLS,
-      and most helpers (reuse gen_twn.py + the TWN engine EQU
-      block). Castle-specific: kings, COURT_CELLS writer for quest
-      items, QUEST_FLAGS assignment, TM_REVEAL setter (princess
-      rescue / time-machine scatter). Pins the quest assignment.
-- [ ] tcmaps: DONE (Round 16: structured + rendered).
+- [x] CAS overlay: DONE (Round 19, byte-perfect, 25 chunks). Quest
+      system, gem prophecies, princess rescue (TM_REVEAL), storerooms
+      (Get/Steal/Unlock), castle tick all decomposed. Pins the quest
+      assignment and the endgame breadcrumb trail.
+- [x] tcmaps: DONE (Round 16: structured + rendered).
+- [ ] SPA overlay (9930 bytes): the space/shuttle layer (likely the
+      ace-pilot combat that grows PLR_VESSELS toward the space-ace
+      gate CAS just pinned). Largest remaining overlay. NEXT.
+- [ ] GEN overlay (8932): character generation / new game (the A=0
+      GAME_LOAD slot). TM overlay (8123): the time-machine endgame
+      (TM_REVEAL pays off here -- Mondain's gem, the win).
 - [ ] makeindata: builds intro art AND (likely) generates the
       world map for /U1.VARS -- render the four continents then;
       resolves ART_* semantics and the one TODO-SYM.
-- [ ] tcmaps: structure as town/castle maps (cell codes = MAPCHARS
-      glyphs; "FOOD" visible in bytes). Render with mapchars bank.
-- [ ] SPA, GEN, TM overlays; then synthesis chapters.
+- [ ] Synthesis chapters (Round 6 quality bar) once the overlays are
+      all decomposed: game overview, data structures, the quest/
+      gem/time-machine win condition in platform-independent prose.
 
 ## Structural
 

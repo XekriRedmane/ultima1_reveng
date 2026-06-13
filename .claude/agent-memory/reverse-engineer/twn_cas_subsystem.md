@@ -88,13 +88,25 @@ intricate and shared with CAS; the TCMAPS grid dimension was wrong in round 16.
   $A934 NPC loop idx, $A935 digit count, $A937 hit NPC slot, $A939/A price16,
   $A93D shop item loop, $A93E/F/40 transport-avail counts, $A941 pub visits.
 
-CAS ($8956-$9EE9, 5524 bytes) -- scouted round 18, decompose next:
+CAS ($8956-$9EE9, 5524 bytes) -- FULLY DECOMPOSED round 19, byte-perfect,
+25 chunks. Gen pipeline: .claude/scripts/gen_cas.py + cas_symmap.py +
+cas_labels.py + gen_chapter_cas.py (twin of the gen_twn trio).
 - Near-twin of TWN. Same loader, main loop, patched-JSR dispatch (table
-  $8A5F), and BYTE-IDENTICAL draw/helper structure: MAP_DRAW $9B06,
-  FONT_SWAP $9B6E, NPC_DRAW, PLOT_GLYPH $9BA8, CELL_PROBE $9BC0, NPC_AT
-  $9BD9, NPC_DIST $9D47, ISQRT, same 38x18 grid + $B6AC NPC arrays.
-  Reuse the entire TWN engine-EQU block + gen_twn.py pipeline. CAS NPC
-  glyph table at $9EDC; per-row ptrs at $9EA9/$9EB9.
+  CMD_TBL $8A5F, 26 words), and BYTE-IDENTICAL draw/helper structure:
+  MAP_DRAW $9B06, FONT_SWAP $9B6E, PLOT_GLYPH $9BA8, CELL_PROBE $9BC0,
+  CELL_AT $9BD9, NPC_DIST $9D47 (dx^2+dy^2 + inline ISQRT), same 38x18
+  grid + $B6AC NPC arrays (CASTLE_MAP $B400). Reuses the entire TWN
+  engine-EQU block. CAS NPC glyph table NPC_GLYPH $9EDC; per-row ptrs
+  MAP_ROW_LO $9EA8 / MAP_ROW_HI $9EBA (B400+row*38, hi byte += $B4 at
+  runtime). WEAPON_HITKIND $9ECC (reach per weapon: 1 most, 3 throwers).
+- Gen-pipeline gotchas (proven byte-perfect): DROP_PICK $900D takes 5
+  INLINE arg bytes (count + 2 ptrs) -> register it in INLINE as
+  ('b','w','w') or DROP_WEAPON/ARMOUR misdecode. Cross-chunk locals to
+  PROMOTE to globals: CAS_DEATH $8A41 (entry, ref from castletick),
+  STOREROOM_FIND $91D2 (steal, ref from get). PICK_CNT $90D3 is a
+  self-mod storage byte in the code stream past DROP_PICK's RTS.
+  GEM_HINT_TBL $95D6 (4 in-file handler words) is a data span inside
+  code; the BSS band $9E24-$9E3E (27 zero bytes) precedes the data tail.
 - Castle index $9E3B = PLR_PLACE mod $15 + 2*PLR_CONT (continent-adjusted),
   even/odd parity flip. TCMAPS dir read at $4000,X/$4001,X.
 - THE QUEST SYSTEM (Transact $927C = audience with King, NPC type $6C):
@@ -114,8 +126,19 @@ CAS ($8956-$9EE9, 5524 bytes) -- scouted round 18, decompose next:
   Pins TM_REVEAL.
 - GET ($90D4) = take from castle storeroom, gated/decremented on $9E3D
   (the white-gem "nine items" permission counter).
-- CAS state vars $9E29-$9E3E (zero on disk): $9E29 idle, $9E2A king-reject,
-  $9E2B NPC loop, $9E32/33 pence amount, $9E3B castle index, $9E3C abs,
-  $9E3D storeroom permission, $9E3E combat temp. Data tail $9E40-$9EE9:
-  NPC names, 8 princess names $9E63, MAP_ROW ptrs $9EA9/B9, WEAPON_HITKIND
-  $9ECB, NPC_GLYPH $9EDC, per-castle quest params $9EE2.
+- CAS state vars (BSS, zero on disk): IDLE_MSG $9E29, KING_REJECT $9E2A,
+  NPC_IDX $9E2B, AMOUNT $9E32 (NUM_INPUT result), CASTLE_IDX $9E3B,
+  ABS_TMP $9E3C, STORE_PERMIT $9E3D (storeroom counter), TICK_PHASE $9E3E.
+  Data tail: STR_NPCS $9E3F (King/Merchant/Princess/Guard/Jester/Wench),
+  STR_PRINCESS $9E63 (8 names, hi-bit packed), MAP_ROW_LO/HI $9EA8/$9EBA,
+  WEAPON_HITKIND $9ECC, NPC_GLYPH $9EDC, CASTLE_COL $9EE2 (per-castle
+  print column).
+- CONFIRMED quest mechanics: even castle (CASTLE_IDX LSR carry clear) =
+  FIND-place quest (STR_PLACES, idx via continent loop subtracting); odd =
+  KILL-monster quest (STR_MONSTERS idx = 5*PLR_CONT + $1E). Even-castle
+  completion reward = strength ((99-STR)/8 pts); odd = gem+hint via
+  GEM_HINT_TBL[PLR_CONT]. Gems: HINT_CONT0 red, 1 green, 2 blue, 3 white
+  (white sets STORE_PERMIT=9). Princess rescue in CMD_MOVE when ZP_X=0 &
+  NPC slot1 near: +500 HP/pence/exp (ADD_CAP), space-ace gate
+  (PLR_VESSELS>=$14 + exp) sets TM_REVEAL. Attack on a guard (kind 4)
+  drops a key (KEY_KIND 1 silver/2 gold); CMD_UNLOCK opens door $6A/$6B.
