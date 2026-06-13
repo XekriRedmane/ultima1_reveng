@@ -1,2 +1,3 @@
 - [toolchain-pitfalls](toolchain_pitfalls.md) — dasm RORG chunks, inline-arg disasm misalignment, stale SMC operands (proven rounds 0-2)
 - [dng-subsystem](dng_subsystem.md) — DNG maze generator, ray-marched wireframe renderer, vector-shape engine (rounds 13-15)
+- [twn-cas-subsystem](twn_cas_subsystem.md) — TWN/CAS town+castle: shared loader, 6-class shop system, NPC metadata format, live map buffer, pub lore (round 17+)

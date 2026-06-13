@@ -9,6 +9,53 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 17 (2026-06-13): TWN fully decomposed, byte-perfect
+
+- The whole town overlay is annotated across 28 chunks: entry/
+  loader/main loop (patched-JSR dispatch via CMD_TBL), the command
+  handlers, the six-class shop system, the idle/combat animation,
+  the map/NPC draw, and the cell/distance helpers. byte-perfect
+  (8461/8461) on the spliced chapter; full chapter tangles + builds.
+- CORRECTION to round 16: town/castle maps are 38 cols x **18**
+  rows = 684 cells, NOT 38x19. The metadata is an 80-byte NPC
+  table (5 parallel 16-entry arrays: TYPE/X/Y/HP-lo/HP-hi) at grid
+  offset 684 (= $B6AC after copy to TOWN_MAP $B400). Total record
+  = 764 bytes. The move handler proves it: leaving town fires when
+  ZP_TX>=$26 (38) or ZP_TY>=$12 (18). Fixed the TCMAPS appendix
+  prose + the "38x19" comments + the figure caption.
+- SHOP SYSTEM pinned: counter NPC type $64..$6C -> NPC_SHOPCLASS ->
+  one of SIX classes (Armour/Grocery/Weapons/Magic/Pub/Transport),
+  each with a buy + sell handler via SHOP_BUY_TBL/SHOP_SELL_TBL
+  (self-modified JSR) and a pool of 8 flavour names. Pricing =
+  item_index^2 (ITEM_COST squares table) scaled by a charisma
+  factor (PRICE_MUL); CHA/WIS/INT all feed the haggle. Transport
+  shop writes purchased craft into a free COURT_CELLS slot
+  (transport+8) -- the same shared 4-cell lot CAS will use.
+- The PUB is the lore core: pay 1 gold, risk seduction (NPC_DIST +
+  ISQRT gated), else one of 8 canonical Ultima I rumours from
+  PUB_HINT_TBL (ace pilot, princess, time machine, evil gem, magic
+  lakes, Mondain's gem 1000 yrs ago, the full quest text).
+- Idle anim (TOWN_TICK): hostiles (type 3) home + attack
+  (GUARD_COMBAT, death -> RESPAWN); wanderers (type 4) drift --
+  Iolo the Bard sings / picks a pocket. NPC_AT reads cells through
+  the 18-entry MAP_ROW_LO/HI pointers.
+- Drop gold to a type-$61 NPC = HP+1.5x + random spell. Steal from
+  $65/$67/$69 (thief auto-succeeds; caught sets AGGRO = no one will
+  trade). DROP_PICK is a 5-inline-arg popup picker.
+- All 16 targets byte-perfect. Hygiene: 0 EQU stubs, 0 raw-hex
+  operands, 0 missing plates (227), 0 placement violations, 1
+  TODO-SYM (intro art, resolves with makeindata). ORG stubs 6 ->
+  5 (cas, spa, gen, tm, makeindata). PDF 715 pages, clean (0
+  errors, 0 undefined refs).
+- Generators kept for CAS reuse: .claude/scripts/gen_twn.py +
+  /tmp build scripts (symbol/label/SMC maps). CAS shares TWN's
+  loader, NPC format, COURT_CELLS, and most helpers -- decompose it
+  next from the same engine-API EQU block. CAS adds: kings,
+  COURT_CELLS writer for quest items, QUEST_FLAGS assignment,
+  TM_REVEAL (princess rescue / time-machine scatter).
+- Next session: decompose CAS (5524 bytes), reusing the TWN engine
+  EQU block and gen scripts; it pins the quest-assignment system.
+
 ### Round 16 (2026-06-13): TCMAPS decoded + rendered; TWN scouted
 
 - TCMAPS format fully decoded and the data target STRUCTURED
@@ -459,12 +506,14 @@ plus this file — never by re-deriving history.
 
 - [x] DNG fully decomposed (Round 15: renderer, perspective
       tables, SHAPE_DRAW, MON_SHAPES rendered). DNG is done.
-- [ ] TWN overlay: decompose from the Round-16 scout (entry/
-      loader/map-draw, then command handlers, then the 42-byte
-      metadata NPC/shop format). TCMAPS format already decoded.
-- [ ] CAS overlay: shares TWN's loader. Castle-specific: kings,
-      COURT_CELLS writer, QUEST_FLAGS assignment, TM_REVEAL setter
-      (princess rescue?). Pins the quest assignment.
+- [x] TWN overlay: DONE (Round 17, byte-perfect, 28 chunks). NPC
+      format = 5x16-byte arrays at grid offset 684; map 38x18; shop
+      system = 6 classes; pub = 8 hints; pricing = index^2 * CHA.
+- [ ] CAS overlay: shares TWN's loader, NPC format, COURT_CELLS,
+      and most helpers (reuse gen_twn.py + the TWN engine EQU
+      block). Castle-specific: kings, COURT_CELLS writer for quest
+      items, QUEST_FLAGS assignment, TM_REVEAL setter (princess
+      rescue / time-machine scatter). Pins the quest assignment.
 - [ ] tcmaps: DONE (Round 16: structured + rendered).
 - [ ] makeindata: builds intro art AND (likely) generates the
       world map for /U1.VARS -- render the four continents then;

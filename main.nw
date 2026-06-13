@@ -12479,1077 +12479,3465 @@ WEAP_RANGE ; Attack reach per weapon; 0 = cannot attack.
 
 \section{TWN}
 
-\texttt{TWN} --- town overlay, 8461 bytes at [[$8956]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
+\texttt{TWN} --- the town overlay, 8461 bytes at [[$8956]]. It is the
+mode the player drops into on entering any of the game's towns (and
+shares its loader and most of its machinery with \texttt{CAS}, the
+castle overlay of the next section). Where \texttt{OUT} is the
+top-down overworld and \texttt{DNG} the first-person dungeon, a town
+is a single \emph{walled map} drawn in the same tile font as the
+overworld but populated by named people: shopkeepers behind their
+counters, guards on patrol, and wandering townsfolk. The town
+overlay's job is to draw that map, animate its inhabitants, and route
+the player's commands --- most of which, in town, mean
+\emph{talking}: buying, selling, dropping coins, stealing.
 
-<<twn blob>>=
+The map data itself lives in \texttt{TCMAPS} (decoded in the data
+appendix): a directory of ten 764-byte records, each a
+$38\times18$ grid of [[MAPCHARS]] glyph codes followed by an
+80-byte table of non-player characters. On entry \texttt{TWN}
+[[BLOAD]]s \texttt{TCMAPS} and \texttt{MAPCHARS}, copies the one
+record for this place into a live buffer at [[TOWN_MAP]], and draws
+it.
+
+\subsection{The live map buffer}
+
+The chosen \texttt{TCMAPS} record is copied to [[TOWN_MAP]], a
+768-byte buffer just above the overlay. Its first
+$38\times18 = 684$ bytes are the displayed cells; the remaining bytes
+hold five parallel 16-entry arrays describing the up to sixteen NPCs:
+[[NPC_TYPE]], [[NPC_X]], [[NPC_Y]], and a 16-bit hit-point value in
+[[NPC_HP]]. A type byte of [[$FF]] marks an empty slot; the low values
+are the people --- a shopkeeper, a guard, a wanderer --- each drawn at
+its $(x,y)$ through the sprite-glyph table [[NPC_GLYPH]]. The eighteen
+[[MAP_ROW_LO]]/[[MAP_ROW_HI]] pointers give the start of each map row
+within the buffer (stride 38).
+
+\subsection{Engine and state symbols}
+
+\texttt{TWN} reuses the resident-library and \texttt{MI.U1} engine API
+exactly as the other overlays do, plus the shared player-state block.
+Only the town-specific zero-page scratch, the \texttt{TWN} BSS state
+variables, and the in-file tables are new.
+
+<<twn defines>>=
+; --- resident library (STUPH) vectors ---
+FILE_LOAD_AT    EQU $158C
+TEXT_SCROLL     EQU $1592
+CLR_EOL         EQU $1598
+CLR_WINDOW      EQU $159B
+WIN_TEXT        EQU $15A4
+WIN_VIEW        EQU $15A7
+RND             EQU $15B9
+KEY_WAIT        EQU $15BF
+KEY_GET         EQU $15C2
+SFX_PLAY        EQU $15CB
+SFX_DRAIN       EQU $15D1
+VDELAY          EQU $15E9
+@
+
+<<twn defines>>=
+; --- the MI.U1 engine API ---
+MSG_GETC        EQU $8037
+MSG_PTR         EQU $8040
+CHAR_OUT        EQU $8062
+PUTCH_NL_COND   EQU $8078
+PUTCH_NL_COL1   EQU $807E
+CURSOR_COL1     EQU $8081
+CR              EQU $809C
+STR_NTH_CAP     EQU $80B1
+STR_FIRST       EQU $80B6
+STR_NTH         EQU $80B8
+MSG_AT          EQU $8115
+MSG_PRINT       EQU $8119
+PRINT_NUM16     EQU $8207
+PRINT_NUM8      EQU $820D
+NUM_PAD         EQU $8249
+KEY_PENDING     EQU $8266
+PAUSE_ABORTABLE EQU $826C
+KEY_ALIAS       EQU $827D
+GET_COMMAND     EQU $82A2
+TICK_SND        EQU $82E4
+STATS_VALUES    EQU $836E
+WIN_RESTORE     EQU $83A9
+WIN_SAVE        EQU $83B4
+CURSOR_TO_TEXT  EQU $83C8
+QUERY_MARK      EQU $8407
+BEEP_HUH        EQU $840F
+KBD_CLEAR       EQU $8414
+POPUP_FRAME     EQU $841E
+READY_CMD       EQU $8466
+INVENTORY       EQU $85A2
+POPUP_CLOSE     EQU $876C
+PRESS_SPACE     EQU $87FA
+SOUND_TOGGLE    EQU $8845
+SFX_TOGGLE      EQU $885B
+RESPAWN         EQU $88F8
+EXIT_TO_OUT     EQU $88FB
+DISK_PROMPT     EQU $7DCC
+MLIB_SET_PREFIX EQU $B733
+STALE_FFFF      EQU $FFFF       ; stale on-disk operand of the
+                                ;   self-modified dispatch JSR/JMPs
+@
+
+<<twn defines>>=
+; --- engine string tables ---
+STR_WEAPONS     EQU $73C8
+STR_WEAPONS_S   EQU $7438
+STR_SPELLS      EQU $74D4
+STR_ARMOUR      EQU $7520
+STR_TRANSPORT   EQU $757C
+STR_PLACES      EQU $7917
+TCMAPS_DIR      EQU $4000
+; --- the shared player state block ---
+DIR_STR_PTR     EQU $7E51       ; movement-name table override
+READY_SPELL     EQU $7E79
+READY_WEAPON    EQU $7E7A
+READY_ARMOUR    EQU $7E7B
+OWNED_ARMOUR    EQU $7E7D       ; armour counts (0..5)
+OWNED_WEAPONS   EQU $7E83       ; weapon counts (0..15)
+OWNED_SPELLS    EQU $7E93       ; spell counts (0..10)
+OWNED_TRANSPORT EQU $7E9E       ; transport counts (0..10)
+QUEST_FLAGS     EQU $7EA9       ; 8 quest slots
+COURT_CELLS     EQU $7EB1       ; the 4 cells around the entrance
+PLR_SEX         EQU $7EB7       ; 0 = male, else female
+PLR_HITS        EQU $7EC6       ; hit points, 16-bit binary
+PLR_STR         EQU $7EC8       ; the six attribute pairs
+PLR_AGI         EQU $7ECA
+PLR_STA         EQU $7ECC
+PLR_CHA         EQU $7ECE       ; charisma -- haggling factor
+PLR_WIS         EQU $7ED0
+PLR_INT         EQU $7ED2
+PLR_COIN        EQU $7ED4       ; coin purse, 16-bit binary
+PLR_CLASS       EQU $7ED8       ; 4 = thief
+MOVE_CNT        EQU $7EDA       ; move counter, BCD (a turn gate)
+PLR_FOOD        EQU $7EE5       ; food, 16-bit binary
+PLR_EXP         EQU $7EE7       ; experience, 16-bit binary
+SHUTTLE_GEMS    EQU $7EE9       ; shuttle fuel, stocked on purchase
+PLR_PLACE       EQU $7EED       ; the place index (0..83)
+@
+
+<<twn defines>>=
+; --- town-mode zero page ---
+ZP_X            EQU $00         ; player column on the map
+ZP_Y            EQU $01         ; player row
+ZP_DX           EQU $04         ; step / scan delta x
+ZP_DY           EQU $05         ; step / scan delta y
+ZP_TX           EQU $0C         ; target column
+ZP_TY           EQU $0D         ; target row
+WIN_LEFT        EQU $21         ; popup window left column (STUPH)
+MON_CH          EQU $24         ; text cursor column (Monitor CH)
+MON_CV          EQU $25         ; text cursor row (Monitor CV)
+ZP_PICK_PTR     EQU $67         ; DROP_PICK: name-table pointer
+ZP_PICK_CNT     EQU $69         ; DROP_PICK: owned-item count
+ZP_T0           EQU $72         ; scratch pair
+ZP_T1           EQU $73
+ZP_PAGE_XOR     EQU $7F         ; draw-page XOR (STUPH)
+@
+
+<<twn defines>>=
+; --- the live town-map buffer and its NPC arrays (above the file) ---
+TOWN_MAP        EQU $B400       ; 38x18 cells, then the NPC table
+NPC_TYPE        EQU $B6AC       ; kind: FF empty, 2/3 hostile, 4 wanderer
+NPC_X           EQU $B6BC       ; column
+NPC_Y           EQU $B6CC       ; row
+NPC_HP          EQU $B6DC       ; 16-bit hit points (lo at +0, hi at +16)
+FONT_BANK       EQU $0800       ; live glyph bank (page-swapped)
+MAPCHARS_BANK   EQU $B000       ; town glyph bank loaded by TWN
+; --- TWN BSS state (zeroed on disk; scratch during play) ---
+MAP_INDEX       EQU $9186       ; town/castle index 0..7 (SMC source)
+TICK_PHASE      EQU $9FDA       ; idle-animation alternation byte
+DIST_IDX        EQU $A92D       ; NPC_DIST: working slot
+DIST_LO         EQU $A92E       ; NPC_DIST: dx^2 + dy^2, 16-bit
+DIST_HI         EQU $A930       ; NPC_DIST: scratch / result
+IDLE_MSG        EQU $A932       ; set when a wanderer spoke this tick
+AGGRO           EQU $A933       ; set when caught stealing
+NPC_IDX         EQU $A934       ; TOWN_TICK loop slot
+DIGITS          EQU $A935       ; NUM_INPUT digit count
+ATK_CNT         EQU $A936       ; attack march counter
+HIT_SLOT        EQU $A937       ; NPC slot the attack landed on
+RND_TMP         EQU $A938       ; BIT_DIST working byte
+PRICE           EQU $A939       ; computed price, 16-bit
+ABS_TMP         EQU $A93C       ; absolute-value scratch
+ITEM_IDX        EQU $A93D       ; shop item loop index
+AVAIL_LAND      EQU $A93E       ; transport lot: free land slots
+AVAIL_SEA       EQU $A93F       ; free sea slots
+AVAIL_AIR       EQU $A940       ; free air slots
+PUB_VISITS      EQU $A941       ; pub visit count (seduction gate)
+PICK_ALPHA      EQU $8EEF       ; DROP_PICK: list letter (patched)
+PICK_CNT        EQU $8F3E       ; DROP_PICK: item count (patched)
+FOOD_DIGIT      EQU $928A       ; grocery price digit (patched)
+SELL_FLAG       EQU $951C       ; sell loop: any-item flag (patched)
+NUM_T           EQU $AA67       ; NUM_INPUT scratch
+NUM_UNDO        EQU $AA63       ; NUM_INPUT backspace buffer
+NUM_UNDO2       EQU $AA65
+AMOUNT          EQU $AA69       ; NUM_INPUT result, 16-bit
+BUY_AVAIL       EQU $AA6B       ; transport menu availability flags
+@
+
+<<twn entry>>=
         ORG $8956
-TWN_BLOB
-        ; STUB — not yet disassembled (town overlay)
-        HEX a9 11 85 01 a9 13 85 00
-        HEX ad b7 7e f0 0b a2 05 bd
-        HEX 67 a9 9d 61 a9 ca 10 f7
-        HEX a9 00 8d 33 a9 8d 52 7e
-        HEX 8d 41 a9 ad ed 7e c9 15
-        HEX 90 04 e9 15 d0 f8 38 e9
-        HEX 0d 8d 86 91 48 20 33 b7
-        HEX 54 43 4d 41 50 53 00 a9
-        HEX 40 a0 00 20 8c 15 20 cc
-        HEX 7d b0 ea 20 33 b7 4d 41
-        HEX 50 43 48 41 52 53 00 a9
-        HEX b0 a0 00 20 8c 15 20 cc
-        HEX 7d b0 e8 68 0a aa bd 04
-        HEX 40 8d cd 89 bd 05 40 8d
-        HEX ce 89 a0 03 a2 00 bd ff
-        HEX ff 9d 00 b4 ca d0 f7 ee
-        HEX ce 89 ee d1 89 88 d0 ee
-        HEX 20 ae a1 4c 28 8a 20 92
-        HEX 15 a9 0e 20 62 80 20 6e
-        HEX 83 20 1c 8a d0 22 a9 00
-        HEX 8d 32 a9 20 81 80 a9 20
-        HEX 20 62 80 20 07 9f 20 ee
-        HEX 8a ad 32 a9 d0 d8 a9 17
-        HEX 85 25 20 81 80 4c ec 89
-        HEX 20 a2 82 b0 c9 60 a2 80
-        HEX 20 c2 15 d0 03 ca d0 f8
-        HEX aa 60 ad c6 7e 0d c7 7e
-        HEX f0 08 ad e5 7e 0d e6 7e
-        HEX d0 06 20 92 15 4c f8 88
-        HEX 20 e4 89 bd 56 8a 8d 4e
-        HEX 8a bd 57 8a 8d 4f 8a 20
-        HEX ff ff 20 07 9f 4c 28 8a
-        HEX 8a 8a 90 8a 96 8a 9c 8a
-        HEX ee 8a 45 88 fb 8a 07 84
-        HEX 9f 8c be 8c 07 84 07 84
-        HEX 3f 8f 07 84 90 a1 07 84
-        HEX 5b 88 07 84 4b 8f 70 8f
-        HEX 86 8f 93 90 f5 9e 07 84
-        HEX 07 84 01 9f a2 00 a0 ff
-        HEX d0 10 a2 00 a0 01 d0 0a
-        HEX a2 01 a0 00 f0 04 a2 ff
-        HEX a0 00 8a 18 65 00 85 0c
-        HEX aa 98 18 65 01 85 0d a8
-        HEX 20 6f a2 b0 25 a5 0c c9
-        HEX 26 b0 06 a5 0d c9 12 90
-        HEX 03 4c fb 88 a9 0e 20 cb
-        HEX 15 20 81 80 20 19 81 42
-        HEX 6c 6f 63 6b 65 64 00 4c
-        HEX ee 8a a6 00 a4 01 a9 20
-        HEX 20 57 a2 a6 0c 86 00 a4
-        HEX 0d 84 01 a9 7b 20 57 a2
-        HEX a0 01 a9 10 20 e4 82 20
-        HEX d1 15 d0 fb 60 20 19 81
-        HEX 77 69 74 68 20 00 ae 7a
-        HEX 7e 20 b8 80 38 74 ae 7a
-        HEX 7e e0 04 f0 08 e0 08 90
-        HEX 07 e0 0b b0 03 4c 07 84
-        HEX 20 19 81 3a 20 00 20 1c
-        HEX 8a f0 20 20 7d 82 a2 00
-        HEX a0 00 c9 0b d0 03 88 d0
-        HEX 1f c9 0a d0 03 c8 d0 18
-        HEX c9 15 d0 03 e8 d0 11 c9
-        HEX 08 f0 0c 20 19 81 4e 6f
-        HEX 74 68 69 6e 67 00 60 ca
-        HEX 86 04 84 05 20 a2 82 20
-        HEX 78 80 ae 7a 7e bd 91 a9
-        HEX 8d 36 a9 a5 00 85 0c a5
-        HEX 01 85 0d a5 0c 18 65 04
-        HEX 85 0c aa a5 0d 18 65 05
-        HEX 85 0d a8 20 6f a2 08 c9
-        HEX 16 90 10 28 08 b0 0c 28
-        HEX c9 30 90 0d c9 36 b0 09
-        HEX 4c b0 8b 28 ce 36 a9 d0
-        HEX d2 a9 06 20 cb 15 20 19
-        HEX 81 4d 69 73 73 65 64 21
-        HEX 00 60 38 e9 30 85 72 a6
-        HEX 72 a9 80 18 6d ca 7e 85
-        HEX 73 20 b9 15 c5 73 b0 d9
-        HEX a9 01 8d 33 a9 a9 06 20
-        HEX cb 15 20 19 81 48 69 74
-        HEX 20 00 a6 72 20 b8 80 42
-        HEX a9 20 19 81 21 20 00 ad
-        HEX c8 7e 18 6d 7a 7e 6d 7a
-        HEX 7e 6d 7a 7e 85 73 20 b9
-        HEX 15 c9 00 f0 f9 c5 73 b0
-        HEX f5 85 73 a9 02 20 cb 15
-        HEX ae 37 a9 bd dc b6 38 e5
-        HEX 73 9d dc b6 bd ec b6 e9
-        HEX 00 9d ec b6 90 16 a5 73
-        HEX a2 00 8e 49 82 20 0d 82
-        HEX 20 19 81 20 64 61 6d 61
-        HEX 67 65 00 60 a9 ff 9d ac
-        HEX b6 9d bc b6 9d cc b6 9d
-        HEX ec b6 20 19 81 4b 69 6c
-        HEX 6c 65 64 21 00 a5 72 c9
-        HEX 04 d0 07 a9 01 a2 00 4c
-        HEX 72 8c c9 05 d0 07 a9 02
-        HEX a2 00 4c 72 8c c9 01 d0
-        HEX 07 a9 01 a2 00 4c 72 8c
-        HEX a9 0f a2 00 18 6d e7 7e
-        HEX 8d e7 7e 8a 6d e8 7e 8d
-        HEX e8 7e ad e7 7e c9 0f ad
-        HEX e8 7e e9 27 90 0a a9 0f
-        HEX 8d e7 7e a9 27 8d e8 7e
-        HEX a6 0c a4 0d a9 20 4c 57
-        HEX a2 20 19 81 2d 2d 20 48
-        HEX 6d 6d 6d 6d 2e 2e 2e 20
-        HEX 6e 6f 20 65 66 66 65 63
-        HEX 74 3f 00 a9 08 4c cb 15
-        HEX 20 19 81 20 50 65 6e 63
-        HEX 65 2c 57 65 61 70 6f 6e
-        HEX 2c 41 72 6d 6f 75 72 3a
-        HEX 20 00 20 1c 8a a2 06 86
-        HEX 24 a2 03 dd fe 8c f0 03
-        HEX ca d0 f8 8a 0a a8 b9 03
-        HEX 8d 48 b9 02 8d 48 20 b8
-        HEX 80 5e 8e 20 98 15 e6 24
-        HEX 60 50 57 41 fd 8c 09 8d
-        HEX f9 8d 14 8e 20 19 81 7e
-        HEX 48 6f 77 20 6d 75 63 68
-        HEX 3f 20 00 20 f9 a2 ad 69
-        HEX aa 0d 6a aa d0 01 60 ad
-        HEX d4 7e cd 69 aa ad d5 7e
-        HEX ed 6a aa b0 20 20 19 81
-        HEX 7e 54 68 6f 75 20 68 61
-        HEX 73 74 20 6e 6f 74 20 74
-        HEX 68 61 74 20 6d 75 63 68
-        HEX 21 00 4c 0f 84 ad d4 7e
-        HEX 38 ed 69 aa 8d d4 7e ad
-        HEX d5 7e ed 6a aa 8d d5 7e
-        HEX a6 00 a4 01 20 88 a2 c9
-        HEX 61 f0 09 20 19 81 7e 4f
-        HEX 6b 21 00 60 ad 69 aa 85
-        HEX 72 ad 6a aa 4a 85 73 66
-        HEX 72 a5 72 18 6d 69 aa 85
-        HEX 72 a5 73 6d 6a aa 85 73
-        HEX ad c6 7e 18 65 72 8d c6
-        HEX 7e ad c7 7e 65 73 8d c7
-        HEX 7e ad c6 7e c9 0f ad c7
-        HEX 7e e9 27 90 0a a9 0f 8d
-        HEX c6 7e a9 27 8d c7 7e 20
-        HEX b9 15 c9 10 90 11 20 19
-        HEX 81 7e 53 68 61 7a 61 6d
-        HEX 21 00 a9 0a 4c cb 15 20
-        HEX b9 15 29 0f c9 08 b0 f7
-        HEX c9 03 f0 f3 aa e8 fe 93
-        HEX 7e 20 19 81 7e 41 6c 61
-        HEX 6b 61 7a 6f 74 21 00 a9
-        HEX 0a 4c cb 15 20 78 8e 0f
-        HEX 83 7e c8 73 30 0e aa a9
-        HEX 00 9d 83 7e ec 7a 7e d0
-        HEX 03 8d 7a 7e 4c ae a1 20
-        HEX 78 8e 05 7d 7e 20 75 30
-        HEX f3 aa a9 00 9d 7d 7e ec
-        HEX 7b 7e d0 e8 8d 7b 7e 4c
-        HEX ae a1 ad e5 7e c9 0f ad
-        HEX e6 7e e9 27 90 0a a9 0f
-        HEX 8d e5 7e a9 27 8d e6 7e
-        HEX 60 ad d4 7e c9 0f ad d5
-        HEX 7e e9 27 90 0a a9 0f 8d
-        HEX d4 7e a9 27 8d d5 7e 60
-        HEX 6e 6f 74 68 69 6e e7 70
-        HEX 65 6e 63 e5 77 65 61 70
-        HEX 6f 6e ba 61 72 6d 6f 75
-        HEX 72 ba 68 8d 40 80 68 8d
-        HEX 41 80 20 37 80 8d 3e 8f
-        HEX 20 37 80 85 67 20 37 80
-        HEX 85 68 20 37 80 8d 3a 8f
-        HEX 20 37 80 8d 3b 8f ad 41
-        HEX 80 48 ad 40 80 48 ac 3e
-        HEX 8f a2 00 b1 67 f0 01 e8
-        HEX 88 d0 f8 86 69 e0 00 d0
-        HEX 05 68 68 4c 27 8f 20 b4
-        HEX 83 20 a7 15 a2 0f a0 00
-        HEX 20 15 81 0e 20 44 72 6f
-        HEX 70 20 18 00 20 9b 15 38
-        HEX a9 14 e5 69 4a 85 25 a9
-        HEX 61 8d ef 8e a0 00 f0 14
-        HEX 98 48 a9 0d 85 24 20 19
-        HEX 81 61 29 20 00 68 20 35
-        HEX 8f a8 e6 25 cc 3e 8f b0
-        HEX 0a ee ef 8e c8 b1 67 d0
-        HEX df f0 f1 20 a9 83 20 bf
-        HEX 15 48 20 6c 87 38 68 e9
-        HEX 41 f0 0e 30 0c cd 3e 8f
-        HEX 90 02 d0 05 a8 b1 67 d0
-        HEX 0d a0 ff 20 19 81 6e 6f
-        HEX 6e 65 00 98 aa 60 98 aa
-        HEX 48 20 b1 80 00 00 68 60
-        HEX 0a 20 19 81 20 77 68 61
-        HEX 74 00 4c 07 84 a9 12 85
-        HEX 24 20 19 81 20 69 73 7e
-        HEX 6f 6e 6c 79 20 61 6c 6c
-        HEX 6f 77 65 64 20 6f 75 74
-        HEX 64 6f 6f 72 73 21 00 4c
-        HEX 0f 84 20 1c 8a c9 53 f0
-        HEX 09 c9 57 f0 05 c9 41 f0
-        HEX 01 60 20 66 84 4c ae a1
-        HEX a6 00 a4 01 20 88 a2 c9
-        HEX 65 f0 1c c9 67 f0 18 c9
-        HEX 69 f0 14 20 19 81 7e 4e
-        HEX 6f 74 68 69 6e 67 20 68
-        HEX 65 72 65 00 4c 07 84 85
-        HEX 72 20 b9 15 c9 26 90 10
-        HEX ac 33 a9 d0 0b ac d8 7e
-        HEX c0 04 f0 27 c9 4d b0 23
-        HEX 20 19 81 7e 4f 68 20 6e
-        HEX 6f 21 20 54 68 6f 75 20
-        HEX 77 65 72 74 20 63 61 75
-        HEX 67 68 74 21 00 a9 01 8d
-        HEX 33 a9 60 20 19 81 7e 54
-        HEX 68 6f 75 20 64 6f 73 74
-        HEX 20 66 69 6e 64 7e 00 a5
-        HEX 72 c9 65 d0 18 20 a0 a3
-        HEX 4a 4a 4a 29 07 f0 f6 c9
-        HEX 06 b0 f2 aa fe 7d 7e 20
-        HEX b8 80 20 75 60 c9 67 d0
-        HEX 38 20 b9 15 29 1f c9 02
-        HEX 90 f7 c9 1f b0 f3 48 a2
-        HEX 00 8e 49 82 20 0d 82 20
-        HEX 19 81 20 62 61 67 73 20
-        HEX 6f 66 20 66 6f 6f 64 21
-        HEX 00 68 18 6d e5 7e 8d e5
-        HEX 7e 90 03 ee e6 7e 4c 30
-        HEX 8e 20 ab a3 4a 29 0f f0
-        HEX f8 c9 0c 90 0b 85 72 20
-        HEX b9 15 c9 30 b0 eb a5 72
-        HEX 48 a9 61 20 62 80 68 48
-        HEX c9 03 f0 04 c9 08 d0 05
-        HEX a9 6e 20 62 80 a9 20 20
-        HEX 62 80 68 aa fe 83 7e 20
-        HEX b8 80 c8 73 60 ad 33 a9
-        HEX f0 1d 20 19 81 7e 4e 6f
-        HEX 6e 65 20 77 69 6c 6c 20
-        HEX 74 61 6c 6b 20 74 6f 20
-        HEX 74 68 65 65 21 00 60 a6
-        HEX 00 a4 01 20 88 a2 c9 64
-        HEX 90 10 c9 6d b0 0c 38 e9
-        HEX 64 aa bd af a9 85 72 4c
-        HEX f0 90 20 19 81 7e 54 68
-        HEX 6f 75 20 61 72 74 20 6e
-        HEX 6f 74 20 62 79 20 61 20
-        HEX 63 6f 75 6e 74 65 72 21
-        HEX 00 60 20 19 81 2d 42 75
-        HEX 79 2c 20 53 65 6c 6c 3a
-        HEX 20 00 20 1c 8a a2 09 86
-        HEX 24 c9 42 f0 13 c9 53 d0
-        HEX 03 4c 3d 91 20 19 81 2d
-        HEX 6e 6f 6e 65 00 4c 98 15
-        HEX 20 19 81 2d 42 75 79 3a
-        HEX 20 00 20 5d 91 bd db a9
-        HEX 8d 38 91 bd dc a9 8d 39
-        HEX 91 20 ff ff 4c ae a1 20
-        HEX 19 81 2d 53 65 6c 6c 3a
-        HEX 20 00 20 5d 91 bd e7 a9
-        HEX 8d 58 91 bd e8 a9 8d 59
-        HEX 91 20 ff ff 4c ae a1 20
-        HEX 98 15 a5 72 20 1e 84 c6
-        HEX 21 20 75 91 20 7e 80 20
-        HEX 7e 80 a5 72 0a aa 60 a5
-        HEX 72 0a aa bd cf a9 8d 8a
-        HEX 91 bd d0 a9 8d 8b 91 a2
-        HEX 00 20 b8 80 ff ff 60 a9
-        HEX 01 8d 3d a9 a9 05 85 24
-        HEX a9 61 18 6d 3d a9 20 62
-        HEX 80 20 19 81 29 20 00 ae
-        HEX 3d a9 20 b8 80 20 75 a9
-        HEX 17 85 24 20 19 81 2d 20
-        HEX 00 ae 3d a9 20 94 9e a9
-        HEX 00 8d 49 82 ae 39 a9 ad
-        HEX 3a a9 20 07 82 20 7e 80
-        HEX ee 3d a9 ad 3d a9 c9 06
-        HEX f0 1a c9 04 90 b6 ad db
-        HEX 7e c9 d0 ad dc 7e e9 07
-        HEX ad dd 7e e9 00 ad de 7e
-        HEX e9 00 b0 a0 20 24 9e c9
-        HEX 42 90 0f c9 45 90 0e c9
-        HEX 47 b0 07 ae 3d a9 e0 05
-        HEX b0 03 4c 39 92 38 e9 41
-        HEX 85 73 aa 20 94 9e 20 17
-        HEX 9e 90 1d a6 73 fe 7d 7e
-        HEX 20 01 9e 20 a4 15 a9 17
-        HEX 85 25 a9 0f 85 24 a6 73
-        HEX 20 b8 80 20 75 4c fc a4
-        HEX 20 59 9e 20 a4 15 a9 0f
-        HEX 85 24 a9 17 85 25 20 19
-        HEX 81 6e 6f 74 68 69 6e 67
-        HEX 00 60 20 a4 15 a9 10 d0
-        HEX e7 a2 05 ad d2 7e 38 e9
-        HEX 14 90 04 ca d0 f8 e8 8e
-        HEX 6b aa 8a 18 69 30 8d 8a
-        HEX 92 20 19 81 7e 20 50 61
-        HEX 63 6b 73 20 6f 66 20 31
-        HEX 30 20 66 6f 6f 64 20 63
-        HEX 6f 73 74 20 58 20 70 65
-        HEX 6e 63 65 7e 20 20 65 61
-        HEX 63 68 2e 20 20 48 6f 77
-        HEX 20 6d 61 6e 79 20 64 6f
-        HEX 73 74 20 74 68 6f 75 7e
-        HEX 7f 06 77 69 73 68 20 74
-        HEX 6f 20 70 75 72 63 68 61
-        HEX 73 65 3f 00 20 b4 83 20
-        HEX a4 15 a9 17 85 25 a9 0f
-        HEX 85 24 20 f9 a2 20 a9 83
-        HEX ad 6a aa c9 1a 90 03 4c
-        HEX 39 92 ad 69 aa 0d 6a aa
-        HEX d0 03 4c 39 92 ae 6b aa
-        HEX a9 00 85 72 85 73 a5 72
-        HEX 18 6d 69 aa 85 72 a5 73
-        HEX 6d 6a aa 85 73 ca d0 ee
-        HEX 0e 69 aa 2e 6a aa ad 6a
-        HEX aa 48 ad 69 aa 48 0e 69
-        HEX aa 2e 6a aa 0e 69 aa 2e
-        HEX 6a aa 68 18 6d 69 aa 8d
-        HEX 69 aa 68 6d 6a aa 8d 6a
-        HEX aa ad d4 7e c5 72 ad d5
-        HEX 7e e5 73 b0 03 4c 36 92
-        HEX ad d4 7e 38 e5 72 8d d4
-        HEX 7e ad d5 7e e5 73 8d d5
-        HEX 7e ad e5 7e 18 6d 69 aa
-        HEX 8d e5 7e ad e6 7e 6d 6a
-        HEX aa 8d e6 7e 20 3b 9e 20
-        HEX a4 15 a9 17 85 25 85 24
-        HEX 20 c8 83 20 19 81 20 70
-        HEX 61 63 6b 73 20 66 6f 6f
-        HEX 64 00 4c 30 8e a9 01 8d
-        HEX 3d a9 a9 07 85 25 ad db
-        HEX 7e 85 72 ad dc 7e 85 73
-        HEX a2 00 ad dd 7e 0d de 7e
-        HEX f0 05 a2 04 4c b9 93 a5
-        HEX 72 38 e9 b8 85 72 a5 73
-        HEX e9 0b 85 73 90 05 e8 e0
-        HEX 04 90 ec ad 86 91 29 01
-        HEX d0 01 e8 8a 0a 0a 0a 0a
-        HEX 18 69 03 8d 66 94 a9 00
-        HEX 69 aa 8d 67 94 a9 06 85
-        HEX 24 ae 3d a9 20 65 94 d0
-        HEX 03 4c 1a 94 a9 61 18 6d
-        HEX 3d a9 20 62 80 20 19 81
-        HEX 29 20 00 ae 3d a9 20 b8
-        HEX 80 c8 73 a9 17 85 24 20
-        HEX 19 81 2d 20 00 ae 3d a9
-        HEX 20 a1 9e a9 00 8d 49 82
-        HEX ae 39 a9 ad 3a a9 20 07
-        HEX 82 20 7e 80 ee 3d a9 ad
-        HEX 3d a9 c9 10 90 af 20 24
-        HEX 9e c9 42 90 0d c9 51 b0
-        HEX 09 38 e9 41 aa 20 65 94
-        HEX d0 03 4c 39 92 86 73 20
-        HEX a1 9e 20 17 9e b0 03 4c
-        HEX 36 92 a6 73 fe 83 7e 20
-        HEX 01 9e 20 a4 15 a9 17 85
-        HEX 25 a9 0f 85 24 a6 73 20
-        HEX b8 80 c8 73 4c fc a4 bd
-        HEX ff ff 60 a9 01 8d 3d a9
-        HEX a9 00 8d 1c 95 a9 07 85
-        HEX 25 a9 06 85 24 a5 25 c9
-        HEX 0f f0 61 ae 3d a9 bd 83
-        HEX 7e d0 03 4c e2 94 a9 42
-        HEX 18 6d 3d a9 8d 1c 95 a9
-        HEX 61 18 6d 3d a9 20 62 80
-        HEX 20 19 81 29 20 00 ae 3d
-        HEX a9 20 b8 80 c8 73 a9 17
-        HEX 85 24 20 19 81 2d 20 00
-        HEX ae 3d a9 ad ce 7e 18 69
-        HEX 28 85 72 bd bf a9 aa 20
-        HEX d3 9e ad 3a a9 18 69 01
-        HEX 8d 39 a9 a9 00 8d 3a a9
-        HEX 8d 49 82 ae 39 a9 20 07
-        HEX 82 20 7e 80 ee 3d a9 ad
-        HEX 3d a9 c9 10 90 8b ad 1c
-        HEX 95 d0 23 20 19 81 7e 7f
-        HEX 04 54 68 6f 75 20 68 61
-        HEX 73 74 20 6e 6f 20 77 65
-        HEX 61 70 6f 6e 72 79 21 00
-        HEX 20 6c 82 4c 50 92 20 24
-        HEX 9e c9 42 90 0d c9 51 b0
-        HEX 09 38 e9 41 aa bd 83 7e
-        HEX d0 03 4c 50 92 86 73 ad
-        HEX ce 7e 18 69 28 85 72 bd
-        HEX bf a9 aa 20 d3 9e ad 3a
-        HEX a9 18 69 01 8d 39 a9 a9
-        HEX 00 8d 3a a9 ad d4 7e 18
-        HEX 6d 39 a9 8d d4 7e ad d5
-        HEX 7e 6d 3a a9 8d d5 7e 20
-        HEX 47 8e a6 73 de 83 7e d0
-        HEX 05 a9 00 8d 7a 7e 20 4a
-        HEX 9e 20 a4 15 a9 17 85 25
-        HEX a9 10 85 24 a6 73 20 b8
-        HEX 80 c8 73 4c fc a4 a9 01
-        HEX 8d 3d a9 ad 86 91 29 01
-        HEX 85 73 a9 06 85 24 ae 3d
-        HEX a9 e0 04 f0 12 e0 07 90
-        HEX 07 ad d8 7e c9 03 d0 07
-        HEX 8a 29 01 c5 73 d0 03 4c
-        HEX e8 95 a9 61 18 6d 3d a9
-        HEX 20 62 80 20 19 81 29 20
-        HEX 00 ae 3d a9 20 b8 80 d4
-        HEX 74 a9 17 85 24 20 19 81
-        HEX 2d 20 00 ae 3d a9 20 84
-        HEX 9e a9 00 8d 49 82 ae 39
-        HEX a9 ad 3a a9 20 07 82 20
-        HEX 7e 80 ee 3d a9 ad 3d a9
-        HEX c9 0b 90 9e 20 24 9e c9
-        HEX 42 90 0e c9 4c b0 0a 38
-        HEX e9 41 aa 29 01 c5 73 d0
-        HEX 03 4c 39 92 86 73 20 84
-        HEX 9e 20 17 9e b0 03 4c 36
-        HEX 92 a6 73 e0 0a d0 1d ad
-        HEX e8 7e d0 0a ad e7 7e c9
-        HEX 0a b0 03 4c 36 92 ad e7
-        HEX 7e 38 e9 0a 8d e7 7e b0
-        HEX 03 ce e8 7e fe 93 7e 20
-        HEX 01 9e 20 a4 15 a9 17 85
-        HEX 25 a9 0f 85 24 a6 73 20
-        HEX b8 80 d4 74 4c fc a4 ad
-        HEX d4 7e 0d d5 7e d0 4e 20
-        HEX 19 81 7f 07 54 68 6f 75
-        HEX 20 61 72 74 20 62 72 6f
-        HEX 6b 65 21 7e 7e 7f 03 43
-        HEX 6f 6d 65 20 62 61 63 6b
-        HEX 20 77 68 65 6e 20 74 68
-        HEX 6f 75 20 68 61 73 74 7e
-        HEX 7f 05 73 6f 6d 65 20 6d
-        HEX 6f 6e 65 79 20 74 6f 20
-        HEX 73 70 65 6e 64 2e 00 20
-        HEX 6c 82 4c 50 92 ce d4 7e
-        HEX ad d4 7e c9 ff d0 03 ce
-        HEX d5 7e 20 19 81 7e 7f 02
-        HEX 54 68 65 20 74 61 76 65
-        HEX 72 6e 20 6b 65 65 70 65
-        HEX 72 20 73 61 79 65 74 68
-        HEX 3a 7e 7e 7f 03 48 65 72
-        HEX 65 2c 20 68 61 76 65 20
-        HEX 61 20 63 6f 6c 64 20 6f
-        HEX 6e 65 21 00 20 b4 83 20
-        HEX a4 15 a0 17 a2 0f 20 15
-        HEX 81 61 6c 65 00 20 a9 83
-        HEX 20 6c 82 20 e2 a4 a9 08
-        HEX 85 25 ee 41 a9 ad cc 7e
-        HEX 4a 4a cd 41 a9 f0 02 b0
-        HEX 66 a2 01 20 f6 a3 c9 02
-        HEX b0 5d 20 19 81 7f 03 54
-        HEX 68 6f 75 20 68 61 73 74
-        HEX 20 62 65 65 6e 20 73 65
-        HEX 64 75 63 65 64 21 7e 7e
-        HEX 7f 05 41 66 74 65 72 20
-        HEX 61 20 6c 6f 6e 67 20 6e
-        HEX 69 67 68 74 2c 7e 7f 07
-        HEX 74 68 6f 75 20 61 72 74
-        HEX 20 62 61 63 6b 2e 00 4e
-        HEX d5 7e 6e d4 7e ce d0 7e
-        HEX ad d0 7e c9 05 b0 05 a9
-        HEX 05 8d d0 7e 4c 6c 82 20
-        HEX b9 15 c9 4b b0 01 60 20
-        HEX 19 81 7f 06 54 68 6f 75
-        HEX 20 68 61 64 20 62 65 73
-        HEX 74 20 6b 6e 6f 77 7e 00
-        HEX 20 b9 15 4a 4a 4a 4a 4a
-        HEX 0a aa bd f3 a9 8d bd 97
-        HEX bd f4 a9 8d be 97 20 ff
-        HEX ff 4c 6c 82 20 19 81 7f
-        HEX 05 61 62 6f 75 74 20 73
-        HEX 70 61 63 65 20 74 72 61
-        HEX 76 65 6c 21 7e 7f 05 54
-        HEX 68 6f 75 20 6d 75 73 74
-        HEX 20 64 65 73 74 72 6f 79
-        HEX 20 61 74 7e 7f 04 6c 65
-        HEX 61 73 74 20 32 30 20 65
-        HEX 6e 65 6d 79 20 76 65 73
-        HEX 73 65 6c 73 7e 7f 06 74
-        HEX 6f 20 62 65 63 6f 6d 65
-        HEX 20 61 6e 20 61 63 65 21
-        HEX 00 60 20 19 81 7f 05 74
-        HEX 6f 20 77 61 74 63 68 20
-        HEX 74 68 65 20 00 a2 05 20
-        HEX b8 80 42 a9 a9 2e 4c 62
-        HEX 80 20 19 81 20 74 68 61
-        HEX 74 20 74 68 65 20 70 72
-        HEX 69 6e 63 65 73 73 20 77
-        HEX 69 6c 6c 20 67 69 76 65
-        HEX 7e 20 67 72 65 61 74 20
-        HEX 72 65 77 61 72 64 20 74
-        HEX 6f 20 74 68 65 20 6f 6e
-        HEX 65 20 77 68 6f 7e 72 65
-        HEX 73 63 75 65 73 20 68 65
-        HEX 72 2c 20 61 6e 64 20 61
-        HEX 6e 20 65 78 74 72 61 20
-        HEX 67 69 66 74 7e 7f 05 74
-        HEX 6f 20 61 6e 20 38 74 68
-        HEX 20 6c 65 76 65 6c 20 61
-        HEX 63 65 21 00 60 20 19 81
-        HEX 20 20 74 68 6f 75 20 6d
-        HEX 75 73 74 20 67 6f 20 62
-        HEX 61 63 6b 20 69 6e 20 74
-        HEX 69 6d 65 2e 00 60 20 19
-        HEX 81 7f 05 74 68 6f 75 20
-        HEX 73 68 6f 75 6c 64 20 64
-        HEX 65 73 74 72 6f 79 7e 7f
-        HEX 08 74 68 65 20 65 76 69
-        HEX 6c 20 67 65 6d 21 00 60
-        HEX 20 19 81 20 20 74 68 61
-        HEX 74 20 6d 61 6e 79 20 6c
-        HEX 61 6b 65 73 20 61 6e 64
-        HEX 20 70 6f 6e 64 73 7e 20
-        HEX 68 61 76 65 20 73 74 72
-        HEX 6f 6e 67 20 6d 61 67 69
-        HEX 63 61 6c 20 70 6f 77 65
-        HEX 72 73 21 00 60 20 19 81
-        HEX 7f 05 74 68 69 73 20 69
-        HEX 73 20 61 20 67 72 65 61
-        HEX 74 20 67 61 6d 65 21 00
-        HEX 60 20 19 81 20 20 74 68
-        HEX 61 74 20 6f 76 65 72 20
-        HEX 31 30 30 30 20 79 65 61
-        HEX 72 73 20 61 67 6f 2c 7e
-        HEX 4d 6f 6e 64 61 69 6e 20
-        HEX 74 68 65 20 57 69 7a 61
-        HEX 72 64 20 63 72 65 61 74
-        HEX 65 64 20 61 6e 7e 20 65
-        HEX 76 69 6c 20 67 65 6d 2e
-        HEX 20 20 57 69 74 68 20 74
-        HEX 68 69 73 20 67 65 6d 2c
-        HEX 20 68 65 7e 20 20 69 73
-        HEX 20 69 6d 6d 6f 72 74 61
-        HEX 6c 20 61 6e 64 20 63 61
-        HEX 6e 6e 6f 74 20 62 65 7e
-        HEX 7f 0a 64 65 66 65 61 74
-        HEX 65 64 2e 00 20 6c 82 20
-        HEX e2 a4 a9 08 85 25 20 19
-        HEX 81 54 68 65 20 71 75 65
-        HEX 73 74 20 6f 66 20 2d 2d
-        HEX 55 6c 74 69 6d 61 2d 2d
-        HEX 20 69 73 20 74 6f 7e 20
-        HEX 74 72 61 76 65 72 73 65
-        HEX 20 74 68 65 20 6c 61 6e
-        HEX 64 73 20 69 6e 20 73 65
-        HEX 61 72 63 68 7e 7f 03 6f
-        HEX 66 20 61 20 74 69 6d 65
-        HEX 20 6d 61 63 68 69 6e 65
-        HEX 2e 20 20 55 70 6f 6e 7e
-        HEX 20 66 69 6e 64 69 6e 67
-        HEX 20 73 75 63 68 20 61 20
-        HEX 64 65 76 69 63 65 2c 20
-        HEX 74 68 6f 75 7e 73 68 6f
-        HEX 75 6c 64 20 67 6f 20 62
-        HEX 61 63 6b 20 69 6e 20 74
-        HEX 69 6d 65 20 74 6f 20 74
-        HEX 68 65 7e 20 64 61 79 73
-        HEX 20 62 65 66 6f 72 65 20
-        HEX 4d 6f 6e 64 61 69 6e 20
-        HEX 63 72 65 61 74 65 64 7e
-        HEX 74 68 65 20 65 76 69 6c
-        HEX 20 67 65 6d 20 61 6e 64
-        HEX 20 64 65 73 74 72 6f 79
-        HEX 20 68 69 6d 2e 00 4c 6c
-        HEX 82 a9 00 8d 3e a9 8d 3f
-        HEX a9 8d 40 a9 a2 06 9d 6b
-        HEX aa ca 10 fa a2 03 bd b1
-        HEX 7e d0 03 ee 3e a9 c9 01
-        HEX d0 03 ee 3f a9 c9 02 d0
-        HEX 03 ee 40 a9 ca 10 e7 ad
-        HEX 3f a9 0d 40 a9 0d 3e a9
-        HEX d0 1e 20 19 81 7f 06 43
-        HEX 6c 6f 73 65 64 20 66 6f
-        HEX 72 20 74 68 65 20 64 61
-        HEX 79 00 20 6c 82 4c 39 92
-        HEX ad 3f a9 0d 40 a9 f0 30
-        HEX 20 19 81 7f 07 61 29 20
-        HEX 48 6f 72 73 65 20 20 20
-        HEX 2d 20 00 a2 01 20 44 9c
-        HEX 20 19 81 7f 07 62 29 20
-        HEX 43 61 72 74 20 20 20 20
-        HEX 2d 20 00 a2 02 20 44 9c
-        HEX ad 3e a9 f0 30 20 19 81
-        HEX 7f 07 63 29 20 52 61 66
-        HEX 74 20 20 20 20 2d 20 00
-        HEX a2 03 20 44 9c 20 19 81
-        HEX 7f 07 64 29 20 46 72 69
-        HEX 67 61 74 65 20 2d 20 00
-        HEX a2 04 20 44 9c ad 3f a9
-        HEX f0 4b ad db 7e c9 b8 ad
-        HEX dc 7e e9 0b ad dd 7e e9
-        HEX 00 ad de 7e e9 00 90 35
-        HEX 20 19 81 7f 07 65 29 20
-        HEX 41 69 72 20 43 61 72 20
-        HEX 2d 20 00 a2 05 20 44 9c
-        HEX ad a4 7e d0 18 20 19 81
-        HEX 7f 07 66 29 20 53 68 75
-        HEX 74 74 6c 65 20 2d 20 00
-        HEX a2 06 20 44 9c 20 24 9e
-        HEX c9 41 90 0d c9 47 b0 09
-        HEX 38 e9 40 aa bd 6b aa d0
-        HEX 03 4c 39 92 86 73 20 bf
-        HEX 9e 20 17 9e b0 03 4c 36
-        HEX 92 a6 73 fe 9e 7e e0 06
-        HEX d0 10 a9 e8 8d e9 7e 8d
-        HEX eb 7e a9 03 8d ea 7e 8d
-        HEX ec 7e bd b8 a9 a0 03 d9
-        HEX b1 7e f0 13 e0 03 b0 0b
-        HEX 85 72 b9 b1 7e c9 02 f0
-        HEX 06 a5 72 88 10 e9 c8 8a
-        HEX 18 69 08 99 b1 7e 20 01
-        HEX 9e 20 a4 15 a9 17 85 25
-        HEX a9 0f 85 24 a6 73 20 b8
-        HEX 80 7c 75 4c fc a4 fe 6b
-        HEX aa 20 bf 9e a9 00 8d 49
-        HEX 82 ae 39 a9 ad 3a a9 20
-        HEX 07 82 4c 7e 80 a9 01 8d
-        HEX 3d a9 a9 00 8d 6b aa a9
-        HEX 05 85 24 ae 3d a9 bd 7d
-        HEX 7e f0 42 ee 6b aa a9 61
-        HEX 18 6d 3d a9 20 62 80 20
-        HEX 19 81 29 20 00 ae 3d a9
-        HEX 20 b8 80 20 75 a9 17 85
-        HEX 24 20 19 81 2d 20 00 ae
-        HEX 3d a9 ad ce 7e 4a 4a 85
-        HEX 72 20 d3 9e a9 00 8d 49
-        HEX 82 ae 39 a9 ad 3a a9 20
-        HEX 07 82 20 7e 80 ee 3d a9
-        HEX ad 3d a9 c9 06 90 a8 ad
-        HEX 6b aa d0 28 20 19 81 7e
-        HEX 20 54 68 6f 75 20 68 61
-        HEX 73 74 20 6e 6f 20 61 72
-        HEX 6d 6f 75 72 20 74 6f 20
-        HEX 73 65 6c 6c 21 00 20 6c
-        HEX 82 4c 50 92 20 b4 83 20
-        HEX a4 15 a9 17 85 25 a9 10
-        HEX 85 24 20 bf 15 48 20 a9
-        HEX 83 68 c9 42 90 04 c9 47
-        HEX 90 03 4c 50 92 38 e9 41
-        HEX 85 73 aa bd 7d 7e f0 f2
-        HEX a6 73 ad ce 7e 4a 4a 85
-        HEX 72 20 d3 9e a6 73 de 7d
-        HEX 7e d0 05 a9 00 8d 7b 7e
-        HEX ad d4 7e 18 6d 39 a9 8d
-        HEX d4 7e ad d5 7e 6d 3a a9
-        HEX 8d d5 7e 20 47 8e 20 4a
-        HEX 9e 20 a4 15 a9 17 85 25
-        HEX a9 10 85 24 a6 73 20 b8
-        HEX 80 20 75 4c fc a4 20 19
-        HEX 81 7e 7f 04 55 73 65 64
-        HEX 20 66 6f 6f 64 3f 20 20
-        HEX 4e 6f 20 74 68 61 6e 6b
-        HEX 73 21 00 20 6c 82 4c 50
-        HEX 92 20 19 81 7e 7f 03 53
-        HEX 6f 72 72 79 2c 20 77 65
-        HEX 20 64 6f 6e 27 74 20 64
-        HEX 65 61 6c 20 69 6e 7e 7f
-        HEX 09 75 73 65 64 20 73 74
-        HEX 75 66 66 2e 00 20 6c 82
-        HEX 4c 50 92 20 19 81 7e 7f
-        HEX 05 57 65 20 64 6f 6e 27
-        HEX 74 20 62 75 79 20 73 70
-        HEX 65 6c 6c 73 21 00 20 6c
-        HEX 82 4c 50 92 20 19 81 7e
-        HEX 7f 03 57 65 20 68 61 76
-        HEX 65 20 70 6c 65 6e 74 79
-        HEX 20 6f 66 20 62 6f 6f 7a
-        HEX 65 7e 7f 0a 61 6c 72 65
-        HEX 61 64 79 21 00 20 6c 82
-        HEX 4c 50 92 ad d4 7e 38 ed
-        HEX 39 a9 8d d4 7e ad d5 7e
-        HEX ed 3a a9 8d d5 7e 4c 3b
-        HEX 9e ad d4 7e cd 39 a9 ad
-        HEX d5 7e ed 3a a9 60 20 b4
-        HEX 83 20 a4 15 a9 17 85 25
-        HEX a9 0f 85 24 20 bf 15 48
-        HEX 20 a9 83 68 60 20 e2 a4
-        HEX 20 19 81 7f 0b 53 6f 6c
-        HEX 64 21 00 60 20 e2 a4 20
-        HEX 19 81 7f 0b 44 6f 6e 65
-        HEX 21 00 60 20 e2 a4 20 19
-        HEX 81 20 20 54 68 6f 75 20
-        HEX 63 61 6e 73 74 20 6e 6f
-        HEX 74 20 61 66 66 6f 72 64
-        HEX 20 69 74 21 20 20 20 00
-        HEX 20 0f 84 4c fc a4 a9 c8
-        HEX 38 ed d0 7e 4a 4a 4a 4a
-        HEX 4a 85 72 4c d3 9e a9 c8
-        HEX 38 ed d2 7e 4a 4a 85 72
-        HEX 4c d3 9e a9 ff 38 ed d2
-        HEX 7e 85 72 bd bf a9 aa 20
-        HEX d3 9e ad 3a a9 18 69 05
-        HEX 8d 39 a9 a9 00 8d 3a a9
-        HEX 60 a9 c8 38 ed d2 7e a0
-        HEX 00 c8 38 e9 05 b0 fa 84
-        HEX 72 bd bf a9 aa a9 00 8d
-        HEX 39 a9 8d 3a a9 ca e0 ff
-        HEX f0 14 ad 39 a9 18 65 72
-        HEX 8d 39 a9 ad 3a a9 69 00
-        HEX 8d 3a a9 4c db 9e 60 20
-        HEX 19 81 20 77 68 61 74 00
-        HEX 4c 07 84 20 a2 85 4c ae
-        HEX a1 ad 33 a9 d0 03 4c 7e
-        HEX a0 a2 0f 8e 34 a9 ae 34
-        HEX a9 bd ac b6 c9 03 f0 03
-        HEX 4c d1 9f 20 f6 a3 c9 02
-        HEX b0 03 4c db 9f c9 09 90
-        HEX 03 4c d1 9f a0 00 ae 34
-        HEX a9 a5 00 dd bc b6 f0 06
-        HEX 30 03 c8 d0 01 88 84 04
-        HEX a0 00 a5 01 dd cc b6 f0
-        HEX 06 30 03 c8 d0 01 88 84
-        HEX 05 bd cc b6 18 65 05 85
-        HEX 0d bd bc b6 18 65 04 85
-        HEX 0c 20 b9 15 09 01 8d da
-        HEX 9f ad da 9f 30 19 ae 34
-        HEX a9 bd bc b6 aa a4 0d 20
-        HEX 6f a2 90 43 ae 34 a9 bd
-        HEX bc b6 85 0c 4c a2 9f ae
-        HEX 34 a9 bc cc b6 a6 0c 20
-        HEX 6f a2 90 2b ae 34 a9 bc
-        HEX cc b6 84 0d ae 34 a9 bc
-        HEX cc b6 bd bc b6 aa a9 20
-        HEX 20 57 a2 ae 34 a9 a5 0d
-        HEX 9d cc b6 a8 a5 0c 9d bc
-        HEX b6 aa a9 2f 20 57 a2 ad
-        HEX da 9f 49 ff 8d da 9f 29
-        HEX 01 f0 9e ce 34 a9 30 03
-        HEX 4c 14 9f 60 00 20 a4 15
-        HEX a9 17 85 25 20 19 81 7e
-        HEX 41 74 74 61 63 6b 65 64
-        HEX 20 62 79 20 67 75 61 72
-        HEX 64 21 7e 00 a9 04 20 cb
-        HEX 15 ad cc 7e 4a 85 72 ad
-        HEX 7b 7e 0a 0a 0a 18 65 72
-        HEX 69 38 85 72 8d 32 a9 20
-        HEX b9 15 c5 72 b0 0e 20 19
-        HEX 81 4d 69 73 73 65 64 21
-        HEX 00 4c d1 9f ad c7 7e 0a
-        HEX 18 69 0f 85 72 20 b9 15
-        HEX c9 00 f0 f9 c5 72 b0 f5
-        HEX 85 73 20 19 81 48 69 74
-        HEX 2e 2e 2e 20 00 a2 00 8e
-        HEX 49 82 a5 73 20 0d 82 20
-        HEX 19 81 20 64 61 6d 61 67
-        HEX 65 00 a9 02 20 cb 15 ad
-        HEX c6 7e 38 e5 73 8d c6 7e
-        HEX ad c7 7e e9 00 8d c7 7e
-        HEX b0 03 4c 38 8a 4c d1 9f
-        HEX a0 0f 8c 34 a9 b9 ac b6
-        HEX c9 04 d0 06 20 a0 a0 4c
-        HEX 97 a0 c9 05 d0 03 20 5b
-        HEX a1 ce 34 a9 ac 34 a9 10
-        HEX e4 60 20 e6 a2 a6 0c a4
-        HEX 0d 20 6f a2 90 03 4c 38
-        HEX a1 c9 2f f0 38 20 b9 15
-        HEX c9 28 b0 30 a9 17 85 25
-        HEX ee 32 a9 20 19 81 7e 49
-        HEX 6f 6c 6f 20 74 68 65 20
-        HEX 42 61 72 64 20 73 69 6e
-        HEX 67 73 3a 7e 48 6f 20 65
-        HEX 79 6f 68 20 68 65 20 68
-        HEX 75 6d 21 00 60 a9 00 85
-        HEX 72 a2 0f bd 83 7e f0 0a
-        HEX ec 7a 7e f0 05 de 83 7e
-        HEX e6 72 ca d0 ee a9 80 18
-        HEX 6d d0 7e 85 73 20 b9 15
-        HEX c5 72 b0 25 a5 72 f0 21
-        HEX a9 17 85 25 ee 32 a9 20
-        HEX 19 81 7e 49 6f 6c 6f 20
-        HEX 73 74 6f 6c 65 20 73 6f
-        HEX 6d 65 74 68 69 6e 67 21
-        HEX 00 60 ac 34 a9 be bc b6
-        HEX b9 cc b6 a8 a9 20 20 57
-        HEX a2 ac 34 a9 a5 0c 99 bc
-        HEX b6 aa a5 0d 99 cc b6 a8
-        HEX a9 5c 4c 57 a2 20 e6 a2
-        HEX a6 0c a4 0d 20 6f a2 b0
-        HEX 01 60 c9 6d d0 01 60 ac
-        HEX 34 a9 be bc b6 b9 cc b6
-        HEX a8 a9 20 20 57 a2 ac 34
-        HEX a9 a5 0c 99 bc b6 aa a5
-        HEX 0d 99 cc b6 a8 a9 5f 4c
-        HEX 57 a2 a2 00 a0 17 20 15
-        HEX 81 7e 74 68 65 20 63 69
-        HEX 74 79 20 6f 66 20 00 ae
-        HEX ed 7e 20 b8 80 17 79 60
-        HEX a9 01 85 25 20 a7 15 20
-        HEX e7 a1 a9 00 8d c6 a1 a9
-        HEX b4 8d c7 a1 20 9c 80 ad
-        HEX 00 b4 20 62 80 ee c6 a1
-        HEX d0 03 ee c7 a1 a5 24 c9
-        HEX 26 d0 ec e6 25 a5 25 c9
-        HEX 13 d0 e1 20 e7 a1 4c 21
-        HEX a2 a2 00 bd 00 b0 bc 00
-        HEX 08 9d 00 08 98 9d 00 b0
-        HEX bd 00 b1 bc 00 09 9d 00
-        HEX 09 98 9d 00 b1 bd 00 b2
-        HEX bc 00 0a 9d 00 0a 98 9d
-        HEX 00 b2 bd 00 b3 bc 00 0b
-        HEX 9d 00 0b 98 9d 00 b3 ca
-        HEX d0 c9 60 20 a7 15 a5 00
-        HEX 85 24 a5 01 85 25 e6 25
-        HEX a9 7b 20 62 80 a0 0f b9
-        HEX bc b6 85 24 b9 cc b6 85
-        HEX 25 e6 25 b9 ac b6 30 0b
-        HEX 84 72 aa bd a1 a9 20 62
-        HEX 80 a4 72 88 10 e1 4c a4
-        HEX 15 86 72 84 73 48 20 a7
-        HEX 15 68 a6 72 a4 73 86 24
-        HEX c8 84 25 20 62 80 4c a4
-        HEX 15 20 88 a2 b0 01 60 a5
-        HEX 00 c5 72 d0 0a a5 01 c5
-        HEX 73 d0 04 a9 2f 18 60 98
-        HEX 38 60 e0 26 90 04 a9 60
-        HEX 18 60 c0 12 b0 f8 b9 6d
-        HEX a9 18 69 00 8d a6 a2 b9
-        HEX 7f a9 69 b4 8d a7 a2 bd
-        HEX ff ff c9 60 b0 01 60 86
-        HEX 72 84 73 a2 0f a8 bd bc
-        HEX b6 c5 72 d0 11 bd cc b6
-        HEX c5 73 d0 0a 8e 37 a9 bd
-        HEX ac b6 18 69 30 60 ca 10
-        HEX e5 98 38 60 20 b9 15 c9
-        HEX 55 b0 03 a9 ff 60 c9 aa
-        HEX b0 03 a9 00 60 a9 01 60
-        HEX 20 d2 a2 18 79 bc b6 85
-        HEX 0c 20 d2 a2 18 79 cc b6
-        HEX 85 0d 60 a9 00 8d 69 aa
-        HEX 8d 6a aa 8d 67 aa 8d 68
-        HEX aa 8d 35 a9 20 c2 15 f0
-        HEX fb c9 0d d0 0b ad 35 a9
-        HEX d0 05 20 19 81 30 00 60
-        HEX c9 08 f0 04 c9 7f d0 18
-        HEX ad 35 a9 f0 df ce 35 a9
-        HEX a2 05 bd 63 aa 9d 65 aa
-        HEX ca 10 f7 c6 24 4c 0a a3
-        HEX c9 30 90 c8 c9 3a b0 c4
-        HEX 48 20 62 80 68 38 e9 30
-        HEX 48 a2 00 bd 65 aa 9d 63
-        HEX aa e8 e0 06 d0 f5 0e 69
-        HEX aa 2e 6a aa ad 6a aa 48
-        HEX ad 69 aa 48 0e 69 aa 2e
-        HEX 6a aa 0e 69 aa 2e 6a aa
-        HEX 68 18 6d 69 aa 8d 69 aa
-        HEX 68 6d 6a aa 8d 6a aa 68
-        HEX 18 6d 69 aa 8d 69 aa 90
-        HEX 03 ee 6a aa ee 35 a9 ad
-        HEX 35 a9 c9 04 b0 03 4c 0a
-        HEX a3 60 20 b9 15 85 72 8d
-        HEX 38 a9 4c bb a3 20 b9 15
-        HEX 48 20 a3 a3 85 72 68 8d
-        HEX 38 a9 4c bb a3 a9 00 85
-        HEX 73 8d 39 a9 8d 3a a9 a2
-        HEX 07 ad 38 a9 29 01 d0 11
-        HEX ad 39 a9 18 65 72 8d 39
-        HEX a9 ad 3a a9 65 73 8d 3a
-        HEX a9 4e 38 a9 06 72 26 73
-        HEX ca d0 de ad 3a a9 60 20
-        HEX a4 15 20 92 15 4c fa 87
-        HEX 8e 2d a9 bd bc b6 c9 ff
-        HEX f0 78 a5 00 c9 ff f0 72
-        HEX 38 fd bc b6 b0 09 8d 3c
-        HEX a9 38 a9 00 ed 3c a9 a0
-        HEX 00 8c 2e a9 8c 2f a9 a8
-        HEX aa e8 ca f0 0f 98 18 6d
-        HEX 2e a9 8d 2e a9 90 f3 ee
-        HEX 2f a9 b0 ee ae 2d a9 a5
-        HEX 01 38 fd cc b6 b0 09 8d
-        HEX 3c a9 38 a9 00 ed 3c a9
-        HEX a0 00 8c 30 a9 8c 31 a9
-        HEX a8 aa e8 ca f0 0f 98 18
-        HEX 6d 30 a9 8d 30 a9 90 f3
-        HEX ee 31 a9 b0 ee 18 ad 30
-        HEX a9 6d 2e a9 8d 2e a9 ad
-        HEX 31 a9 6d 2f a9 8d 2f a9
-        HEX 90 06 a9 ff 8d 2e a9 60
-        HEX a0 01 8c 30 a9 88 8c 31
-        HEX a9 38 ad 2e a9 aa ed 30
-        HEX a9 8d 2e a9 ad 2f a9 ed
-        HEX 31 a9 8d 2f a9 90 10 c8
-        HEX ad 30 a9 69 01 8d 30 a9
-        HEX 90 df ee 31 a9 b0 da 8c
-        HEX 2e a9 8e 2f a9 98 60 18
-        HEX 69 b8 85 72 8a 69 0b 85
-        HEX 73 a5 72 c9 0f a5 73 e9
-        HEX 27 90 05 a9 0f a2 27 60
-        HEX a5 72 a6 73 60 a9 ff 20
-        HEX e9 15 a9 ff 20 e9 15 a9
-        HEX ff 4c e9 15 a9 06 85 25
-        HEX 20 81 80 20 19 81 7e 00
-        HEX 20 98 15 a5 25 c9 0e d0
-        HEX f2 a9 0a 85 25 60 20 14
-        HEX 84 a0 18 20 66 82 d0 06
-        HEX 20 e9 15 88 d0 f5 4c 14
-        HEX 84 53 75 70 65 72 20 44
-        HEX 75 70 65 72 27 73 20 54
-        HEX 72 61 6e 73 70 6f 72 74
-        HEX 2c 20 49 6e 63 ae 20 48
-        HEX 6f 72 73 65 20 61 6e 64
-        HEX 20 43 61 72 72 69 61 67
-        HEX 65 20 54 72 61 6e 73 70
-        HEX 6f 72 f4 20 54 68 65 20
-        HEX 52 65 6c 69 61 62 6c 65
+OVERLAY_ENTRY
+        SUBROUTINE
+        ; Overlay entry: load the town map and run the town loop.
+        ;
+        ; Behavior:
+        ;   Set the player position from the saved zero page, copy the
+        ;   gendered address word by PLR_SEX, reduce PLR_PLACE to a town
+        ;   index (mod $15, then -$0D), BLOAD TCMAPS and MAPCHARS, copy the
+        ;   chosen 3-page map record into TOWN_MAP, draw it, then fall into
+        ;   the dispatch loop.  KEY_IDLE polls with a timeout so the town
+        ;   animates (TOWN_TICK) while waiting for a key.
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$11
+        STA ZP_Y
+        LDA #$13
+        STA ZP_X
+        LDA PLR_SEX
+        BEQ .L896E
+        LDX #$05
+.L8965
+        LDA STR_GENDER_F,X
+        STA STR_GENDER_M,X
+        DEX
+        BPL .L8965
+.L896E
+        LDA #$00
+        STA AGGRO
+        STA DIR_STR_PTR+1
+        STA PUB_VISITS
+        LDA PLR_PLACE
+.L897C
+        CMP #$15
+        BCC .L8984
+        SBC #$15
+        BNE .L897C
+.L8984
+        SEC
+        SBC #$0D
+        STA MAP_INDEX
+        PHA
+.L898B
+        JSR MLIB_SET_PREFIX
+        DC.B "TCMAPS",0
+        LDA #$40
+        LDY #$00
+        JSR FILE_LOAD_AT
+        JSR DISK_PROMPT
+        BCS .L898B
+.L89A1
+        JSR MLIB_SET_PREFIX
+        DC.B "MAPCHARS",0
+        LDA #$B0
+        LDY #$00
+        JSR FILE_LOAD_AT
+        JSR DISK_PROMPT
+        BCS .L89A1
+        PLA
+        ASL
+        TAX
+        LDA TCMAPS_DIR+4,X
+        STA MAP_SRC
+        LDA TCMAPS_DIR+5,X
+        STA MAP_SRC+1
+        LDY #$03
+        LDX #$00
+.L89CC
+MAP_SRC = *+1
+        LDA STALE_FFFF,X
+MAP_DST = *+2
+        STA TOWN_MAP,X
+        DEX
+        BNE .L89CC
+        INC MAP_SRC+1
+        INC MAP_DST
+        DEY
+        BNE .L89CC
+        JSR MAP_DRAW
+        JMP TWN_DISPATCH
+MAP_PROMPT
+        JSR TEXT_SCROLL
+        LDA #$0E
+        JSR CHAR_OUT
+TWN_LOOP
+        JSR STATS_VALUES
+        JSR KEY_IDLE
+        BNE .L8A16
+        LDA #$00
+        STA IDLE_MSG
+        JSR CURSOR_COL1
+        LDA #$20
+        JSR CHAR_OUT
+        JSR TOWN_TICK
+        JSR CMD_PASS
+        LDA IDLE_MSG
+        BNE MAP_PROMPT
+        LDA #$17
+        STA MON_CV
+        JSR CURSOR_COL1
+        JMP TWN_LOOP
+.L8A16
+        JSR GET_COMMAND
+        BCS MAP_PROMPT
+        RTS
+KEY_IDLE
+        LDX #$80
+.L8A1E
+        JSR KEY_GET
+        BNE .L8A26
+        DEX
+        BNE .L8A1E
+.L8A26
+        TAX
+        RTS
+TWN_DISPATCH
+        LDA PLR_HITS
+        ORA PLR_HITS+1
+        BEQ TWN_DEATH
+        LDA PLR_FOOD
+        ORA PLR_FOOD+1
+        BNE .L8A3E
+TWN_DEATH
+        JSR TEXT_SCROLL
+        JMP RESPAWN
+.L8A3E
+        JSR MAP_PROMPT
+        LDA CMD_TBL,X
+        STA DISP_OP
+        LDA CMD_TBL+1,X
+        STA DISP_OP+1
+DISP_OP = *+1
+        JSR STALE_FFFF
+        JSR TOWN_TICK
+        JMP TWN_DISPATCH
+@
+
+\subsection{The command table and dispatch}
+
+Like every overlay, \texttt{TWN} reads a command through the engine
+[[GET_COMMAND]] (which returns $X = 2\times\text{index}$) and jumps
+through a word table, [[CMD_TBL]], by self-modifying the operand of a
+[[JSR]]. Most of the 26 commands are no-ops in town and point at the
+engine's [[QUERY_MARK]] (the ``Huh?'' beep); the rest are the
+town-mode handlers below. Accelerator and Noise reuse the engine's
+sound toggles.
+
+<<twn command table>>=
+        ORG $8A56
+CMD_TBL
+        DC.W CMD_MOVE
+        DC.W $8A90
+        DC.W $8A96
+        DC.W $8A9C
+        DC.W CMD_PASS
+        DC.W SOUND_TOGGLE
+        DC.W CMD_ATTACK
+        DC.W QUERY_MARK
+        DC.W CMD_CAST
+        DC.W CMD_DROP
+        DC.W QUERY_MARK
+        DC.W QUERY_MARK
+        DC.W CMD_GET
+        DC.W QUERY_MARK
+        DC.W CMD_INFORM
+        DC.W QUERY_MARK
+        DC.W SFX_TOGGLE
+        DC.W QUERY_MARK
+        DC.W CMD_QUIT
+        DC.W CMD_READY
+        DC.W CMD_STEAL
+        DC.W CMD_TRANSACT
+        DC.W CMD_UNLOCK
+        DC.W QUERY_MARK
+        DC.W QUERY_MARK
+        DC.W CMD_ZTATS
+@
+
+<<twn move>>=
+        ORG $8A8A
+CMD_MOVE
+        SUBROUTINE
+        ; The four movement commands and the Pass turn.
+        ;
+        ; Inputs:
+        ;   X = 2*command (0..3); the load below picks the step vector.
+        ;
+        ; Behavior:
+        ;   Add the step to (ZP_X,ZP_Y); CELL_PROBE the target.  Walking
+        ;   off the 38x18 edge (ZP_TX>=$26 or ZP_TY>=$12) leaves town via
+        ;   EXIT_TO_OUT.  A blocked cell prints "Blocked"; an open one
+        ;   erases the old @ and redraws it at the new cell.  Every move
+        ;   (and Pass) spends a turn through TICK_SND.
+        ;
+        ; Clobbers: A, X, Y
+        LDX #$00
+        LDY #$FF
+        BNE .L8AA0
+        LDX #$00
+        LDY #$01
+        BNE .L8AA0
+        LDX #$01
+        LDY #$00
+        BEQ .L8AA0
+        LDX #$FF
+        LDY #$00
+.L8AA0
+        TXA
+        CLC
+        ADC ZP_X
+        STA ZP_TX
+        TAX
+        TYA
+        CLC
+        ADC ZP_Y
+        STA ZP_TY
+        TAY
+        JSR CELL_PROBE
+        BCS .L8AD8
+        LDA ZP_TX
+        CMP #$26
+        BCS .L8ABF
+        LDA ZP_TY
+        CMP #$12
+        BCC .L8AC2
+.L8ABF
+        JMP EXIT_TO_OUT
+.L8AC2
+        LDA #$0E
+        JSR SFX_PLAY
+        JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "Blocked",0
+        JMP CMD_PASS
+.L8AD8
+        LDX ZP_X
+        LDY ZP_Y
+        LDA #$20
+        JSR PLOT_GLYPH
+        LDX ZP_TX
+        STX ZP_X
+        LDY ZP_TY
+        STY ZP_Y
+        LDA #$7B
+        JSR PLOT_GLYPH
+CMD_PASS
+        LDY #$01
+        LDA #$10
+        JSR TICK_SND
+.L8AF5
+        JSR SFX_DRAIN
+        BNE .L8AF5
+        RTS
+@
+
+<<twn attack>>=
+        ORG $8AFB
+CMD_ATTACK
+        SUBROUTINE
+        ; The Attack command: strike an adjacent townsperson.
+        ;
+        ; Behavior:
+        ;   Echo the readied weapon (a bare-hands or magic weapon refuses).
+        ;   Read a direction, then march along it: each cell that holds an
+        ;   NPC is a to-hit roll against PLR_AGI-scaled armour; a hit rolls
+        ;   damage (weapon-scaled) into NPC_HP, prints it, and "Killed!"
+        ;   frees the slot and awards experience.
+        ;
+        ; Clobbers: A, X, Y
+        JSR MSG_PRINT
+        DC.B "with ",0
+        LDX READY_WEAPON
+        JSR STR_NTH
+        DC.W STR_WEAPONS_S
+        LDX READY_WEAPON
+        CPX #$04
+        BEQ .L8B1B
+        CPX #$08
+        BCC .L8B1E
+        CPX #$0B
+        BCS .L8B1E
+.L8B1B
+        JMP QUERY_MARK
+.L8B1E
+        JSR MSG_PRINT
+        DC.B ": ",0
+        JSR KEY_IDLE
+        BEQ .L8B49
+        JSR KEY_ALIAS
+        LDX #$00
+        LDY #$00
+        CMP #$0B
+        BNE .L8B37
+        DEY
+        BNE .L8B56
+.L8B37
+        CMP #$0A
+        BNE .L8B3E
+        INY
+        BNE .L8B56
+.L8B3E
+        CMP #$15
+        BNE .L8B45
+        INX
+        BNE .L8B56
+.L8B45
+        CMP #$08
+        BEQ .L8B55
+.L8B49
+        JSR MSG_PRINT
+        DC.B "Nothing",0
+        RTS
+.L8B55
+        DEX
+.L8B56
+        STX ZP_DX
+        STY ZP_DY
+        JSR GET_COMMAND
+        JSR PUTCH_NL_COND
+        LDX READY_WEAPON
+        LDA WEAPON_HITKIND,X
+        STA ATK_CNT
+        LDA ZP_X
+        STA ZP_TX
+        LDA ZP_Y
+        STA ZP_TY
+.L8B71
+        LDA ZP_TX
+        CLC
+        ADC ZP_DX
+        STA ZP_TX
+        TAX
+        LDA ZP_TY
+        CLC
+        ADC ZP_DY
+        STA ZP_TY
+        TAY
+        JSR CELL_PROBE
+        PHP
+        CMP #$16
+        BCC .L8B99
+        PLP
+        PHP
+        BCS .L8B99
+        PLP
+        CMP #$30
+        BCC .L8B9F
+        CMP #$36
+        BCS .L8B9F
+        JMP .L8BB0
+.L8B99
+        PLP
+        DEC ATK_CNT
+        BNE .L8B71
+.L8B9F
+        LDA #$06
+        JSR SFX_PLAY
+        JSR MSG_PRINT
+        DC.B "Missed!",0
+        RTS
+.L8BB0
+        SEC
+        SBC #$30
+        STA ZP_T0
+        LDX ZP_T0
+        LDA #$80
+        CLC
+        ADC PLR_AGI
+        STA ZP_T1
+        JSR RND
+        CMP ZP_T1
+        BCS .L8B9F
+        LDA #$01
+        STA AGGRO
+        LDA #$06
+        JSR SFX_PLAY
+        JSR MSG_PRINT
+        DC.B "Hit ",0
+        LDX ZP_T0
+        JSR STR_NTH
+        DC.W STR_NPCS
+        JSR MSG_PRINT
+        DC.B "! ",0
+        LDA PLR_STR
+        CLC
+        ADC READY_WEAPON
+        ADC READY_WEAPON
+        ADC READY_WEAPON
+        STA ZP_T1
+.L8BF4
+        JSR RND
+        CMP #$00
+        BEQ .L8BF4
+        CMP ZP_T1
+        BCS .L8BF4
+        STA ZP_T1
+        LDA #$02
+        JSR SFX_PLAY
+        LDX HIT_SLOT
+        LDA NPC_HP,X
+        SEC
+        SBC ZP_T1
+        STA NPC_HP,X
+        LDA NPC_HP+16,X
+        SBC #$00
+        STA NPC_HP+16,X
+        BCC .L8C32
+        LDA ZP_T1
+        LDX #$00
+        STX NUM_PAD
+        JSR PRINT_NUM8
+        JSR MSG_PRINT
+        DC.B " damage",0
+        RTS
+.L8C32
+        LDA #$FF
+        STA NPC_TYPE,X
+        STA NPC_X,X
+        STA NPC_Y,X
+        STA NPC_HP+16,X
+        JSR MSG_PRINT
+        DC.B "Killed!",0
+        LDA ZP_T0
+        CMP #$04
+        BNE .L8C58
+        LDA #$01
+        LDX #$00
+        JMP .L8C72
+.L8C58
+        CMP #$05
+        BNE .L8C63
+        LDA #$02
+        LDX #$00
+        JMP .L8C72
+.L8C63
+        CMP #$01
+        BNE .L8C6E
+        LDA #$01
+        LDX #$00
+        JMP .L8C72
+.L8C6E
+        LDA #$0F
+        LDX #$00
+.L8C72
+        CLC
+        ADC PLR_EXP
+        STA PLR_EXP
+        TXA
+        ADC PLR_EXP+1
+        STA PLR_EXP+1
+        LDA PLR_EXP
+        CMP #$0F
+        LDA PLR_EXP+1
+        SBC #$27
+        BCC .L8C96
+        LDA #$0F
+        STA PLR_EXP
+        LDA #$27
+        STA PLR_EXP+1
+.L8C96
+        LDX ZP_TX
+        LDY ZP_TY
+        LDA #$20
+        JMP PLOT_GLYPH
+@
+
+<<twn cast>>=
+        ORG $8C9F
+CMD_CAST
+        SUBROUTINE
+        JSR MSG_PRINT
+        DC.B "-- Hmmmm... no effect?",0
+        LDA #$08
+        JMP SFX_PLAY
+@
+
+<<twn drop>>=
+        ORG $8CBE
+CMD_DROP
+        SUBROUTINE
+        ; The Drop command front end: Pence, Weapon, or Armour.
+        ;
+        ; Behavior:
+        ;   Read one of P/W/A, echo the matching prompt from DROP_PROMPTS,
+        ;   and RTS-dispatch through DROP_DISP to the chosen sub-handler.
+        JSR MSG_PRINT
+        DC.B " Pence,Weapon,Armour: ",0
+        JSR KEY_IDLE
+        LDX #$06
+        STX MON_CH
+        LDX #$03
+.L8CE1
+        CMP $8CFE,X
+        BEQ .L8CE9
+        DEX
+        BNE .L8CE1
+.L8CE9
+        TXA
+        ASL
+        TAY
+        LDA DROP_DISP+1,Y
+        PHA
+        LDA DROP_DISP,Y
+        PHA
+        JSR STR_NTH
+        DC.W DROP_PROMPTS
+        JSR CLR_EOL
+        INC MON_CH
+        RTS
+@
+
+The Drop front end matches the typed letter against the three-byte
+selector ``PWA'' and RTS-dispatches through [[DROP_DISP]], a table of
+\emph{return addresses} (target $-1$) pushed onto the stack.
+
+<<twn drop dispatch>>=
+        ORG $8CFF
+DROP_SEL
+        DC.B "PWA"               ; Drop sub-command letters
+DROP_DISP ; RTS-dispatch (target-1), indexed by 2*letter:
+        DC.W DROP_SEL-2          ;   Y=0 slot (unused)
+        DC.W DROP_PENCE-1        ;   P: drop gold
+        DC.W DROP_WEAPON-1       ;   W: drop a weapon
+        DC.W DROP_ARMOUR-1       ;   A: drop armour
+@
+
+<<twn drop pence>>=
+        ORG $8D0A
+DROP_PENCE
+        SUBROUTINE
+        ; Drop Pence: give gold to the person on the player tile.
+        ;
+        ; Behavior:
+        ;   Read an amount (NUM_INPUT), deduct it from PLR_COIN.  If the
+        ;   tile holds the special benefactor NPC (type $61 from NPC_AT),
+        ;   the gift returns 1.5x its value as hit points and a random
+        ;   spell ("Shazam!" / "Alakazot!"); otherwise just "Ok!".
+        JSR MSG_PRINT
+        DC.B "~How much? ",0
+        JSR NUM_INPUT
+        LDA AMOUNT
+        ORA AMOUNT+1
+        BNE .L8D25
+        RTS
+.L8D25
+        LDA PLR_COIN
+        CMP AMOUNT
+        LDA PLR_COIN+1
+        SBC AMOUNT+1
+        BCS .L8D53
+        JSR MSG_PRINT
+        DC.B "~Thou hast not that much!",0
+        JMP BEEP_HUH
+.L8D53
+        LDA PLR_COIN
+        SEC
+        SBC AMOUNT
+        STA PLR_COIN
+        LDA PLR_COIN+1
+        SBC AMOUNT+1
+        STA PLR_COIN+1
+        LDX ZP_X
+        LDY ZP_Y
+        JSR NPC_AT
+        CMP #$61
+        BEQ .L8D7A
+        JSR MSG_PRINT
+        DC.B "~Ok!",0
+        RTS
+.L8D7A
+        LDA AMOUNT
+        STA ZP_T0
+        LDA AMOUNT+1
+        LSR
+        STA ZP_T1
+        ROR ZP_T0
+        LDA ZP_T0
+        CLC
+        ADC AMOUNT
+        STA ZP_T0
+        LDA ZP_T1
+        ADC AMOUNT+1
+        STA ZP_T1
+        LDA PLR_HITS
+        CLC
+        ADC ZP_T0
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        ADC ZP_T1
+        STA PLR_HITS+1
+        LDA PLR_HITS
+        CMP #$0F
+        LDA PLR_HITS+1
+        SBC #$27
+        BCC .L8DBD
+        LDA #$0F
+        STA PLR_HITS
+        LDA #$27
+        STA PLR_HITS+1
+.L8DBD
+        JSR RND
+        CMP #$10
+        BCC .L8DD5
+        JSR MSG_PRINT
+        DC.B "~Shazam!",0
+        LDA #$0A
+        JMP SFX_PLAY
+.L8DD5
+        JSR RND
+        AND #$0F
+        CMP #$08
+        BCS .L8DD5
+        CMP #$03
+        BEQ .L8DD5
+        TAX
+        INX
+        INC OWNED_SPELLS,X
+        JSR MSG_PRINT
+        DC.B "~Alakazot!",0
+        LDA #$0A
+        JMP SFX_PLAY
+DROP_WEAPON
+        JSR DROP_PICK
+        DC.B $0F
+        DC.B $83
+        ROR STR_WEAPONS,X
+        BMI .L8E12
+        TAX
+        LDA #$00
+        STA OWNED_WEAPONS,X
+        CPX READY_WEAPON
+        BNE .L8E12
+        STA READY_WEAPON
+.L8E12
+        JMP MAP_DRAW
+DROP_ARMOUR
+        JSR DROP_PICK
+        ORA $7D
+        ROR STR_ARMOUR,X
+        BMI .L8E12
+        TAX
+        LDA #$00
+        STA OWNED_ARMOUR,X
+        CPX READY_ARMOUR
+        BNE .L8E12
+        STA READY_ARMOUR
+        JMP MAP_DRAW
+CAP_FOOD
+        LDA PLR_FOOD
+        CMP #$0F
+        LDA PLR_FOOD+1
+        SBC #$27
+        BCC .L8E46
+        LDA #$0F
+        STA PLR_FOOD
+        LDA #$27
+        STA PLR_FOOD+1
+.L8E46
+        RTS
+CAP_COIN
+        LDA PLR_COIN
+        CMP #$0F
+        LDA PLR_COIN+1
+        SBC #$27
+        BCC .L8E5D
+        LDA #$0F
+        STA PLR_COIN
+        LDA #$27
+        STA PLR_COIN+1
+.L8E5D
+        RTS
+@
+
+[[DROP_PROMPTS]] is the packed sub-prompt table echoed by Drop:
+\emph{nothing}, \emph{pence}, \emph{weapon:}, \emph{armour:}.
+
+<<twn drop prompts>>=
+        ORG $8E5E
+DROP_PROMPTS
+        HEX 6e6f7468696ee770
+        HEX 656e63e577656170
+        HEX 6f6eba61726d6f75
+        HEX 72ba
+@
+
+<<twn drop pick>>=
+        ORG $8E78
+DROP_PICK
+        SUBROUTINE
+        ; DROP_PICK: a popup item picker that takes five inline argument
+        ; bytes after the JSR (count, owned-array pointer lo/hi, name-table
+        ; pointer lo/hi), pulled off the stack like the engine MENU_PICK.
+        ;
+        ; Behavior:
+        ;   List the owned items as a)..  in a popup, wait for a letter,
+        ;   and return its index in X (or X=$FF for none).  CMD_GET, Quit,
+        ;   Ready follow.
+        PLA
+        STA MSG_PTR
+        PLA
+        STA MSG_PTR+1
+        JSR MSG_GETC
+        STA PICK_CNT
+        JSR MSG_GETC
+        STA ZP_PICK_PTR
+        JSR MSG_GETC
+        STA ZP_PICK_PTR+1
+        JSR MSG_GETC
+        STA PICK_TBL
+        JSR MSG_GETC
+        STA PICK_TBL+1
+        LDA MSG_PTR+1
+        PHA
+        LDA MSG_PTR
+        PHA
+        LDY PICK_CNT
+        LDX #$00
+.L8EA9
+        LDA (ZP_PICK_PTR),Y
+        BEQ .L8EAE
+        INX
+.L8EAE
+        DEY
+        BNE .L8EA9
+        STX ZP_PICK_CNT
+        CPX #$00
+        BNE .L8EBC
+        PLA
+        PLA
+        JMP .L8F27
+.L8EBC
+        JSR WIN_SAVE
+        JSR WIN_VIEW
+        LDX #$0F
+        LDY #$00
+        JSR MSG_AT
+        DC.B $0E," Drop ",$18,0
+        JSR CLR_WINDOW
+        SEC
+        LDA #$14
+        SBC ZP_PICK_CNT
+        LSR
+        STA MON_CV
+        LDA #$61
+        STA PICK_ALPHA
+        LDY #$00
+        BEQ .L8EFA
+.L8EE6
+        TYA
+        PHA
+        LDA #$0D
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "a) ",0
+        PLA
+        JSR .L8F35
+        TAY
+        INC MON_CV
+.L8EFA
+        CPY PICK_CNT
+        BCS .L8F09
+        INC PICK_ALPHA
+        INY
+        LDA (ZP_PICK_PTR),Y
+        BNE .L8EE6
+        BEQ .L8EFA
+.L8F09
+        JSR WIN_RESTORE
+        JSR KEY_WAIT
+        PHA
+        JSR POPUP_CLOSE
+        SEC
+        PLA
+        SBC #$41
+        BEQ .L8F27
+        BMI .L8F27
+        CMP PICK_CNT
+        BCC .L8F22
+        BNE .L8F27
+.L8F22
+        TAY
+        LDA (ZP_PICK_PTR),Y
+        BNE .L8F34
+.L8F27
+        LDY #$FF
+        JSR MSG_PRINT
+        DC.B "none",0
+        TYA
+        TAX
+        RTS
+.L8F34
+        TYA
+.L8F35
+        TAX
+        PHA
+PICK_TBL = *+3
+        JSR STR_NTH_CAP
+        DC.W ZP_X
+        PLA
+        RTS
+        ASL
+CMD_GET
+        JSR MSG_PRINT
+        DC.B " what",0
+        JMP QUERY_MARK
+@
+
+Quit is disabled in town (``only allowed outdoors''); Ready forwards
+to the engine [[READY_CMD]] then redraws. [[CMD_GET]] and
+[[CMD_UNLOCK]] are the `` what'' + [[QUERY_MARK]] stubs.
+
+<<twn quit ready>>=
+        ORG $8F4B
+CMD_QUIT
+        SUBROUTINE
+        ; Quit (and Ready): Quit is refused in town -- saving is only
+        ; allowed outdoors -- so it just prints the refusal.  Ready
+        ; reads S/W/A and forwards to the engine READY_CMD, then
+        ; redraws the town.
+        ;
+        ; Behavior:
+        ;   Quit -> BEEP_HUH after the message; Ready -> READY_CMD.
+        LDA #$12
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B " is~only allowed outdoors!",0
+        JMP BEEP_HUH
+CMD_READY
+        JSR KEY_IDLE
+        CMP #$53
+        BEQ .L8F80
+        CMP #$57
+        BEQ .L8F80
+        CMP #$41
+        BEQ .L8F80
+        RTS
+.L8F80
+        JSR READY_CMD
+        JMP MAP_DRAW
+@
+
+<<twn steal>>=
+        ORG $8F86
+CMD_STEAL
+        SUBROUTINE
+        ; The Steal command: shoplift from a counter NPC.
+        ;
+        ; Behavior:
+        ;   Only the three shop NPCs ($65/$67/$69) can be robbed.  Success
+        ;   is automatic for a thief (PLR_CLASS 4), else a roll gated on
+        ;   not-yet-caught (AGGRO).  Caught sets AGGRO -- after which no
+        ;   shop will trade.  A clean steal yields a random armour piece,
+        ;   bags of food, or a weapon depending on the counter.
+        LDX ZP_X
+        LDY ZP_Y
+        JSR NPC_AT
+        CMP #$65
+        BEQ .L8FAD
+        CMP #$67
+        BEQ .L8FAD
+        CMP #$69
+        BEQ .L8FAD
+        JSR MSG_PRINT
+        DC.B "~Nothing here",0
+        JMP QUERY_MARK
+.L8FAD
+        STA ZP_T0
+        JSR RND
+        CMP #$26
+        BCC .L8FC6
+        LDY AGGRO
+        BNE .L8FC6
+        LDY PLR_CLASS
+        CPY #$04
+        BEQ .L8FE9
+        CMP #$4D
+        BCS .L8FE9
+.L8FC6
+        JSR MSG_PRINT
+        DC.B "~Oh no! Thou wert caught!",0
+        LDA #$01
+        STA AGGRO
+        RTS
+.L8FE9
+        JSR MSG_PRINT
+        DC.B "~Thou dost find~",0
+        LDA ZP_T0
+        CMP #$65
+        BNE .L901B
+.L9003
+        JSR RND_BITS
+        LSR
+        LSR
+        LSR
+        AND #$07
+        BEQ .L9003
+        CMP #$06
+        BCS .L9003
+        TAX
+        INC OWNED_ARMOUR,X
+        JSR STR_NTH
+        DC.W STR_ARMOUR
+        RTS
+.L901B
+        CMP #$67
+        BNE .L9057
+.L901F
+        JSR RND
+        AND #$1F
+        CMP #$02
+        BCC .L901F
+        CMP #$1F
+        BCS .L901F
+        PHA
+        LDX #$00
+        STX NUM_PAD
+        JSR PRINT_NUM8
+        JSR MSG_PRINT
+        DC.B " bags of food!",0
+        PLA
+        CLC
+        ADC PLR_FOOD
+        STA PLR_FOOD
+        BCC .L9054
+        INC PLR_FOOD+1
+.L9054
+        JMP CAP_FOOD
+.L9057
+        JSR RND_BITS2
+        LSR
+        AND #$0F
+        BEQ .L9057
+        CMP #$0C
+        BCC .L906E
+        STA ZP_T0
+        JSR RND
+        CMP #$30
+        BCS .L9057
+        LDA ZP_T0
+.L906E
+        PHA
+        LDA #$61
+        JSR CHAR_OUT
+        PLA
+        PHA
+        CMP #$03
+        BEQ .L907E
+        CMP #$08
+        BNE .L9083
+.L907E
+        LDA #$6E
+        JSR CHAR_OUT
+.L9083
+        LDA #$20
+        JSR CHAR_OUT
+        PLA
+        TAX
+        INC OWNED_WEAPONS,X
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        RTS
+@
+
+<<twn transact>>=
+        ORG $9093
+CMD_TRANSACT
+        SUBROUTINE
+        ; The Transact command: trade at a shop counter.
+        ;
+        ; Behavior:
+        ;   Refuse if AGGRO is set ("None will talk to thee!").  Map the
+        ;   counter NPC ($64..$6C) through NPC_SHOPCLASS to one of six shop
+        ;   classes, then prompt Buy/Sell and dispatch through SHOP_BUY_TBL
+        ;   / SHOP_SELL_TBL (self-modified JSR) to the per-class handler.
+        LDA AGGRO
+        BEQ .L90B5
+        JSR MSG_PRINT
+        DC.B "~None will talk to thee!",0
+        RTS
+.L90B5
+        LDX ZP_X
+        LDY ZP_Y
+        JSR NPC_AT
+        CMP #$64
+        BCC .L90D0
+        CMP #$6D
+        BCS .L90D0
+        SEC
+        SBC #$64
+        TAX
+        LDA NPC_SHOPCLASS,X
+        STA ZP_T0
+        JMP .L90F0
+.L90D0
+        JSR MSG_PRINT
+        DC.B "~Thou art not by a counter!",0
+        RTS
+.L90F0
+        JSR MSG_PRINT
+        DC.B "-Buy, Sell: ",0
+        JSR KEY_IDLE
+        LDX #$09
+        STX MON_CH
+        CMP #$42
+        BEQ .L911E
+        CMP #$53
+        BNE .L9112
+        JMP .L913D
+.L9112
+        JSR MSG_PRINT
+        DC.B "-none",0
+        JMP CLR_EOL
+.L911E
+        JSR MSG_PRINT
+        DC.B "-Buy: ",0
+        JSR SHOP_OPEN
+        LDA SHOP_BUY_TBL,X
+        STA BUY_OP
+        LDA SHOP_BUY_TBL+1,X
+        STA BUY_OP+1
+BUY_OP = *+1
+        JSR STALE_FFFF
+        JMP MAP_DRAW
+.L913D
+        JSR MSG_PRINT
+        DC.B "-Sell: ",0
+        JSR SHOP_OPEN
+        LDA SHOP_SELL_TBL,X
+        STA SELL_OP
+        LDA SHOP_SELL_TBL+1,X
+        STA SELL_OP+1
+SELL_OP = *+1
+        JSR STALE_FFFF
+        JMP MAP_DRAW
+SHOP_OPEN
+        JSR CLR_EOL
+        LDA ZP_T0
+        JSR POPUP_FRAME
+        DEC WIN_LEFT
+        JSR SHOP_NAME
+        JSR PUTCH_NL_COL1
+        JSR PUTCH_NL_COL1
+        LDA ZP_T0
+        ASL
+        TAX
+        RTS
+SHOP_NAME
+        LDA ZP_T0
+        ASL
+        TAX
+        LDA SHOP_NAME_TBL,X
+        STA SHOPNM_OP
+        LDA SHOP_NAME_TBL+1,X
+        STA SHOPNM_OP+1
+        LDX #$00
+SHOPNM_OP = *+3
+        JSR STR_NTH
+        DC.W $FFFF
+        RTS
+@
+
+<<twn buy armour>>=
+        ORG $918D
+BUY_ARMOUR
+        SUBROUTINE
+        ; Buy from the armour shop: list five armours with prices.
+        ;
+        ; Behavior:
+        ;   Each line is STR_ARMOUR[i] and its price (PRICE_BY_INT scaled).
+        ;   A letter buys: CAN_AFFORD then SHOP_DEBIT, bump OWNED_ARMOUR,
+        ;   "Done!".  SHOP_REFUSE/SHOP_NOTHING are the shared failure tails.
+        LDA #$01
+        STA ITEM_IDX
+.L9192
+        LDA #$05
+        STA MON_CH
+        LDA #$61
+        CLC
+        ADC ITEM_IDX
+        JSR CHAR_OUT
+        JSR MSG_PRINT
+        DC.B ") ",0
+        LDX ITEM_IDX
+        JSR STR_NTH
+        DC.W STR_ARMOUR
+        LDA #$17
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "- ",0
+        LDX ITEM_IDX
+        JSR PRICE_BY_INT
+        LDA #$00
+        STA NUM_PAD
+        LDX PRICE
+        LDA PRICE+1
+        JSR PRINT_NUM16
+        JSR PUTCH_NL_COL1
+        INC ITEM_IDX
+        LDA ITEM_IDX
+        CMP #$06
+        BEQ .L91F2
+        CMP #$04
+        BCC .L9192
+        LDA MOVE_CNT+1
+        CMP #$D0
+        LDA MOVE_CNT+2
+        SBC #$07
+        LDA MOVE_CNT+3
+        SBC #$00
+        LDA MOVE_CNT+4
+        SBC #$00
+        BCS .L9192
+.L91F2
+        JSR SHOP_GETKEY
+        CMP #$42
+        BCC .L9208
+        CMP #$45
+        BCC .L920B
+        CMP #$47
+        BCS .L9208
+        LDX ITEM_IDX
+        CPX #$05
+        BCS .L920B
+.L9208
+        JMP SHOP_NOTHING
+.L920B
+        SEC
+        SBC #$41
+        STA ZP_T1
+        TAX
+        JSR PRICE_BY_INT
+        JSR SHOP_CANAFFORD
+        BCC SHOP_REFUSE
+        LDX ZP_T1
+        INC OWNED_ARMOUR,X
+        JSR SHOP_DEBIT
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$0F
+        STA MON_CH
+        LDX ZP_T1
+        JSR STR_NTH
+        DC.W STR_ARMOUR
+        JMP FLUSH_KEYS
+SHOP_REFUSE
+        JSR SHOP_TOOPOOR
+SHOP_NOTHING
+        JSR WIN_TEXT
+        LDA #$0F
+.L923E
+        STA MON_CH
+        LDA #$17
+        STA MON_CV
+        JSR MSG_PRINT
+        DC.B "nothing",0
+        RTS
+SHOP_NOTHING_A
+        JSR WIN_TEXT
+        LDA #$10
+        BNE .L923E
+@
+
+<<twn buy food>>=
+        ORG $9257
+BUY_FOOD
+        SUBROUTINE
+        ; Buy from the grocery: packs of ten food at a per-pack price.
+        ;
+        ; Behavior:
+        ;   Quote the price (patched into the prompt string), read a
+        ;   quantity, multiply by ten and by the pack price, debit coins
+        ;   and credit PLR_FOOD.
+        LDX #$05
+        LDA PLR_INT
+.L925C
+        SEC
+        SBC #$14
+        BCC .L9265
+        DEX
+        BNE .L925C
+        INX
+.L9265
+        STX BUY_AVAIL
+        TXA
+        CLC
+        ADC #$30
+        STA FOOD_DIGIT
+        JSR MSG_PRINT
+        DC.B "~ Packs of 10 food cost X pence~  each.  How many dost thou~",$7F,$06,"wish to purchase?",0
+        JSR WIN_SAVE
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$0F
+        STA MON_CH
+        JSR NUM_INPUT
+        JSR WIN_RESTORE
+        LDA AMOUNT+1
+        CMP #$1A
+        BCC .L92E0
+        JMP SHOP_NOTHING
+.L92E0
+        LDA AMOUNT
+        ORA AMOUNT+1
+        BNE .L92EB
+        JMP SHOP_NOTHING
+.L92EB
+        LDX BUY_AVAIL
+        LDA #$00
+        STA ZP_T0
+        STA ZP_T1
+.L92F4
+        LDA ZP_T0
+        CLC
+        ADC AMOUNT
+        STA ZP_T0
+        LDA ZP_T1
+        ADC AMOUNT+1
+        STA ZP_T1
+        DEX
+        BNE .L92F4
+        ASL AMOUNT
+        ROL AMOUNT+1
+        LDA AMOUNT+1
+        PHA
+        LDA AMOUNT
+        PHA
+        ASL AMOUNT
+        ROL AMOUNT+1
+        ASL AMOUNT
+        ROL AMOUNT+1
+        PLA
+        CLC
+        ADC AMOUNT
+        STA AMOUNT
+        PLA
+        ADC AMOUNT+1
+        STA AMOUNT+1
+        LDA PLR_COIN
+        CMP ZP_T0
+        LDA PLR_COIN+1
+        SBC ZP_T1
+        BCS .L933E
+        JMP SHOP_REFUSE
+.L933E
+        LDA PLR_COIN
+        SEC
+        SBC ZP_T0
+        STA PLR_COIN
+        LDA PLR_COIN+1
+        SBC ZP_T1
+        STA PLR_COIN+1
+        LDA PLR_FOOD
+        CLC
+        ADC AMOUNT
+        STA PLR_FOOD
+        LDA PLR_FOOD+1
+        ADC AMOUNT+1
+        STA PLR_FOOD+1
+        JSR SHOP_SOLD
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        STA MON_CH
+        JSR CURSOR_TO_TEXT
+        JSR MSG_PRINT
+        DC.B " packs food",0
+        JMP CAP_FOOD
+@
+
+<<twn buy weapon>>=
+        ORG $9383
+BUY_WEAPON
+        SUBROUTINE
+        ; Buy from the weapon shop: list the affordable weapons.
+        ;
+        ; Behavior:
+        ;   The shown set rotates by MAP_INDEX parity and turn count so not
+        ;   every weapon is for sale everywhere.  Price comes from the
+        ;   per-weapon base cost ITEM_COST scaled by charisma.
+        LDA #$01
+        STA ITEM_IDX
+        LDA #$07
+        STA MON_CV
+        LDA MOVE_CNT+1
+        STA ZP_T0
+        LDA MOVE_CNT+2
+        STA ZP_T1
+        LDX #$00
+        LDA MOVE_CNT+3
+        ORA MOVE_CNT+4
+        BEQ .L93A5
+        LDX #$04
+        JMP .L93B9
+.L93A5
+        LDA ZP_T0
+        SEC
+        SBC #$B8
+        STA ZP_T0
+        LDA ZP_T1
+        SBC #$0B
+        STA ZP_T1
+        BCC .L93B9
+        INX
+        CPX #$04
+        BCC .L93A5
+.L93B9
+        LDA MAP_INDEX
+        AND #$01
+        BNE .L93C1
+        INX
+.L93C1
+        TXA
+        ASL
+        ASL
+        ASL
+        ASL
+        CLC
+        ADC #$03
+        STA WPRICE_OP
+        LDA #$00
+        ADC #$AA
+        STA WPRICE_OP+1
+.L93D3
+        LDA #$06
+        STA MON_CH
+        LDX ITEM_IDX
+        JSR WEAPON_PRICE_AT
+        BNE .L93E2
+        JMP .L941A
+.L93E2
+        LDA #$61
+        CLC
+        ADC ITEM_IDX
+        JSR CHAR_OUT
+        JSR MSG_PRINT
+        DC.B ") ",0
+        LDX ITEM_IDX
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        LDA #$17
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "- ",0
+        LDX ITEM_IDX
+        JSR PRICE_WEAPON
+        LDA #$00
+        STA NUM_PAD
+        LDX PRICE
+        LDA PRICE+1
+        JSR PRINT_NUM16
+        JSR PUTCH_NL_COL1
+.L941A
+        INC ITEM_IDX
+        LDA ITEM_IDX
+        CMP #$10
+        BCC .L93D3
+        JSR SHOP_GETKEY
+        CMP #$42
+        BCC .L9438
+        CMP #$51
+        BCS .L9438
+        SEC
+        SBC #$41
+        TAX
+        JSR WEAPON_PRICE_AT
+        BNE .L943B
+.L9438
+        JMP SHOP_NOTHING
+.L943B
+        STX ZP_T1
+        JSR PRICE_WEAPON
+        JSR SHOP_CANAFFORD
+        BCS .L9448
+        JMP SHOP_REFUSE
+.L9448
+        LDX ZP_T1
+        INC OWNED_WEAPONS,X
+        JSR SHOP_DEBIT
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$0F
+        STA MON_CH
+        LDX ZP_T1
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        JMP FLUSH_KEYS
+WEAPON_PRICE_AT
+WPRICE_OP = *+1
+        LDA STALE_FFFF,X
+        RTS
+@
+
+<<twn sell weapon>>=
+        ORG $9469
+SELL_WEAPON
+        SUBROUTINE
+        ; Sell a weapon to the weapon shop.
+        ;
+        ; Behavior:
+        ;   List the owned weapons with their buy-back prices
+        ;   (PRICE_WEAPON, a charisma-discounted fraction), read a
+        ;   letter, credit PLR_COIN and decrement OWNED_WEAPONS.  An
+        ;   empty inventory prints "no weaponry".
+        LDA #$01
+        STA ITEM_IDX
+        LDA #$00
+        STA SELL_FLAG
+        LDA #$07
+        STA MON_CV
+.L9477
+        LDA #$06
+        STA MON_CH
+        LDA MON_CV
+        CMP #$0F
+        BEQ .L94E2
+        LDX ITEM_IDX
+        LDA OWNED_WEAPONS,X
+        BNE .L948C
+        JMP .L94E2
+.L948C
+        LDA #$42
+        CLC
+        ADC ITEM_IDX
+        STA SELL_FLAG
+        LDA #$61
+        CLC
+        ADC ITEM_IDX
+        JSR CHAR_OUT
+        JSR MSG_PRINT
+        DC.B ") ",0
+        LDX ITEM_IDX
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        LDA #$17
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "- ",0
+        LDX ITEM_IDX
+        LDA PLR_CHA
+        CLC
+        ADC #$28
+        STA ZP_T0
+        LDA ITEM_COST,X
+        TAX
+        JSR PRICE_MUL
+        LDA PRICE+1
+        CLC
+        ADC #$01
+        STA PRICE
+        LDA #$00
+        STA PRICE+1
+        STA NUM_PAD
+        LDX PRICE
+        JSR PRINT_NUM16
+        JSR PUTCH_NL_COL1
+.L94E2
+        INC ITEM_IDX
+        LDA ITEM_IDX
+        CMP #$10
+        BCC .L9477
+        LDA SELL_FLAG
+        BNE .L9514
+        JSR MSG_PRINT
+        DC.B "~",$7F,$04,"Thou hast no weaponry!",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING_A
+.L9514
+        JSR SHOP_GETKEY
+        CMP #$42
+        BCC .L9528
+        CMP #$51
+        BCS .L9528
+        SEC
+        SBC #$41
+        TAX
+        LDA OWNED_WEAPONS,X
+        BNE .L952B
+.L9528
+        JMP SHOP_NOTHING_A
+.L952B
+        STX ZP_T1
+        LDA PLR_CHA
+        CLC
+        ADC #$28
+        STA ZP_T0
+        LDA ITEM_COST,X
+        TAX
+        JSR PRICE_MUL
+        LDA PRICE+1
+        CLC
+        ADC #$01
+        STA PRICE
+        LDA #$00
+        STA PRICE+1
+        LDA PLR_COIN
+        CLC
+        ADC PRICE
+        STA PLR_COIN
+        LDA PLR_COIN+1
+        ADC PRICE+1
+        STA PLR_COIN+1
+        JSR CAP_COIN
+        LDX ZP_T1
+        DEC OWNED_WEAPONS,X
+        BNE .L956C
+        LDA #$00
+        STA READY_WEAPON
+.L956C
+        JSR SHOP_DONE
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$10
+        STA MON_CH
+        LDX ZP_T1
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        JMP FLUSH_KEYS
+@
+
+<<twn buy spell>>=
+        ORG $9584
+BUY_SPELL
+        SUBROUTINE
+        ; Buy from the magic shop: spells, gated by class and parity.
+        ;
+        ; Behavior:
+        ;   Wizards (class 3) see the full list; others see a parity-masked
+        ;   subset.  Buying bumps OWNED_SPELLS.
+        LDA #$01
+        STA ITEM_IDX
+        LDA MAP_INDEX
+        AND #$01
+        STA ZP_T1
+.L9590
+        LDA #$06
+        STA MON_CH
+        LDX ITEM_IDX
+        CPX #$04
+        BEQ .L95AD
+        CPX #$07
+        BCC .L95A6
+        LDA PLR_CLASS
+        CMP #$03
+        BNE .L95AD
+.L95A6
+        TXA
+        AND #$01
+        CMP ZP_T1
+        BNE .L95B0
+.L95AD
+        JMP .L95E8
+.L95B0
+        LDA #$61
+        CLC
+        ADC ITEM_IDX
+        JSR CHAR_OUT
+        JSR MSG_PRINT
+        DC.B ") ",0
+        LDX ITEM_IDX
+        JSR STR_NTH
+        DC.W STR_SPELLS
+        LDA #$17
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "- ",0
+        LDX ITEM_IDX
+        JSR PRICE_BY_WIS
+        LDA #$00
+        STA NUM_PAD
+        LDX PRICE
+        LDA PRICE+1
+        JSR PRINT_NUM16
+        JSR PUTCH_NL_COL1
+.L95E8
+        INC ITEM_IDX
+        LDA ITEM_IDX
+        CMP #$0B
+        BCC .L9590
+        JSR SHOP_GETKEY
+        CMP #$42
+        BCC .L9607
+        CMP #$4C
+        BCS .L9607
+        SEC
+        SBC #$41
+        TAX
+        AND #$01
+        CMP ZP_T1
+        BNE .L960A
+.L9607
+        JMP SHOP_NOTHING
+.L960A
+        STX ZP_T1
+        JSR PRICE_BY_WIS
+        JSR SHOP_CANAFFORD
+        BCS .L9617
+        JMP SHOP_REFUSE
+.L9617
+        LDX ZP_T1
+        CPX #$0A
+        BNE .L963A
+        LDA PLR_EXP+1
+        BNE .L962C
+        LDA PLR_EXP
+        CMP #$0A
+        BCS .L962C
+        JMP SHOP_REFUSE
+.L962C
+        LDA PLR_EXP
+        SEC
+        SBC #$0A
+        STA PLR_EXP
+        BCS .L963A
+        DEC PLR_EXP+1
+.L963A
+        INC OWNED_SPELLS,X
+        JSR SHOP_DEBIT
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$0F
+        STA MON_CH
+        LDX ZP_T1
+        JSR STR_NTH
+        DC.W STR_SPELLS
+        JMP FLUSH_KEYS
+@
+
+<<twn buy pub>>=
+        ORG $9655
+BUY_PUB
+        SUBROUTINE
+        ; The Pub: buy a drink, risk seduction, or hear a rumour.
+        ;
+        ; Behavior:
+        ;   One gold buys "a cold one".  Distance/charisma (NPC_DIST) gates
+        ;   a seduction that halves the purse; otherwise a 75/256 roll
+        ;   prints one of eight rumours from PUB_HINT_TBL (self-modified
+        ;   JSR).  The rumours are the canonical Ultima I quest hints.
+        LDA PLR_COIN
+        ORA PLR_COIN+1
+        BNE .L96AB
+        JSR MSG_PRINT
+        DC.B $7F,$07,"Thou art broke!~~",$7F,$03,"Come back when thou hast~",$7F,$05,"some money to spend.",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING_A
+.L96AB
+        DEC PLR_COIN
+        LDA PLR_COIN
+        CMP #$FF
+        BNE .L96B8
+        DEC PLR_COIN+1
+.L96B8
+        JSR MSG_PRINT
+        DC.B "~",$7F,$02,"The tavern keeper sayeth:~~",$7F,$03,"Here, have a cold one!",0
+        JSR WIN_SAVE
+        JSR WIN_TEXT
+        LDY #$17
+        LDX #$0F
+        JSR MSG_AT
+        DC.B "ale",0
+        JSR WIN_RESTORE
+        JSR PAUSE_ABORTABLE
+        JSR CLEAR_MSGS
+        LDA #$08
+        STA MON_CV
+        INC PUB_VISITS
+        LDA PLR_STA
+        LSR
+        LSR
+        CMP PUB_VISITS
+        BEQ .L971F
+        BCS PUB_HINT
+.L971F
+        LDX #$01
+        JSR NPC_DIST
+        CMP #$02
+        BCS PUB_HINT
+        JSR MSG_PRINT
+        DC.B $7F,$03,"Thou hast been seduced!~~",$7F,$05,"After a long night,~",$7F,$07,"thou art back.",0
+        LSR PLR_COIN+1
+        ROR PLR_COIN
+        DEC PLR_WIS
+        LDA PLR_WIS
+        CMP #$05
+        BCS .L9782
+        LDA #$05
+        STA PLR_WIS
+.L9782
+        JMP PAUSE_ABORTABLE
+PUB_HINT
+        JSR RND
+        CMP #$4B
+        BCS .L978D
+        RTS
+.L978D
+        JSR MSG_PRINT
+        DC.B $7F,$06,"Thou had best know~",0
+        JSR RND
+        LSR
+        LSR
+        LSR
+        LSR
+        LSR
+        ASL
+        TAX
+        LDA PUB_HINT_TBL,X
+        STA HINT_OP
+        LDA PUB_HINT_TBL+1,X
+        STA HINT_OP+1
+HINT_OP = *+1
+        JSR STALE_FFFF
+        JMP PAUSE_ABORTABLE
+@
+
+Each rumour is a short routine that prints its inline text and
+returns; [[PUB_HINT_TBL]] (in the data appendix) selects one at random.
+Together they are the game's built-in walkthrough --- the ace pilot
+goal, the captive princess, the time machine, and the truth about
+Mondain's gem.
+
+<<twn pub hints>>=
+        ORG $97C2
+HINT_SPACE
+        SUBROUTINE
+        ; The eight tavern rumours.  Each prints its own inline text
+        ; and returns; PUB_HINT_TBL selects one at random and reaches
+        ; it through a self-modified JSR.
+        ;
+        ; Behavior:
+        ;   Print the hint, RTS.  These are the game's quest hints:
+        ;   the ace-pilot goal, the jester, the captive princess, the
+        ;   time machine, the evil gem, magic lakes, and Mondain.
+        JSR MSG_PRINT
+        DC.B $7F,$05,"about space travel!~",$7F,$05,"Thou must destroy at~",$7F,$04,"least 20 enemy vessels~",$7F,$06,"to become an ace!",0
+        RTS
+HINT_JESTER
+        JSR MSG_PRINT
+        DC.B $7F,$05,"to watch the ",0
+        LDX #$05
+        JSR STR_NTH
+        DC.W STR_NPCS
+        LDA #$2E
+        JMP CHAR_OUT
+HINT_PRINCESS
+        JSR MSG_PRINT
+        DC.B " that the princess will give~ great reward to the one who~rescues her, and an extra gift~",$7F,$05,"to an 8th level ace!",0
+        RTS
+HINT_TIME
+        JSR MSG_PRINT
+        DC.B "  thou must go back in time.",0
+        RTS
+HINT_GEM
+        JSR MSG_PRINT
+        DC.B $7F,$05,"thou should destroy~",$7F,$08,"the evil gem!",0
+        RTS
+HINT_LAKES
+        JSR MSG_PRINT
+        DC.B "  that many lakes and ponds~ have strong magical powers!",0
+        RTS
+HINT_GAME
+        JSR MSG_PRINT
+        DC.B $7F,$05,"this is a great game!",0
+        RTS
+HINT_QUEST
+        JSR MSG_PRINT
+        DC.B "  that over 1000 years ago,~Mondain the Wizard created an~ evil gem.  With this gem, he~  is immortal and cannot be~",$7F,$0A,"defeated.",0
+        JSR PAUSE_ABORTABLE
+        JSR CLEAR_MSGS
+        LDA #$08
+        STA MON_CV
+        JSR MSG_PRINT
+        DC.B "The quest of --Ultima-- is to~ traverse the lands in search~",$7F,$03,"of a time machine.  Upon~ finding such a device, thou~should go back in time to the~ days before Mondain created~the evil gem and destroy him.",0
+        JMP PAUSE_ABORTABLE
+@
+
+<<twn buy transport>>=
+        ORG $9AB7
+BUY_TRANSPORT
+        SUBROUTINE
+        ; Buy from the transport shop: vehicles parked in the lot.
+        ;
+        ; Behavior:
+        ;   Survey COURT_CELLS for free land/sea/air slots; offer Horse,
+        ;   Cart, Raft, Frigate, Air Car (>= $0BB8 gold), Shuttle (only if
+        ;   none owned).  A purchase parks the craft by writing
+        ;   transport+8 into a free COURT_CELLS slot and bumps
+        ;   OWNED_TRANSPORT.
+        LDA #$00
+        STA AVAIL_LAND
+        STA AVAIL_SEA
+        STA AVAIL_AIR
+        LDX #$06
+.L9AC4
+        STA BUY_AVAIL,X
+        DEX
+        BPL .L9AC4
+        LDX #$03
+.L9ACC
+        LDA COURT_CELLS,X
+        BNE .L9AD4
+        INC AVAIL_LAND
+.L9AD4
+        CMP #$01
+        BNE .L9ADB
+        INC AVAIL_SEA
+.L9ADB
+        CMP #$02
+        BNE .L9AE2
+        INC AVAIL_AIR
+.L9AE2
+        DEX
+        BPL .L9ACC
+        LDA AVAIL_SEA
+        ORA AVAIL_AIR
+        ORA AVAIL_LAND
+        BNE .L9B0E
+        JSR MSG_PRINT
+        DC.B $7F,$06,"Closed for the day",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING
+.L9B0E
+        LDA AVAIL_SEA
+        ORA AVAIL_AIR
+        BEQ .L9B46
+        JSR MSG_PRINT
+        DC.B $7F,$07,"a) Horse   - ",0
+        LDX #$01
+        JSR TRANSPORT_PRICE
+        JSR MSG_PRINT
+        DC.B $7F,$07,"b) Cart    - ",0
+        LDX #$02
+        JSR TRANSPORT_PRICE
+.L9B46
+        LDA AVAIL_LAND
+        BEQ .L9B7B
+        JSR MSG_PRINT
+        DC.B $7F,$07,"c) Raft    - ",0
+        LDX #$03
+        JSR TRANSPORT_PRICE
+        JSR MSG_PRINT
+        DC.B $7F,$07,"d) Frigate - ",0
+        LDX #$04
+        JSR TRANSPORT_PRICE
+.L9B7B
+        LDA AVAIL_SEA
+        BEQ .L9BCB
+        LDA MOVE_CNT+1
+        CMP #$B8
+        LDA MOVE_CNT+2
+        SBC #$0B
+        LDA MOVE_CNT+3
+        SBC #$00
+        LDA MOVE_CNT+4
+        SBC #$00
+        BCC .L9BCB
+        JSR MSG_PRINT
+        DC.B $7F,$07,"e) Air Car - ",0
+        LDX #$05
+        JSR TRANSPORT_PRICE
+        LDA OWNED_TRANSPORT+6
+        BNE .L9BCB
+        JSR MSG_PRINT
+        DC.B $7F,$07,"f) Shuttle - ",0
+        LDX #$06
+        JSR TRANSPORT_PRICE
+.L9BCB
+        JSR SHOP_GETKEY
+        CMP #$41
+        BCC .L9BDF
+        CMP #$47
+        BCS .L9BDF
+        SEC
+        SBC #$40
+        TAX
+        LDA BUY_AVAIL,X
+        BNE .L9BE2
+.L9BDF
+        JMP SHOP_NOTHING
+.L9BE2
+        STX ZP_T1
+        JSR PRICE_TRANSPORT
+        JSR SHOP_CANAFFORD
+        BCS .L9BEF
+        JMP SHOP_REFUSE
+.L9BEF
+        LDX ZP_T1
+        INC OWNED_TRANSPORT,X
+        CPX #$06
+        BNE .L9C08
+        LDA #$E8
+        STA SHUTTLE_GEMS
+        STA SHUTTLE_GEMS+2
+        LDA #$03
+        STA SHUTTLE_GEMS+1
+        STA SHUTTLE_GEMS+3
+.L9C08
+        LDA TRANSPORT_TERRAIN,X
+        LDY #$03
+.L9C0D
+        CMP COURT_CELLS,Y
+        BEQ .L9C25
+        CPX #$03
+        BCS .L9C21
+        STA ZP_T0
+        LDA COURT_CELLS,Y
+        CMP #$02
+        BEQ .L9C25
+        LDA ZP_T0
+.L9C21
+        DEY
+        BPL .L9C0D
+        INY
+.L9C25
+        TXA
+        CLC
+        ADC #$08
+        STA COURT_CELLS,Y
+        JSR SHOP_DEBIT
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$0F
+        STA MON_CH
+        LDX ZP_T1
+        JSR STR_NTH
+        DC.W STR_TRANSPORT
+        JMP FLUSH_KEYS
+TRANSPORT_PRICE
+        INC BUY_AVAIL,X
+        JSR PRICE_TRANSPORT
+        LDA #$00
+        STA NUM_PAD
+        LDX PRICE
+        LDA PRICE+1
+        JSR PRINT_NUM16
+        JMP PUTCH_NL_COL1
+@
+
+The six sell handlers mirror the buy handlers. Most shops decline
+to buy back their wares (``we don't deal in used stuff''); only the
+armour and weapon smiths pay, at a charisma-discounted fraction of the
+list price.
+
+<<twn sell>>=
+        ORG $9C5B
+SELL_ARMOUR
+        SUBROUTINE
+        ; The six per-class sell handlers.  SELL_ARMOUR lists the
+        ; player's armour for buy-back; the grocery, magic, pub and
+        ; transport shops all decline ("we don't deal in used
+        ; stuff" / "we don't buy spells" / ...).
+        ;
+        ; Behavior:
+        ;   List owned armour with PRICE_BY_INT buy-back prices, read
+        ;   a letter, credit PLR_COIN and decrement OWNED_ARMOUR.
+        LDA #$01
+        STA ITEM_IDX
+        LDA #$00
+        STA BUY_AVAIL
+.L9C65
+        LDA #$05
+        STA MON_CH
+        LDX ITEM_IDX
+        LDA OWNED_ARMOUR,X
+        BEQ .L9CB3
+        INC BUY_AVAIL
+        LDA #$61
+        CLC
+        ADC ITEM_IDX
+        JSR CHAR_OUT
+        JSR MSG_PRINT
+        DC.B ") ",0
+        LDX ITEM_IDX
+        JSR STR_NTH
+        DC.W STR_ARMOUR
+        LDA #$17
+        STA MON_CH
+        JSR MSG_PRINT
+        DC.B "- ",0
+        LDX ITEM_IDX
+        LDA PLR_CHA
+        LSR
+        LSR
+        STA ZP_T0
+        JSR PRICE_MUL
+        LDA #$00
+        STA NUM_PAD
+        LDX PRICE
+        LDA PRICE+1
+        JSR PRINT_NUM16
+        JSR PUTCH_NL_COL1
+.L9CB3
+        INC ITEM_IDX
+        LDA ITEM_IDX
+        CMP #$06
+        BCC .L9C65
+        LDA BUY_AVAIL
+        BNE .L9CEA
+        JSR MSG_PRINT
+        DC.B "~ Thou hast no armour to sell!",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING_A
+.L9CEA
+        JSR WIN_SAVE
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$10
+        STA MON_CH
+        JSR KEY_WAIT
+        PHA
+        JSR WIN_RESTORE
+        PLA
+        CMP #$42
+        BCC .L9D08
+        CMP #$47
+        BCC .L9D0B
+.L9D08
+        JMP SHOP_NOTHING_A
+.L9D0B
+        SEC
+        SBC #$41
+        STA ZP_T1
+        TAX
+        LDA OWNED_ARMOUR,X
+        BEQ .L9D08
+        LDX ZP_T1
+        LDA PLR_CHA
+        LSR
+        LSR
+        STA ZP_T0
+        JSR PRICE_MUL
+        LDX ZP_T1
+        DEC OWNED_ARMOUR,X
+        BNE .L9D2E
+        LDA #$00
+        STA READY_ARMOUR
+.L9D2E
+        LDA PLR_COIN
+        CLC
+        ADC PRICE
+        STA PLR_COIN
+        LDA PLR_COIN+1
+        ADC PRICE+1
+        STA PLR_COIN+1
+        JSR CAP_COIN
+        JSR SHOP_DONE
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$10
+        STA MON_CH
+        LDX ZP_T1
+        JSR STR_NTH
+        DC.W STR_ARMOUR
+        JMP FLUSH_KEYS
+SELL_FOOD
+        JSR MSG_PRINT
+        DC.B "~",$7F,$04,"Used food?  No thanks!",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING_A
+SELL_TRANSPORT
+        JSR MSG_PRINT
+        DC.B "~",$7F,$03,"Sorry, we don't deal in~",$7F,$09,"used stuff.",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING_A
+SELL_SPELL
+        JSR MSG_PRINT
+        DC.B "~",$7F,$05,"We don't buy spells!",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING_A
+SELL_PUB
+        JSR MSG_PRINT
+        DC.B "~",$7F,$03,"We have plenty of booze~",$7F,$0A,"already!",0
+        JSR PAUSE_ABORTABLE
+        JMP SHOP_NOTHING_A
+@
+
+<<twn shop helpers>>=
+        ORG $9E01
+SHOP_DEBIT
+        SUBROUTINE
+        ; Shared shop utilities: debit, affordability, key input, the
+        ; "Sold!"/"Done!"/"too poor" messages, and the price calculators.
+        ;
+        ; Behavior:
+        ;   PRICE_MUL forms PRICE = base * factor by repeated addition;
+        ;   the factor derives from PLR_CHA/PLR_WIS/PLR_INT so a charismatic
+        ;   buyer pays less and sells for more.
+        LDA PLR_COIN
+        SEC
+        SBC PRICE
+        STA PLR_COIN
+        LDA PLR_COIN+1
+        SBC PRICE+1
+        STA PLR_COIN+1
+        JMP SHOP_SOLD
+SHOP_CANAFFORD
+        LDA PLR_COIN
+        CMP PRICE
+        LDA PLR_COIN+1
+        SBC PRICE+1
+        RTS
+SHOP_GETKEY
+        JSR WIN_SAVE
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        LDA #$0F
+        STA MON_CH
+        JSR KEY_WAIT
+        PHA
+        JSR WIN_RESTORE
+        PLA
+        RTS
+SHOP_SOLD
+        JSR CLEAR_MSGS
+        JSR MSG_PRINT
+        DC.B $7F,$0B,"Sold!",0
+        RTS
+SHOP_DONE
+        JSR CLEAR_MSGS
+        JSR MSG_PRINT
+        DC.B $7F,$0B,"Done!",0
+        RTS
+SHOP_TOOPOOR
+        JSR CLEAR_MSGS
+        JSR MSG_PRINT
+        DC.B "  Thou canst not afford it!   ",0
+        JSR BEEP_HUH
+        JMP FLUSH_KEYS
+PRICE_BY_WIS
+        LDA #$C8
+        SEC
+        SBC PLR_WIS
+        LSR
+        LSR
+        LSR
+        LSR
+        LSR
+        STA ZP_T0
+        JMP PRICE_MUL
+PRICE_BY_INT
+        LDA #$C8
+        SEC
+        SBC PLR_INT
+        LSR
+        LSR
+        STA ZP_T0
+        JMP PRICE_MUL
+PRICE_WEAPON
+        LDA #$FF
+        SEC
+        SBC PLR_INT
+        STA ZP_T0
+        LDA ITEM_COST,X
+        TAX
+        JSR PRICE_MUL
+        LDA PRICE+1
+        CLC
+        ADC #$05
+        STA PRICE
+        LDA #$00
+        STA PRICE+1
+        RTS
+PRICE_TRANSPORT
+        LDA #$C8
+        SEC
+        SBC PLR_INT
+        LDY #$00
+.L9EC7
+        INY
+        SEC
+        SBC #$05
+        BCS .L9EC7
+        STY ZP_T0
+        LDA ITEM_COST,X
+        TAX
+PRICE_MUL
+        LDA #$00
+        STA PRICE
+        STA PRICE+1
+.L9EDB
+        DEX
+        CPX #$FF
+        BEQ .L9EF4
+        LDA PRICE
+        CLC
+        ADC ZP_T0
+        STA PRICE
+        LDA PRICE+1
+        ADC #$00
+        STA PRICE+1
+        JMP .L9EDB
+.L9EF4
+        RTS
+CMD_UNLOCK
+        JSR MSG_PRINT
+        DC.B " what",0
+        JMP QUERY_MARK
+CMD_ZTATS
+        JSR INVENTORY
+        JMP MAP_DRAW
+@
+
+<<twn town tick>>=
+        ORG $9F07
+TOWN_TICK
+        SUBROUTINE
+        ; TOWN_TICK: advance every NPC one step (the idle animation).
+        ;
+        ; Behavior:
+        ;   Walk the sixteen NPC slots.  Hostiles (NPC_TYPE 3) home on the
+        ;   player and, when adjacent, attack (GUARD_COMBAT: to-hit vs
+        ;   armour+charisma, damage to PLR_HITS, death -> TWN_DEATH).
+        ;   Wanderers (type 4) drift -- Iolo the Bard sings, or picks a
+        ;   pocket.  Runs after every command and on the idle timeout.
+        LDA AGGRO
+        BNE .L9F0F
+        JMP NPC_WANDER
+.L9F0F
+        LDX #$0F
+        STX NPC_IDX
+.L9F14
+        LDX NPC_IDX
+        LDA NPC_TYPE,X
+        CMP #$03
+        BEQ .L9F21
+        JMP .L9FD1
+.L9F21
+        JSR NPC_DIST
+        CMP #$02
+        BCS .L9F2B
+        JMP GUARD_COMBAT
+.L9F2B
+        CMP #$09
+        BCC .L9F32
+        JMP .L9FD1
+.L9F32
+        LDY #$00
+        LDX NPC_IDX
+        LDA ZP_X
+        CMP NPC_X,X
+        BEQ .L9F44
+        BMI .L9F43
+        INY
+        BNE .L9F44
+.L9F43
+        DEY
+.L9F44
+        STY ZP_DX
+        LDY #$00
+        LDA ZP_Y
+        CMP NPC_Y,X
+        BEQ .L9F55
+        BMI .L9F54
+        INY
+        BNE .L9F55
+.L9F54
+        DEY
+.L9F55
+        STY ZP_DY
+        LDA NPC_Y,X
+        CLC
+        ADC ZP_DY
+        STA ZP_TY
+        LDA NPC_X,X
+        CLC
+        ADC ZP_DX
+        STA ZP_TX
+        JSR RND
+        ORA #$01
+        STA TICK_PHASE
+.L9F6F
+        LDA TICK_PHASE
+        BMI .L9F8D
+        LDX NPC_IDX
+        LDA NPC_X,X
+        TAX
+        LDY ZP_TY
+        JSR CELL_PROBE
+        BCC .L9FC5
+        LDX NPC_IDX
+        LDA NPC_X,X
+        STA ZP_TX
+        JMP .L9FA2
+.L9F8D
+        LDX NPC_IDX
+        LDY NPC_Y,X
+        LDX ZP_TX
+        JSR CELL_PROBE
+        BCC .L9FC5
+        LDX NPC_IDX
+        LDY NPC_Y,X
+        STY ZP_TY
+.L9FA2
+        LDX NPC_IDX
+        LDY NPC_Y,X
+        LDA NPC_X,X
+        TAX
+        LDA #$20
+        JSR PLOT_GLYPH
+        LDX NPC_IDX
+        LDA ZP_TY
+        STA NPC_Y,X
+        TAY
+        LDA ZP_TX
+        STA NPC_X,X
+        TAX
+        LDA #$2F
+        JSR PLOT_GLYPH
+.L9FC5
+        LDA TICK_PHASE
+        EOR #$FF
+        STA TICK_PHASE
+        AND #$01
+        BEQ .L9F6F
+.L9FD1
+        DEC NPC_IDX
+        BMI .L9FD9
+        JMP .L9F14
+.L9FD9
+        RTS
+        BRK
+GUARD_COMBAT
+        JSR WIN_TEXT
+        LDA #$17
+        STA MON_CV
+        JSR MSG_PRINT
+        DC.B "~Attacked by guard!~",0
+        LDA #$04
+        JSR SFX_PLAY
+        LDA PLR_STA
+        LSR
+        STA ZP_T0
+        LDA READY_ARMOUR
+        ASL
+        ASL
+        ASL
+        CLC
+        ADC ZP_T0
+        ADC #$38
+        STA ZP_T0
+        STA IDLE_MSG
+        JSR RND
+        CMP ZP_T0
+        BCS .LA02A
+        JSR MSG_PRINT
+        DC.B "Missed!",0
+        JMP .L9FD1
+.LA02A
+        LDA PLR_HITS+1
+        ASL
+        CLC
+        ADC #$0F
+        STA ZP_T0
+.LA033
+        JSR RND
+        CMP #$00
+        BEQ .LA033
+        CMP ZP_T0
+        BCS .LA033
+        STA ZP_T1
+        JSR MSG_PRINT
+        DC.B "Hit... ",0
+        LDX #$00
+        STX NUM_PAD
+        LDA ZP_T1
+        JSR PRINT_NUM8
+        JSR MSG_PRINT
+        DC.B " damage",0
+        LDA #$02
+        JSR SFX_PLAY
+        LDA PLR_HITS
+        SEC
+        SBC ZP_T1
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC #$00
+        STA PLR_HITS+1
+        BCS .LA07B
+        JMP TWN_DEATH
+.LA07B
+        JMP .L9FD1
+NPC_WANDER
+        LDY #$0F
+        STY NPC_IDX
+.LA083
+        LDA NPC_TYPE,Y
+        CMP #$04
+        BNE .LA090
+        JSR WANDER_BARD
+        JMP .LA097
+.LA090
+        CMP #$05
+        BNE .LA097
+        JSR WANDER_PUSH
+.LA097
+        DEC NPC_IDX
+        LDY NPC_IDX
+        BPL .LA083
+        RTS
+WANDER_BARD
+        JSR RAND_ADJ
+        LDX ZP_TX
+        LDY ZP_TY
+        JSR CELL_PROBE
+        BCC .LA0AF
+        JMP .LA138
+.LA0AF
+        CMP #$2F
+        BEQ .LA0EB
+        JSR RND
+        CMP #$28
+        BCS .LA0EA
+        LDA #$17
+        STA MON_CV
+        INC IDLE_MSG
+        JSR MSG_PRINT
+        DC.B "~Iolo the Bard sings:~Ho eyoh he hum!",0
+.LA0EA
+        RTS
+.LA0EB
+        LDA #$00
+        STA ZP_T0
+        LDX #$0F
+.LA0F1
+        LDA OWNED_WEAPONS,X
+        BEQ .LA100
+        CPX READY_WEAPON
+        BEQ .LA100
+        DEC OWNED_WEAPONS,X
+        INC ZP_T0
+.LA100
+        DEX
+        BNE .LA0F1
+        LDA #$80
+        CLC
+        ADC PLR_WIS
+        STA ZP_T1
+        JSR RND
+        CMP ZP_T0
+        BCS .LA137
+        LDA ZP_T0
+        BEQ .LA137
+        LDA #$17
+        STA MON_CV
+        INC IDLE_MSG
+        JSR MSG_PRINT
+        DC.B "~Iolo stole something!",0
+.LA137
+        RTS
+.LA138
+        LDY NPC_IDX
+        LDX NPC_X,Y
+        LDA NPC_Y,Y
+        TAY
+        LDA #$20
+        JSR PLOT_GLYPH
+        LDY NPC_IDX
+        LDA ZP_TX
+        STA NPC_X,Y
+        TAX
+        LDA ZP_TY
+        STA NPC_Y,Y
+        TAY
+        LDA #$5C
+        JMP PLOT_GLYPH
+WANDER_PUSH
+        JSR RAND_ADJ
+        LDX ZP_TX
+        LDY ZP_TY
+        JSR CELL_PROBE
+        BCS .LA168
+        RTS
+.LA168
+        CMP #$6D
+        BNE .LA16D
+        RTS
+.LA16D
+        LDY NPC_IDX
+        LDX NPC_X,Y
+        LDA NPC_Y,Y
+        TAY
+        LDA #$20
+        JSR PLOT_GLYPH
+        LDY NPC_IDX
+        LDA ZP_TX
+        STA NPC_X,Y
+        TAX
+        LDA ZP_TY
+        STA NPC_Y,Y
+        TAY
+        LDA #$5F
+        JMP PLOT_GLYPH
+@
+
+<<twn inform draw>>=
+        ORG $A190
+CMD_INFORM
+        SUBROUTINE
+        ; Inform ("the city of <place>"), and the map/NPC redraw.
+        ;
+        ; Behavior:
+        ;   MAP_DRAW blits the 38x18 cell grid from TOWN_MAP through the
+        ;   swapped MAPCHARS font (FONT_SWAP), then NPC_DRAW overlays each
+        ;   live NPC sprite from NPC_GLYPH at its (NPC_X,NPC_Y).
+        LDX #$00
+        LDY #$17
+        JSR MSG_AT
+        DC.B "~the city of ",0
+        LDX PLR_PLACE
+        JSR STR_NTH
+        DC.W STR_PLACES
+        RTS
+MAP_DRAW
+        LDA #$01
+        STA MON_CV
+        JSR WIN_VIEW
+        JSR FONT_SWAP
+        LDA #$00
+        STA DRAW_OP
+        LDA #$B4
+        STA DRAW_OP+1
+.LA1C2
+        JSR CR
+.LA1C5
+DRAW_OP = *+1
+        LDA TOWN_MAP
+        JSR CHAR_OUT
+        INC DRAW_OP
+        BNE .LA1D3
+        INC DRAW_OP+1
+.LA1D3
+        LDA MON_CH
+        CMP #$26
+        BNE .LA1C5
+        INC MON_CV
+        LDA MON_CV
+        CMP #$13
+        BNE .LA1C2
+        JSR FONT_SWAP
+        JMP NPC_DRAW
+FONT_SWAP
+        LDX #$00
+.LA1E9
+        LDA MAPCHARS_BANK,X
+        LDY FONT_BANK,X
+        STA FONT_BANK,X
+        TYA
+        STA MAPCHARS_BANK,X
+        LDA MAPCHARS_BANK+256,X
+        LDY FONT_BANK+256,X
+        STA FONT_BANK+256,X
+        TYA
+        STA MAPCHARS_BANK+256,X
+        LDA MAPCHARS_BANK+512,X
+        LDY FONT_BANK+512,X
+        STA FONT_BANK+512,X
+        TYA
+        STA MAPCHARS_BANK+512,X
+        LDA MAPCHARS_BANK+768,X
+        LDY FONT_BANK+768,X
+        STA FONT_BANK+768,X
+        TYA
+        STA MAPCHARS_BANK+768,X
+        DEX
+        BNE .LA1E9
+        RTS
+NPC_DRAW
+        JSR WIN_VIEW
+        LDA ZP_X
+        STA MON_CH
+        LDA ZP_Y
+        STA MON_CV
+        INC MON_CV
+        LDA #$7B
+        JSR CHAR_OUT
+        LDY #$0F
+.LA235
+        LDA NPC_X,Y
+        STA MON_CH
+        LDA NPC_Y,Y
+        STA MON_CV
+        INC MON_CV
+        LDA NPC_TYPE,Y
+        BMI .LA251
+        STY ZP_T0
+        TAX
+        LDA NPC_GLYPH,X
+        JSR CHAR_OUT
+        LDY ZP_T0
+.LA251
+        DEY
+        BPL .LA235
+        JMP WIN_TEXT
+@
+
+<<twn map helpers>>=
+        ORG $A257
+PLOT_GLYPH
+        SUBROUTINE
+        ; Map-cell helpers: plot a glyph, probe a cell, find the NPC at a
+        ; cell, and the small random-step generators.
+        ;
+        ; Behavior:
+        ;   NPC_AT reads a cell through the MAP_ROW_LO/HI row pointers and,
+        ;   if it is a creature glyph, scans the NPC arrays for the slot at
+        ;   that (x,y), returning its type.  CELL_PROBE adds the player
+        ;   self-collision test.  NUM_INPUT reads a decimal number.
+        STX ZP_T0
+        STY ZP_T1
+        PHA
+        JSR WIN_VIEW
+        PLA
+        LDX ZP_T0
+        LDY ZP_T1
+        STX MON_CH
+        INY
+        STY MON_CV
+        JSR CHAR_OUT
+        JMP WIN_TEXT
+CELL_PROBE
+        JSR NPC_AT
+        BCS .LA275
+        RTS
+.LA275
+        LDA ZP_X
+        CMP ZP_T0
+        BNE .LA285
+        LDA ZP_Y
+        CMP ZP_T1
+        BNE .LA285
+        LDA #$2F
+        CLC
+        RTS
+.LA285
+        TYA
+        SEC
+        RTS
+NPC_AT
+        CPX #$26
+        BCC .LA290
+.LA28C
+        LDA #$60
+        CLC
+        RTS
+.LA290
+        CPY #$12
+        BCS .LA28C
+        LDA MAP_ROW_LO,Y
+        CLC
+        ADC #$00
+        STA PROBE_OP
+        LDA MAP_ROW_HI,Y
+        ADC #$B4
+        STA PROBE_OP+1
+PROBE_OP = *+1
+        LDA STALE_FFFF,X
+        CMP #$60
+        BCS .LA2AD
+        RTS
+.LA2AD
+        STX ZP_T0
+        STY ZP_T1
+        LDX #$0F
+        TAY
+.LA2B4
+        LDA NPC_X,X
+        CMP ZP_T0
+        BNE .LA2CC
+        LDA NPC_Y,X
+        CMP ZP_T1
+        BNE .LA2CC
+        STX HIT_SLOT
+        LDA NPC_TYPE,X
+        CLC
+        ADC #$30
+        RTS
+.LA2CC
+        DEX
+        BPL .LA2B4
+        TYA
+        SEC
+        RTS
+RAND_STEP
+        JSR RND
+        CMP #$55
+        BCS .LA2DC
+        LDA #$FF
+        RTS
+.LA2DC
+        CMP #$AA
+        BCS .LA2E3
+        LDA #$00
+        RTS
+.LA2E3
+        LDA #$01
+        RTS
+RAND_ADJ
+        JSR RAND_STEP
+        CLC
+        ADC NPC_X,Y
+        STA ZP_TX
+        JSR RAND_STEP
+        CLC
+        ADC NPC_Y,Y
+        STA ZP_TY
+        RTS
+NUM_INPUT
+        LDA #$00
+        STA AMOUNT
+        STA AMOUNT+1
+        STA NUM_T
+        STA NUM_T+1
+        STA DIGITS
+.LA30A
+        JSR KEY_GET
+        BEQ .LA30A
+        CMP #$0D
+        BNE .LA31E
+        LDA DIGITS
+        BNE .LA31D
+        JSR MSG_PRINT
+        DC.B "0",0
+.LA31D
+        RTS
+.LA31E
+        CMP #$08
+        BEQ .LA326
+        CMP #$7F
+        BNE .LA33E
+.LA326
+        LDA DIGITS
+        BEQ .LA30A
+        DEC DIGITS
+        LDX #$05
+.LA330
+        LDA NUM_UNDO,X
+        STA NUM_UNDO2,X
+        DEX
+        BPL .LA330
+        DEC MON_CH
+        JMP .LA30A
+.LA33E
+        CMP #$30
+        BCC .LA30A
+        CMP #$3A
+        BCS .LA30A
+        PHA
+        JSR CHAR_OUT
+        PLA
+        SEC
+        SBC #$30
+        PHA
+        LDX #$00
+.LA351
+        LDA NUM_UNDO2,X
+        STA NUM_UNDO,X
+        INX
+        CPX #$06
+        BNE .LA351
+        ASL AMOUNT
+        ROL AMOUNT+1
+        LDA AMOUNT+1
+        PHA
+        LDA AMOUNT
+        PHA
+        ASL AMOUNT
+        ROL AMOUNT+1
+        ASL AMOUNT
+        ROL AMOUNT+1
+        PLA
+        CLC
+        ADC AMOUNT
+        STA AMOUNT
+        PLA
+        ADC AMOUNT+1
+        STA AMOUNT+1
+        PLA
+        CLC
+        ADC AMOUNT
+        STA AMOUNT
+        BCC .LA392
+        INC AMOUNT+1
+.LA392
+        INC DIGITS
+        LDA DIGITS
+        CMP #$04
+        BCS .LA39F
+        JMP .LA30A
+.LA39F
+        RTS
+RND_BITS
+        JSR RND
+.LA3A3
+        STA ZP_T0
+        STA RND_TMP
+        JMP BIT_DIST
+RND_BITS2
+        JSR RND
+        PHA
+        JSR .LA3A3
+        STA ZP_T0
+        PLA
+        STA RND_TMP
+        JMP BIT_DIST
+BIT_DIST
+        LDA #$00
+        STA ZP_T1
+        STA PRICE
+        STA PRICE+1
+        LDX #$07
+.LA3C7
+        LDA RND_TMP
+        AND #$01
+        BNE .LA3DF
+        LDA PRICE
+        CLC
+        ADC ZP_T0
+        STA PRICE
+        LDA PRICE+1
+        ADC ZP_T1
+        STA PRICE+1
+.LA3DF
+        LSR RND_TMP
+        ASL ZP_T0
+        ROL ZP_T1
+        DEX
+        BNE .LA3C7
+        LDA PRICE+1
+        RTS
+SCROLL_WAIT
+        JSR WIN_TEXT
+        JSR TEXT_SCROLL
+        JMP PRESS_SPACE
+@
+
+<<twn distance>>=
+        ORG $A3F6
+NPC_DIST
+        SUBROUTINE
+        ; Euclidean distance from NPC slot X to the player.
+        ;
+        ; Inputs:
+        ;   X        — NPC slot; NPC_X[X]/NPC_Y[X] vs the player ZP_X/ZP_Y.
+        ;
+        ; Behavior:
+        ;   Form dx^2 + dy^2 by repeated addition into DIST_LO, then
+        ;   ISQRT it -- the same integer square root the dungeon uses
+        ;   for monster homing.  Returns the rounded distance in A
+        ;   (or $FF if either coordinate is off-map).
+        STX DIST_IDX
+        LDA NPC_X,X
+        CMP #$FF
+        BEQ .LA478
+        LDA ZP_X
+        CMP #$FF
+        BEQ .LA478
+        SEC
+        SBC NPC_X,X
+        BCS .LA415
+        STA ABS_TMP
+        SEC
+        LDA #$00
+        SBC ABS_TMP
+.LA415
+        LDY #$00
+        STY DIST_LO
+        STY DIST_LO+1
+        TAY
+        TAX
+        INX
+.LA420
+        DEX
+        BEQ .LA432
+        TYA
+        CLC
+        ADC DIST_LO
+        STA DIST_LO
+        BCC .LA420
+        INC DIST_LO+1
+        BCS .LA420
+.LA432
+        LDX DIST_IDX
+        LDA ZP_Y
+        SEC
+        SBC NPC_Y,X
+        BCS .LA446
+        STA ABS_TMP
+        SEC
+        LDA #$00
+        SBC ABS_TMP
+.LA446
+        LDY #$00
+        STY DIST_HI
+        STY DIST_HI+1
+        TAY
+        TAX
+        INX
+.LA451
+        DEX
+        BEQ .LA463
+        TYA
+        CLC
+        ADC DIST_HI
+        STA DIST_HI
+        BCC .LA451
+        INC DIST_HI+1
+        BCS .LA451
+.LA463
+        CLC
+        LDA DIST_HI
+        ADC DIST_LO
+        STA DIST_LO
+        LDA DIST_HI+1
+        ADC DIST_LO+1
+        STA DIST_LO+1
+        BCC ISQRT
+.LA478
+        LDA #$FF
+        STA DIST_LO
+        RTS
+ISQRT
+        LDY #$01
+        STY DIST_HI
+        DEY
+        STY DIST_HI+1
+.LA487
+        SEC
+        LDA DIST_LO
+        TAX
+        SBC DIST_HI
+        STA DIST_LO
+        LDA DIST_LO+1
+        SBC DIST_HI+1
+        STA DIST_LO+1
+        BCC .LA4AD
+        INY
+        LDA DIST_HI
+        ADC #$01
+        STA DIST_HI
+        BCC .LA487
+        INC DIST_HI+1
+        BCS .LA487
+.LA4AD
+        STY DIST_LO
+        STX DIST_LO+1
+        TYA
+        RTS
+AIRCAR_PRICE
+        CLC
+        ADC #$B8
+        STA ZP_T0
+        TXA
+        ADC #$0B
+        STA ZP_T1
+        LDA ZP_T0
+        CMP #$0F
+        LDA ZP_T1
+        SBC #$27
+        BCC .LA4CE
+        LDA #$0F
+        LDX #$27
+        RTS
+.LA4CE
+        LDA ZP_T0
+        LDX ZP_T1
+        RTS
+DELAY3
+        LDA #$FF
+        JSR VDELAY
+        LDA #$FF
+        JSR VDELAY
+        LDA #$FF
+        JMP VDELAY
+CLEAR_MSGS
+        LDA #$06
+        STA MON_CV
+        JSR CURSOR_COL1
+.LA4E9
+        JSR MSG_PRINT
+        DC.B "~",0
+        JSR CLR_EOL
+        LDA MON_CV
+        CMP #$0E
+        BNE .LA4E9
+        LDA #$0A
+        STA MON_CV
+        RTS
+FLUSH_KEYS
+        JSR KBD_CLEAR
+        LDY #$18
+.LA501
+        JSR KEY_PENDING
+        BNE .LA50C
+        JSR VDELAY
+        DEY
+        BNE .LA501
+.LA50C
+        JMP KBD_CLEAR
+@
+
+\subsection{Town data tables}
+
+The overlay's tail holds the shop-name string pool (eight flavour
+names per shop class, chosen by place), the NPC name and gendered-word
+tables, the per-row map pointers, the NPC sprite-glyph and shop-class
+maps, the squared item-cost table, and the per-class shop pointer
+tables.
+
+<<twn data tables>>=
+        ORG $A50F
+SHOP_NAME_POOL ; 8 flavour names per shop class, place-selected
+        HEX 53 75 70 65 72 20 44 75
+        HEX 70 65 72 27 73 20 54 72
+        HEX 61 6e 73 70 6f 72 74 2c
+        HEX 20 49 6e 63 ae 20 48 6f
+        HEX 72 73 65 20 61 6e 64 20
+        HEX 43 61 72 72 69 61 67 65
         HEX 20 54 72 61 6e 73 70 6f
-        HEX 72 74 61 74 69 6f 6e 7e
-        HEX 7f 0c 53 68 6f 70 70 e5
-        HEX 7f 06 51 75 61 6c 69 74
-        HEX 79 20 54 72 61 6e 73 70
-        HEX 6f 72 f4 7f 04 43 6f 6d
-        HEX 66 6f 72 74 20 52 69 64
-        HEX 65 20 54 72 61 6e 70 6f
-        HEX 72 74 f3 4f 2e 4b 2e 20
-        HEX 4e 65 77 20 26 20 55 73
-        HEX 65 64 20 54 72 61 6e 73
-        HEX 70 6f 72 74 61 74 69 6f
-        HEX ee 7f 0a 53 6c 79 20 53
-        HEX 61 6d 27 f3 20 20 54 72
-        HEX 61 6e 73 70 6f 72 74 61
-        HEX 74 69 6f 6e 20 53 70 65
-        HEX 63 69 61 6c 69 73 74 f3
-        HEX 7f 09 50 75 62 20 64 65
-        HEX 20 56 61 72 e7 7f 07 59
-        HEX 65 20 4f 6c 64 20 4c 6f
-        HEX 63 61 6c 20 50 75 e2 7f
-        HEX 08 44 72 2e 20 43 61 74
-        HEX 27 73 20 4c 61 69 f2 7f
-        HEX 06 44 61 76 27 73 20 48
-        HEX 6f 75 73 65 2d 4f 2d 53
-        HEX 75 64 f3 7f 03 54 68 65
-        HEX 20 53 6c 61 75 67 68 74
-        HEX 65 72 65 64 20 4c 61 6d
-        HEX 62 20 49 6e ee 7f 05 54
-        HEX 68 65 20 42 6c 75 65 20
-        HEX 42 6f 61 72 20 54 61 76
-        HEX 65 72 ee 7f 09 54 68 65
-        HEX 20 4f 70 65 6e 20 4b 65
-        HEX e7 7f 07 54 68 65 20 52
-        HEX 75 6e 6e 69 6e 67 20 54
-        HEX 61 f0 20 43 68 61 64 20
-        HEX 74 68 65 20 4d 61 64 27
-        HEX 73 20 4d 61 67 69 63 20
-        HEX 53 68 6f 70 70 e5 7f 07
-        HEX 4d 79 73 74 69 63 20 4d
-        HEX 65 6c 69 6e 64 61 27 f3
-        HEX 7f 08 57 6f 72 64 73 20
-        HEX 6f 66 20 50 6f 77 65 f2
-        HEX 50 73 79 63 68 69 63 20
-        HEX 53 61 6d 27 73 20 4d 61
-        HEX 67 69 63 61 6c 20 45 6d
-        HEX 70 6f 72 69 75 ed 7f 03
-        HEX 54 68 65 20 41 6c 63 68
-        HEX 65 6d 69 73 74 27 73 20
-        HEX 57 6f 72 6b 73 68 6f f0
-        HEX 7f 07 54 68 65 20 43 72
-        HEX 79 73 74 61 6c 20 42 61
-        HEX 6c ec 7f 06 48 65 72 62
-        HEX 73 20 61 6e 64 20 50 6f
-        HEX 74 69 6f 6e f3 7f 05 54
-        HEX 68 65 20 55 6e 6c 65 61
-        HEX 73 68 65 64 20 53 70 65
-        HEX 6c ec 20 20 54 68 65 20
-        HEX 41 72 6d 6f 75 72 20 53
-        HEX 68 6f 70 70 65 20 6f 66
-        HEX 20 4c 6f 72 64 7e 7f 05
-        HEX 45 6c 64 72 69 63 20 44
-        HEX 27 43 68 61 72 62 6f 6e
-        HEX 6e 65 75 f8 7f 08 4d 61
-        HEX 78 27 73 20 41 72 6d 6f
-        HEX 75 72 f9 7f 08 54 68 65
-        HEX 20 49 72 6f 6e 20 46 69
-        HEX 73 f4 7f 05 54 68 65 20
-        HEX 48 61 6d 6d 65 72 20 2d
-        HEX 6e 2d 20 41 6e 76 69 ec
-        HEX 44 65 66 65 6e 73 65 20
-        HEX 53 70 65 63 69 61 6c 74
-        HEX 69 65 73 2c 20 55 6e 6c
-        HEX 69 6d 69 74 65 e4 7f 08
-        HEX 54 68 65 20 41 72 6d 6f
-        HEX 75 72 20 42 69 ee 7f 05
-        HEX 50 72 6f 74 65 63 74 69
-        HEX 76 65 20 50 72 6f 64 75
-        HEX 63 74 f3 7f 05 43 75 73
-        HEX 74 6f 6d 20 41 72 6d 6f
-        HEX 75 72 20 57 6f 72 6b f3
-        HEX 7f 03 4e 61 75 67 68 74
-        HEX 79 20 4e 6f 6d 61 61 6e
-        HEX 27 73 20 57 65 61 70 6f
-        HEX 6e f3 7f 06 54 68 65 20
-        HEX 54 65 6d 70 65 72 65 64
-        HEX 20 53 74 65 65 ec 7f 07
-        HEX 54 68 65 20 52 61 7a 6f
-        HEX 72 27 73 20 45 64 67 e5
-        HEX 7f 06 54 68 65 20 50 6f
-        HEX 6c 69 73 68 65 64 20 48
-        HEX 69 6c f4 7f 07 54 68 65
-        HEX 20 42 6c 6f 6f 64 79 20
-        HEX 42 6c 61 64 e5 7f 08 54
-        HEX 68 65 20 44 75 65 6c 6f
-        HEX 20 53 68 6f f0 7f 07 57
-        HEX 65 61 70 6f 6e 72 79 20
-        HEX 53 75 70 70 6c f9 7f 05
-        HEX 43 6f 6c 64 20 53 74 65
-        HEX 65 6c 20 43 72 65 61 74
-        HEX 69 6f 6e f3 7f 03 4c 69
-        HEX 74 74 6c 65 20 4b 61 72
-        HEX 65 6c 69 61 27 73 20 46
-        HEX 69 6e 6e 69 73 68 7e 7f
-        HEX 0b 47 72 6f 63 65 72 f9
-        HEX 7f 04 41 64 76 65 6e 74
-        HEX 75 72 65 72 20 53 75 70
-        HEX 70 6c 79 20 50 6f 73 f4
-        HEX 7f 08 54 68 65 20 42 72
-        HEX 6f 77 6e 20 42 61 e7 7f
-        HEX 0a 54 68 65 20 4d 61 72
-        HEX 6b 65 f4 7f 04 46 72 65
-        HEX 73 68 20 46 6f 6f 64 20
-        HEX 4d 61 72 6b 65 74 70 6c
-        HEX 61 63 e5 7f 06 52 61 74
-        HEX 69 6f 6e 73 20 55 6e 6c
-        HEX 69 6d 69 74 65 e4 7f 04
-        HEX 46 61 73 74 20 46 72 65
-        HEX 73 68 20 46 6f 6f 64 6d
-        HEX 61 72 6b 65 f4 7f 03 45
-        HEX 78 70 6c 6f 72 61 74 69
-        HEX 6f 6e 20 50 72 6f 76 69
-        HEX 73 69 6f 6e 65 72 f3 00
+        HEX 72 f4 20 54 68 65 20 52
+        HEX 65 6c 69 61 62 6c 65 20
+        HEX 54 72 61 6e 73 70 6f 72
+        HEX 74 61 74 69 6f 6e 7e 7f
+        HEX 0c 53 68 6f 70 70 e5 7f
+        HEX 06 51 75 61 6c 69 74 79
+        HEX 20 54 72 61 6e 73 70 6f
+        HEX 72 f4 7f 04 43 6f 6d 66
+        HEX 6f 72 74 20 52 69 64 65
+        HEX 20 54 72 61 6e 70 6f 72
+        HEX 74 f3 4f 2e 4b 2e 20 4e
+        HEX 65 77 20 26 20 55 73 65
+        HEX 64 20 54 72 61 6e 73 70
+        HEX 6f 72 74 61 74 69 6f ee
+        HEX 7f 0a 53 6c 79 20 53 61
+        HEX 6d 27 f3 20 20 54 72 61
+        HEX 6e 73 70 6f 72 74 61 74
+        HEX 69 6f 6e 20 53 70 65 63
+        HEX 69 61 6c 69 73 74 f3 7f
+        HEX 09 50 75 62 20 64 65 20
+        HEX 56 61 72 e7 7f 07 59 65
+        HEX 20 4f 6c 64 20 4c 6f 63
+        HEX 61 6c 20 50 75 e2 7f 08
+        HEX 44 72 2e 20 43 61 74 27
+        HEX 73 20 4c 61 69 f2 7f 06
+        HEX 44 61 76 27 73 20 48 6f
+        HEX 75 73 65 2d 4f 2d 53 75
+        HEX 64 f3 7f 03 54 68 65 20
+        HEX 53 6c 61 75 67 68 74 65
+        HEX 72 65 64 20 4c 61 6d 62
+        HEX 20 49 6e ee 7f 05 54 68
+        HEX 65 20 42 6c 75 65 20 42
+        HEX 6f 61 72 20 54 61 76 65
+        HEX 72 ee 7f 09 54 68 65 20
+        HEX 4f 70 65 6e 20 4b 65 e7
+        HEX 7f 07 54 68 65 20 52 75
+        HEX 6e 6e 69 6e 67 20 54 61
+        HEX f0 20 43 68 61 64 20 74
+        HEX 68 65 20 4d 61 64 27 73
+        HEX 20 4d 61 67 69 63 20 53
+        HEX 68 6f 70 70 e5 7f 07 4d
+        HEX 79 73 74 69 63 20 4d 65
+        HEX 6c 69 6e 64 61 27 f3 7f
+        HEX 08 57 6f 72 64 73 20 6f
+        HEX 66 20 50 6f 77 65 f2 50
+        HEX 73 79 63 68 69 63 20 53
+        HEX 61 6d 27 73 20 4d 61 67
+        HEX 69 63 61 6c 20 45 6d 70
+        HEX 6f 72 69 75 ed 7f 03 54
+        HEX 68 65 20 41 6c 63 68 65
+        HEX 6d 69 73 74 27 73 20 57
+        HEX 6f 72 6b 73 68 6f f0 7f
+        HEX 07 54 68 65 20 43 72 79
+        HEX 73 74 61 6c 20 42 61 6c
+        HEX ec 7f 06 48 65 72 62 73
+        HEX 20 61 6e 64 20 50 6f 74
+        HEX 69 6f 6e f3 7f 05 54 68
+        HEX 65 20 55 6e 6c 65 61 73
+        HEX 68 65 64 20 53 70 65 6c
+        HEX ec 20 20 54 68 65 20 41
+        HEX 72 6d 6f 75 72 20 53 68
+        HEX 6f 70 70 65 20 6f 66 20
+        HEX 4c 6f 72 64 7e 7f 05 45
+        HEX 6c 64 72 69 63 20 44 27
+        HEX 43 68 61 72 62 6f 6e 6e
+        HEX 65 75 f8 7f 08 4d 61 78
+        HEX 27 73 20 41 72 6d 6f 75
+        HEX 72 f9 7f 08 54 68 65 20
+        HEX 49 72 6f 6e 20 46 69 73
+        HEX f4 7f 05 54 68 65 20 48
+        HEX 61 6d 6d 65 72 20 2d 6e
+        HEX 2d 20 41 6e 76 69 ec 44
+        HEX 65 66 65 6e 73 65 20 53
+        HEX 70 65 63 69 61 6c 74 69
+        HEX 65 73 2c 20 55 6e 6c 69
+        HEX 6d 69 74 65 e4 7f 08 54
+        HEX 68 65 20 41 72 6d 6f 75
+        HEX 72 20 42 69 ee 7f 05 50
+        HEX 72 6f 74 65 63 74 69 76
+        HEX 65 20 50 72 6f 64 75 63
+        HEX 74 f3 7f 05 43 75 73 74
+        HEX 6f 6d 20 41 72 6d 6f 75
+        HEX 72 20 57 6f 72 6b f3 7f
+        HEX 03 4e 61 75 67 68 74 79
+        HEX 20 4e 6f 6d 61 61 6e 27
+        HEX 73 20 57 65 61 70 6f 6e
+        HEX f3 7f 06 54 68 65 20 54
+        HEX 65 6d 70 65 72 65 64 20
+        HEX 53 74 65 65 ec 7f 07 54
+        HEX 68 65 20 52 61 7a 6f 72
+        HEX 27 73 20 45 64 67 e5 7f
+        HEX 06 54 68 65 20 50 6f 6c
+        HEX 69 73 68 65 64 20 48 69
+        HEX 6c f4 7f 07 54 68 65 20
+        HEX 42 6c 6f 6f 64 79 20 42
+        HEX 6c 61 64 e5 7f 08 54 68
+        HEX 65 20 44 75 65 6c 6f 20
+        HEX 53 68 6f f0 7f 07 57 65
+        HEX 61 70 6f 6e 72 79 20 53
+        HEX 75 70 70 6c f9 7f 05 43
+        HEX 6f 6c 64 20 53 74 65 65
+        HEX 6c 20 43 72 65 61 74 69
+        HEX 6f 6e f3 7f 03 4c 69 74
+        HEX 74 6c 65 20 4b 61 72 65
+        HEX 6c 69 61 27 73 20 46 69
+        HEX 6e 6e 69 73 68 7e 7f 0b
+        HEX 47 72 6f 63 65 72 f9 7f
+        HEX 04 41 64 76 65 6e 74 75
+        HEX 72 65 72 20 53 75 70 70
+        HEX 6c 79 20 50 6f 73 f4 7f
+        HEX 08 54 68 65 20 42 72 6f
+        HEX 77 6e 20 42 61 e7 7f 0a
+        HEX 54 68 65 20 4d 61 72 6b
+        HEX 65 f4 7f 04 46 72 65 73
+        HEX 68 20 46 6f 6f 64 20 4d
+        HEX 61 72 6b 65 74 70 6c 61
+        HEX 63 e5 7f 06 52 61 74 69
+        HEX 6f 6e 73 20 55 6e 6c 69
+        HEX 6d 69 74 65 e4 7f 04 46
+        HEX 61 73 74 20 46 72 65 73
+        HEX 68 20 46 6f 6f 64 6d 61
+        HEX 72 6b 65 f4 7f 03 45 78
+        HEX 70 6c 6f 72 61 74 69 6f
+        HEX 6e 20 50 72 6f 76 69 73
+        HEX 69 6f 6e 65 72 f3 00 00
         HEX 00 00 00 00 00 00 00 00
         HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 4b 69 6e e7
-        HEX 4d 65 72 63 68 61 6e f4
-        HEX 50 72 69 6e 63 65 73 f3
-        HEX 47 75 61 72 e4 4a 65 73
-        HEX 74 65 f2 57 65 6e 63 e8
-        HEX 00 4c 65 63 68 65 f2 00
-        HEX 26 4c 72 98 be e4 0a 30
-        HEX 56 7c a2 c8 ee 14 3a 60
-        HEX 86 00 00 00 00 00 00 00
-        HEX 01 01 01 01 01 01 01 02
-        HEX 02 02 02 01 01 01 01 01
-        HEX 01 01 03 01 01 01 01 03
-        HEX 01 03 03 1e 5f 5f 2f 5c
-        HEX 5f 02 07 08 07 03 0c 04
-        HEX 0b 00 00 01 01 02 02 03
-        HEX 04 05 01 01 01 00 00 01
-        HEX 01 00 01 04 09 10 19 24
-        HEX 31 40 51 64 79 90 a9 c4
-        HEX e1 20 a7 7a a8 de a7 70
-        HEX a6 de a5 0f a5 8d 91 57
-        HEX 92 83 93 84 95 55 96 b7
-        HEX 9a 5b 9c 5c 9d 69 94 b1
-        HEX 9d d2 9d 7f 9d c2 97 20
-        HEX 98 3f 98 b3 98 d4 98 fe
-        HEX 98 3b 99 57 99 00 01 00
-        HEX 01 00 01 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 01
+        HEX 00 00 00
+STR_NPCS ; King, Merchant, Princess, Guard, Jester
+        DC.B "Kin",$E7
+        DC.B "Merchan",$F4
+        DC.B "Princes",$F3
+        DC.B "Guar",$E4
+        DC.B "Jeste",$F2
+STR_GENDER_M
+        DC.B "Wenc",$E8,0           ; Wench (PLR_SEX = 0)
+STR_GENDER_F
+        DC.B "Leche",$F2            ; Lecher (PLR_SEX != 0)
+MAP_ROW_LO ; start of each of the 18 map rows in TOWN_MAP (lo)
+        HEX 00 26 4c 72 98 be
+        HEX e4 0a 30 56 7c a2
+        HEX c8 ee 14 3a 60 86
+MAP_ROW_HI ; (hi)
+        HEX 00 00 00 00 00 00
+        HEX 00 01 01 01 01 01
+        HEX 01 01 02 02 02 02
+WEAPON_HITKIND ; per-weapon to-hit sound/glyph (1 or 3)
+        HEX 01 01 01 01 01 01 01 03
+        HEX 01 01 01 01 03 01 03 03
+NPC_GLYPH ; sprite glyph by NPC type
+        HEX 1e 5f 5f 2f 5c 5f 02 07
+        HEX 08 07 03 0c 04 0b
+NPC_SHOPCLASS ; counter NPC type $64..$6C -> shop class 0..5
+        HEX 00 00 01 01 02 02 03 04 05
+TRANSPORT_TERRAIN ; passable-terrain class per transport
+        HEX 01 01 01 00 00 01 01
+ITEM_COST ; base cost = index^2 (squares 0..15)
+        HEX 00 01 04 09 10 19 24 31
+        HEX 40 51 64 79 90 a9 c4 e1
+SHOP_NAME_TBL ; per-class -> name string (one of the pool)
+        DC.W $A720
+        DC.W $A87A
+        DC.W $A7DE
+        DC.W $A670
+        DC.W $A5DE
+        DC.W $A50F
+SHOP_BUY_TBL ; per-class buy handler
+        DC.W BUY_ARMOUR
+        DC.W BUY_FOOD
+        DC.W BUY_WEAPON
+        DC.W BUY_SPELL
+        DC.W BUY_PUB
+        DC.W BUY_TRANSPORT
+SHOP_SELL_TBL ; per-class sell handler
+        DC.W SELL_ARMOUR
+        DC.W SELL_FOOD
+        DC.W SELL_WEAPON
+        DC.W SELL_SPELL
+        DC.W SELL_PUB
+        DC.W SELL_TRANSPORT
+PUB_HINT_TBL ; 8 tavern rumours
+        DC.W HINT_SPACE
+        DC.W HINT_JESTER
+        DC.W HINT_PRINCESS
+        DC.W HINT_TIME
+        DC.W HINT_GEM
+        DC.W HINT_LAKES
+        DC.W HINT_GAME
+        DC.W HINT_QUEST
+TWN_BSS ; scratch past the tables (disk-image stale bytes)
+        HEX 00 01 00 01 00 01 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 00 01 00 01 00 00 00
+        HEX 00 00 00 00 00 00 00 00
+        HEX 00 01 00 01 00 01 00 01
         HEX 00 01 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 01 00
-        HEX 01 00 01 00 01 00 01 00
-        HEX 00 00 00 00 00 00 00 01
+        HEX 00 00 01 00 01 00 01 00
+        HEX 01 00 01 00 00 00 00 00
         HEX 00 01 00 01 00 01 00 01
-        HEX 00 00 00 00 00 00 01 00
-        HEX 01 00 01 00 01 00 01 00
-        HEX 01 00 01 00 01 00 00 01
         HEX 00 01 00 01 00 01 00 01
-        HEX 00 01 00 01 00
-@ %def TWN_BLOB
+        HEX 00 00 01 00 01 00 01 00
+        HEX 01 00 01 00 01 00 01 00
+@
 
 <<twn.asm>>=
         PROCESSOR 6502
-<<twn blob>>
+<<twn defines>>
+<<twn entry>>
+<<twn command table>>
+<<twn move>>
+<<twn attack>>
+<<twn cast>>
+<<twn drop>>
+<<twn drop dispatch>>
+<<twn drop pence>>
+<<twn drop prompts>>
+<<twn drop pick>>
+<<twn quit ready>>
+<<twn steal>>
+<<twn transact>>
+<<twn buy armour>>
+<<twn buy food>>
+<<twn buy weapon>>
+<<twn sell weapon>>
+<<twn buy spell>>
+<<twn buy pub>>
+<<twn pub hints>>
+<<twn buy transport>>
+<<twn sell>>
+<<twn shop helpers>>
+<<twn town tick>>
+<<twn inform draw>>
+<<twn map helpers>>
+<<twn distance>>
+<<twn data tables>>
 @
+
 
 \section{CAS}
 
@@ -24311,17 +26699,21 @@ MAPCHARS_BLOB
 \texttt{TCMAPS} is the town and castle map data --- 7660 bytes at
 [[$4000]], loaded by [[TWN]] and [[CAS]]. It opens with
 [[TCMAPS_DIR]], a directory of ten word pointers, then ten
-764-byte maps. Each map is a $38\times19$ grid of [[MAPCHARS]]
-glyph codes (the displayed cells; [[TWN]] prints each cell's byte
-through the [[MAPCHARS]] font), followed by a 42-byte NPC/shop
-table ([[TCMAPS_META0]] and friends) that places the
+764-byte maps. Each map is a $38\times18 = 684$-byte grid of
+[[MAPCHARS]] glyph codes (the displayed cells; [[TWN]] prints each
+cell's byte through the [[MAPCHARS]] font), followed by an 80-byte
+NPC table ([[TCMAPS_META0]] and friends) that places the
 shopkeepers, guards and townsfolk. The shop signs (``ARMOUR'',
 ``FOOD'', ``WEAPONRY'', ``THE PUB''$\ldots$) are spelled
 directly into the cell grid as ASCII glyph codes.
 
-The ten maps are the game's towns and castles; the playable
-[[TWN]]/[[CAS]] decode of the metadata format and the
-place-to-map mapping comes in those overlays' own round.
+The NPC table is five parallel 16-entry arrays --- type, column,
+row, and a 16-bit hit-point value --- decoded in the \texttt{TWN}
+section: [[TWN]] copies the chosen record into [[TOWN_MAP]] and
+reads the arrays at [[NPC_TYPE]], [[NPC_X]], [[NPC_Y]] and
+[[NPC_HP]]. A type of [[$FF]] is an empty slot. The ten maps are the
+game's towns and castles; the place-to-map mapping (\texttt{PLR\_PLACE}
+reduced mod $\$15$ then less $\$0D$) lives in [[OVERLAY_ENTRY]].
 
 \begin{figure}[h]
 \centering
@@ -24330,8 +26722,8 @@ place-to-map mapping comes in those overlays' own round.
 [[MAPCHARS]] font (renderer
 \texttt{.claude/scripts/render\_tcmaps.py}). Towns with their
 shops and a walled castle (top right, ``MESS HALL'' / ``PRISON''
-/ ``STABLES''); the bottom strip of each tile is the 42-byte
-metadata shown as glyphs.}
+/ ``STABLES''); the bottom strip of each tile is the 80-byte
+NPC table shown as glyphs.}
 \end{figure}
 
 <<tcmaps directory>>=
@@ -24351,7 +26743,7 @@ TCMAPS_DIR ; 10 word pointers, one per town/castle map
 
 <<tcmaps map 0>>=
         ORG $4014
-TCMAPS_MAP0 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP0 ; 38x18 cells of MAPCHARS glyph codes
         HEX 4040404040404040
         HEX 4040404040404040
         HEX 4041524D4F555240
@@ -24454,7 +26846,7 @@ TCMAPS_META0 ; NPC/shop table for this map
 
 <<tcmaps map 1>>=
         ORG $4310
-TCMAPS_MAP1 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP1 ; 38x18 cells of MAPCHARS glyph codes
         HEX 4040404040404D45
         HEX 53534048414C4C40
         HEX 4040404040404040
@@ -24557,7 +26949,7 @@ TCMAPS_META1 ; NPC/shop table for this map
 
 <<tcmaps map 2>>=
         ORG $460C
-TCMAPS_MAP2 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP2 ; 38x18 cells of MAPCHARS glyph codes
         HEX 1B1B1B1B1B1B1B1B
         HEX 1B1B1B1B1B1B1B1B
         HEX 1B1B1B1B1B4D4147
@@ -24660,7 +27052,7 @@ TCMAPS_META2 ; NPC/shop table for this map
 
 <<tcmaps map 3>>=
         ORG $4908
-TCMAPS_MAP3 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP3 ; 38x18 cells of MAPCHARS glyph codes
         HEX 1B1B1B1B1B1B1B1B
         HEX 1B1B1B1B1B1B1B1B
         HEX 1B606060601B1B1B
@@ -24763,7 +27155,7 @@ TCMAPS_META3 ; NPC/shop table for this map
 
 <<tcmaps map 4>>=
         ORG $4C04
-TCMAPS_MAP4 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP4 ; 38x18 cells of MAPCHARS glyph codes
         HEX 1B1B1B1B1B1B1B1B
         HEX 1B1B1B1B1B1B1B54
         HEX 48451B1B5055421B
@@ -24866,7 +27258,7 @@ TCMAPS_META4 ; NPC/shop table for this map
 
 <<tcmaps map 5>>=
         ORG $4F00
-TCMAPS_MAP5 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP5 ; 38x18 cells of MAPCHARS glyph codes
         HEX 1B574541504F4E53
         HEX 1B41524D4F55521B
         HEX 464F4F441B1B5055
@@ -24969,7 +27361,7 @@ TCMAPS_META5 ; NPC/shop table for this map
 
 <<tcmaps map 6>>=
         ORG $51FC
-TCMAPS_MAP6 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP6 ; 38x18 cells of MAPCHARS glyph codes
         HEX 6060606060606060
         HEX 606060606060601B
         HEX 1B1B60601B1B1B60
@@ -25072,7 +27464,7 @@ TCMAPS_META6 ; NPC/shop table for this map
 
 <<tcmaps map 7>>=
         ORG $54F8
-TCMAPS_MAP7 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP7 ; 38x18 cells of MAPCHARS glyph codes
         HEX 1B1B1B1B60606060
         HEX 6060606060606060
         HEX 6060606060606060
@@ -25175,7 +27567,7 @@ TCMAPS_META7 ; NPC/shop table for this map
 
 <<tcmaps map 8>>=
         ORG $57F4
-TCMAPS_MAP8 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP8 ; 38x18 cells of MAPCHARS glyph codes
         HEX 6161020000000000
         HEX 0461616102000000
         HEX 0004616161616161
@@ -25278,7 +27670,7 @@ TCMAPS_META8 ; NPC/shop table for this map
 
 <<tcmaps map 9>>=
         ORG $5AF0
-TCMAPS_MAP9 ; 38x19 cells of MAPCHARS glyph codes
+TCMAPS_MAP9 ; 38x18 cells of MAPCHARS glyph codes
         HEX 1B574541504F4E53
         HEX 1B606060601B5452
         HEX 414E531B1B544845
