@@ -53,6 +53,28 @@ plus this file — never by re-deriving history.
   TM_REVEAL pays off -- Mondain's gem, the win); then makeindata
   (world-map render, resolves the last TODO-SYM); then synthesis.
 
+### Round 21 scout (2026-06-13): GEN scouted -- the new-game overlay
+
+GEN ($8956-$AC39, 8932 bytes) is the TITLE / NEW-GAME overlay (the
+A=0 GAME_LOAD slot) and bundles a ProDOS disk formatter. Two
+subsystems:
+- CHARACTER GENERATION: title menu (a = new char / b = continue =
+  BLOAD the save, signature $6000 == $01CA), then race (Human/Elf/
+  Dwarf/Bobbit), sex (Male/Female), class (Fighter/Cleric/Wizard/
+  Thief), name entry, and a cursor-driven attribute-point editor
+  ($8FB1 draw / $8C00 input): six stats at PLR_HITS,X (X=2*idx), a
+  point pool $903F, per-stat floor 10 / ceil 25, "Points left to
+  distribute". Saves PLR_SAVE ($01CA bytes) to PATH_PLAYER.
+- DISK FORMATTER (~$9100-$A7B6, $A800-$AC22): "Drive: ( )",
+  "Non-ProDOS disk", "? (Y-N)"; low-level JMP ($00E8), JSR $F479
+  (ROM), $C040/$C0xx disk soft switches, a "PRO" ProDOS param block
+  at $A7C7, block-format helpers $A800+. Initialises a blank player
+  save disk. Self-contained, runs in place (not relocated).
+Full scout in agent memory (gen_subsystem.md). Decompose next with a
+cloned gen_spa pipeline. No build change this scout (memory + TODO
+only); all 16 targets still byte-perfect, PDF 842 pages clean, ORG
+stubs unchanged at 3 (gen, tm, makeindata).
+
 ### Round 20 scout (2026-06-13): SPA scouted -- the space-combat overlay
 
 SPA ($8956-$B01F, 9930 bytes) is the SPACE COMBAT overlay and the
@@ -698,11 +720,15 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       chunks). Rotation+thrust flight sim; HIT_ENEMY pins PLR_VESSELS /
       the Space Ace gate; sprite atlas rendered. Pins the SPA->CAS->TM
       win-condition loop in code.
-- [ ] GEN overlay (8932): character generation / new game (the A=0
-      GAME_LOAD slot). TM overlay (8123): the time-machine endgame
-      (TM_REVEAL pays off here -- Mondain's gem, the win). NEXT: GEN,
-      then TM. Clone the gen_spa pipeline (gen_spa.py + spa_symmap/
-      spa_labels/gen_chapter_spa as the freshest templates).
+- [ ] GEN overlay (8932): SCOUTED (Round 21, agent memory
+      gen_subsystem.md). The title menu + character generator
+      (race/sex/class/name + the attribute-point editor) AND a bundled
+      ProDOS disk formatter for the player save disk. Decompose next
+      from the scout: clone the gen_spa pipeline, watch the SMC clear
+      loop and the disk-formatter SMC, decode the ROM/disk-soft-switch
+      EQUs in the formatter. NEXT.
+- [ ] TM overlay (8123): the time-machine endgame (TM_REVEAL pays off
+      here -- Mondain's gem, the win). After GEN.
 - [ ] makeindata: builds intro art AND (likely) generates the
       world map for /U1.VARS -- render the four continents then;
       resolves ART_* semantics and the one TODO-SYM.

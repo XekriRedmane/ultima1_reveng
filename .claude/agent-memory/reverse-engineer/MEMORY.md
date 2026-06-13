@@ -1,4 +1,5 @@
 - [toolchain-pitfalls](toolchain_pitfalls.md) — dasm RORG chunks, inline-arg disasm misalignment, stale SMC operands (proven rounds 0-2)
 - [dng-subsystem](dng_subsystem.md) — DNG maze generator, ray-marched wireframe renderer, vector-shape engine (rounds 13-15)
 - [twn-cas-subsystem](twn_cas_subsystem.md) — TWN/CAS town+castle: shared loader, 6-class shop system, NPC metadata format, live map buffer, pub lore, CAS quest system (rounds 17-19)
-- [spa-subsystem](spa_subsystem.md) — SPA space-combat overlay: rotation/thrust flight sim, enemy craft, the Space Ace counter (PLR_VESSELS) — scouted round 20
+- [spa-subsystem](spa_subsystem.md) — SPA space-combat overlay: rotation/thrust flight sim, enemy craft, the Space Ace counter (PLR_VESSELS) — DECOMPOSED round 21, byte-perfect, sprites rendered
+- [gen-subsystem](gen_subsystem.md) — GEN overlay: title menu, character generation (race/sex/class/name/attributes), player-save writer + bundled ProDOS disk formatter — scouted round 21
