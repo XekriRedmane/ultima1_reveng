@@ -483,6 +483,54 @@ mode's skeleton has implemented all seven:
   per-turn world update (spawn checks, monster AI, hazards), then loop.
 \end{enumerate}
 
+Figure~\ref{fig:mode-loop} draws this template as a flowchart. Every
+overlay's main loop is this shape; only the contents of the
+\emph{dispatch} and \emph{tick} boxes differ by mode. The two ways out are
+visible: the timeout branch (an idle turn that animates and ticks without a
+command) folds back into the loop, while a mode-ending command leaves
+through the one-way [[GAME_LOAD]] door at the bottom.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=7mm and 16mm]
+  \node[dgterminal] (entry) {OVERLAY\_ENTRY};
+  \node[dgprocess, below=of entry] (init)
+        {restore view; set move\\vocabulary; load map;\\draw first frame};
+  \node[dgprocess, below=of init] (status) {draw status line};
+  \node[dgio, below=of status] (poll) {poll key\\(with timeout)};
+  \node[dgdecision, below=of poll] (key) {key or\\timeout?};
+  % idle branch (right)
+  \node[dgprocess, right=of key] (idle)
+        {idle turn:\\animate world;\\time/food tick};
+  % command branch (down)
+  \node[dgprocess, below=of key] (parse)
+        {GET\_COMMAND\\$\to$ command number};
+  \node[dgsub, below=of parse] (disp)
+        {dispatch to handler\\\scriptsize (patched-JSR via the table)};
+  \node[dgdecision, below=of disp] (ends) {handler\\ends mode?};
+  \node[dgprocess, right=of ends] (tick)
+        {end-of-turn tick:\\spawn / AI / hazards};
+  \node[dgterminal, below=of ends] (load) {JMP GAME\_LOAD\\\scriptsize (never returns)};
+
+  \draw[->] (entry)--(init); \draw[->] (init)--(status);
+  \draw[->] (status)--(poll); \draw[->] (poll)--(key);
+  \draw[->] (key) -- node[dgnote,above]{timeout} (idle);
+  \draw[->] (key) -- node[dgnote,left]{key} (parse);
+  \draw[->] (parse)--(disp); \draw[->] (disp)--(ends);
+  \draw[->] (ends) -- node[dgnote,below]{no} (tick);
+  \draw[->] (ends) -- node[dgnote,left]{yes} (load);
+  % idle and tick both loop back to the status line
+  \draw[->] (idle) -- ($(idle.east)+(6mm,0)$) |- (status.east);
+  \draw[->] (tick) -- ($(tick.east)+(2mm,0)$) |- (status.east);
+\end{tikzpicture}
+\caption{The universal mode template, shared by all seven overlays. The
+  status/poll/dispatch/tick loop is identical mode to mode; only the
+  handler set and the end-of-turn tick vary. A timeout is an idle turn
+  (animate + tick, no command); a mode-ending command exits once, through
+  [[GAME_LOAD]], which never returns.}
+\label{fig:mode-loop}
+\end{figure}
+
 \subsection*{The dispatch idiom}
 
 The command dispatch deserves a porting note because its 6502 form looks
@@ -1156,7 +1204,47 @@ experience.
 
 Towns and castles use the same pursuit and melee logic on their 16-slot
 NPC table, with the kind code selecting hostile (home and attack) versus
-peaceful (wander, trade, or perform) behaviour.
+peaceful (wander, trade, or perform) behaviour. Figure~\ref{fig:npc-ai}
+shows that per-NPC behaviour as a state machine keyed on the slot's kind
+code: an empty slot is skipped, a hostile (kind~3) homes and strikes when
+adjacent, and a wanderer (kind~4) drifts and occasionally sings or picks a
+pocket. The whole table also has a global mood: once the player is caught
+stealing, an [[AGGRO]] flag flips every NPC to the wander state and no one
+will trade.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=10mm and 20mm]
+  \node[dgstate] (empty) {empty\\\scriptsize kind FF};
+  \node[dgstate, right=of empty] (hostile) {hostile\\\scriptsize kind 3};
+  \node[dgstate, right=of hostile] (wander) {wanderer\\\scriptsize kind 4};
+  % hostile sub-behaviours
+  \node[dgprocess, below=12mm of hostile] (home) {home one step\\toward player};
+  \node[dgprocess, left=14mm of home] (attack)
+        {GUARD\_COMBAT:\\to-hit vs armour};
+  % wanderer sub-behaviours
+  \node[dgprocess, below=12mm of wander] (drift) {drift one step};
+  \node[dgnote, below=2mm of drift] {sing / pick a pocket};
+
+  \draw[->] (hostile) -- node[dgnote,left,pos=0.4]{not adjacent} (home);
+  \draw[->] (hostile.west) to[bend right=18]
+        node[dgnote,above]{adjacent} (attack.north);
+  \draw[->] (home) -- (hostile);
+  \draw[->] (attack) -- (hostile);
+  \draw[->] (wander) -- (drift);
+  \draw[->] (drift) -- (wander);
+  % AGGRO global mood: everything -> wander
+  \draw[->, dgaccentedge] (hostile) to[bend left=20]
+        node[dgnote,above,text=dgaccent]{AGGRO set} (wander);
+  \draw[->, dashed] (empty) -- node[dgnote,above]{next slot} (hostile);
+\end{tikzpicture}
+\caption{Town/castle NPC behaviour, evaluated once per NPC per idle tick.
+  The slot's kind code selects the state; hostiles home then melee when
+  adjacent (the same logic as outdoor monsters), wanderers drift with
+  flavour. The accent edge is the global [[AGGRO]] mood: caught stealing,
+  every NPC reverts to wandering and refuses to trade.}
+\label{fig:npc-ai}
+\end{figure}
 
 Figure~\ref{fig:combat} draws the end-of-turn loop for one monster: the
 spawn check, then the three-way choice between firing (ranged kinds in
@@ -34314,6 +34402,51 @@ player: adjacent he attacks in melee, at middle range he may cast, and far away
 he steps toward the player. His gem regenerates as he acts, healing [[GEM_HP]]
 back toward $500$ and cycling his sprite state --- which is why the player must
 keep up the pressure once the gem is destroyed.
+Figure~\ref{fig:mondain-ai} states the AI as the three-way distance choice
+plus the gem-regeneration side effect that makes him so dangerous while the
+Gem of Immortality still stands.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=7mm and 13mm]
+  \node[dgterminal] (e) {MONDAIN\_TURN};
+  \node[dgdecision, below=of e] (dist) {distance to\\player?};
+  \node[dgprocess, below=of dist] (mid) {mid range};
+  \node[dgprocess, left=16mm of dist] (adj) {adjacent};
+  \node[dgprocess, right=16mm of dist] (far) {far};
+  \node[dgprocess, below=of adj] (melee) {MONDAIN\_MELEE\\\scriptsize strike player};
+  \node[dgdecision, below=of mid] (roll) {1/2 roll?};
+  \node[dgprocess, below=of roll] (cast)
+        {MONDAIN\_CAST\\\scriptsize one of 3 spells};
+  \node[dgnote, right=2mm of cast] {missile / mind blast /\\psionic shock};
+  \node[dgprocess, below=of far] (step)
+        {MONDAIN\_STEP\\\scriptsize biased wander toward player};
+  % the gem-regen side effect
+  \node[dgprocess, dgaccentnode, below=22mm of cast, text width=34mm]
+        (regen) {while gem stands: GEM\_HP += 5 toward 500; cycle sprite state};
+
+  \draw[->] (e)--(dist);
+  \draw[->] (dist) -- node[dgnote,above]{adjacent} (adj);
+  \draw[->] (dist) -- node[dgnote,left]{mid} (mid);
+  \draw[->] (dist) -- node[dgnote,above]{far} (far);
+  \draw[->] (adj)--(melee);
+  \draw[->] (mid)--(roll);
+  \draw[->] (roll) -- node[dgnote,left]{yes} (cast);
+  \draw[->] (roll.east) -- node[dgnote,above]{no} ($(roll.east)+(8mm,0)$) |- (step.north east);
+  \draw[->] (far)--(step);
+  % all actions feed the regen tick
+  \draw[->, dgaccentedge] (melee) |- (regen.west);
+  \draw[->, dgaccentedge] (cast) -- (regen);
+  \draw[->, dgaccentedge] (step) |- (regen.east);
+\end{tikzpicture}
+\caption{Mondain's AI ([[MONDAIN_TURN]]): a three-way choice on distance
+  --- melee when adjacent, a coin-flip cast (one of three spells) at mid
+  range, a biased step toward the player when far. Every action also runs
+  the highlighted gem regeneration: while the Gem of Immortality stands,
+  [[GEM_HP]] heals five per turn toward 500, so the player must destroy the
+  gem ([[TM_GET]]) and then finish him before it recovers.}
+\label{fig:mondain-ai}
+\end{figure}
 
 <<tm mondain>>=
         ORG $98C1

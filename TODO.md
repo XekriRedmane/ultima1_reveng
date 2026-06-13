@@ -9,6 +9,33 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D2 (2026-06-13): AI state diagrams + universal mode-loop flowchart
+
+- Continued the diagram campaign with 3 figures across BOTH parts:
+  * fig:mode-loop -- the UNIVERSAL MODE MAIN-LOOP flowchart (entry -> status
+    -> poll -> key/timeout -> dispatch -> ends? -> tick/GAME_LOAD), the
+    template all seven overlays share. Conceptual, in ch:architecture's
+    "anatomy of a mode" (page 22).
+  * fig:npc-ai -- TWN/CAS NPC behaviour as a state machine (empty/hostile-
+    kind-3/wanderer-kind-4, the AGGRO global-mood accent edge). Conceptual,
+    in ch:algorithms beside the town/castle NPC paragraph (page 39).
+  * fig:mondain-ai -- Mondain's AI (the 3-way distance choice melee/cast/step
+    + the highlighted GEM_HP-regen-toward-500 side effect). TARGETED in the
+    Implementation part beside MONDAIN_TURN in the TM chapter (page 910) --
+    the first Implementation-part diagram, demonstrating the inline pattern.
+- All faithful to the asm: fig:npc-ai from the TOWN_TICK branch logic
+  (NPC_TYPE==3 -> dist<2 GUARD_COMBAT else home; ==4 NPC_WANDER; AGGRO
+  switches all to wander); fig:mondain-ai from the MONDAIN_TURN plate +
+  SCENE_TICK gem-heal ($19/per the regen path) + MONDAIN_SPELL_TBL (3
+  spells). Derived firsthand, not invented.
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs; all 3 labels resolve + are \ref'd from prose. PDF
+  1018 -> 1021 pages.
+- NEXT (see "Diagram campaign"): the per-mode main-loop VARIANTS targeted
+  beside OUT/DNG/SPA loops; the RLE-decompressor + boot/overlay-load
+  flowcharts; the memory/record bytefield layouts (dgrecord); the
+  engine-API/dispatch call graphs.
+
 ### Round D1 (2026-06-13): Diagram campaign begun -- infrastructure + 4 marquee figures
 
 - NEW WORK PHASE (decided with the user): lean the doc INTO TikZ
@@ -1216,14 +1243,12 @@ Priority families (do in this rough order):
       SPA->CAS->TM win FSM (fig:win-fsm). DONE round D1.
 - [x] (b) control-flow flowcharts: dungeon generator (fig:dng-gen),
       combat resolution (fig:combat). DONE round D1.
-- [ ] (a cont.) monster/NPC AI state diagrams: TWN/CAS idle-anim NPC states
-      (empty/player-start/hostile-home-and-attack/wanderer per the TYPE
-      codes $00/$02/$03/$04 in twn_cas_subsystem.md); Mondain's AI
-      (approach/melee/cast his 3 spells, tm_subsystem.md).
-- [ ] (b cont.) per-mode main-loop flowcharts (the universal mode template:
-      entry -> status -> key-or-timeout -> dispatch -> tick -> loop; one
-      generic in ch:architecture, targeted variants beside OUT/DNG/TWN/SPA
-      loops in the Implementation part).
+- [x] (a cont.) monster/NPC AI state diagrams: TWN/CAS idle-anim NPC states
+      (fig:npc-ai) + Mondain's AI (fig:mondain-ai). DONE round D2.
+- [~] (b cont.) per-mode main-loop flowcharts: the GENERIC template is DONE
+      (fig:mode-loop, ch:architecture, round D2). STILL TODO: targeted
+      variants beside the OUT / DNG / SPA loops in the Implementation part
+      (each differs only in dispatch + tick contents).
 - [ ] (b cont.) the two RLE decompressors (makeindata MI_DECOMP column-major
       RLE + the $8700 high-bit RLE; makeindata_subsystem.md) as flowcharts,
       beside the MAKE.INDATA section.

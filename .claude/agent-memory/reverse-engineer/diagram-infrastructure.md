@@ -65,10 +65,18 @@ augmentation phase. Diagrams are conceptual in the Design part and targeted
   test \textwidth is narrower than report+noweb); ignore it. Only run the
   full tangle -> verify.py 16/16 -> 2-pass pdflatex gate before committing.
 
-ROUND D1 DONE (this session): infrastructure + 4 marquee priority figures,
-all in the Design part: fig:mode-fsm (7-state overlay machine, after the
-GAME_LOAD dispatch in ch:architecture), fig:win-fsm (SPA->CAS->TM
-flag-guarded win machine, in sec:winfsm), fig:dng-gen (5-pass dungeon
-generator flowchart in ch:algorithms), fig:combat (monster-AI/combat
-flowchart in ch:algorithms). PDF 1013 -> 1018 pages. 16/16 byte-perfect.
-See TODO.md "Diagram campaign" for the remaining per-subsystem coverage.
+FIGURES SO FAR (label -> chapter -> page at time of writing):
+- Round D1 (Design part): fig:mode-fsm (7-state overlay machine, after the
+  GAME_LOAD dispatch in ch:architecture), fig:win-fsm (SPA->CAS->TM
+  flag-guarded win machine, sec:winfsm), fig:dng-gen (5-pass dungeon
+  generator, ch:algorithms), fig:combat (monster-AI/combat, ch:algorithms).
+- Round D2: fig:mode-loop (universal mode main-loop template, ch:architecture
+  "anatomy of a mode"), fig:npc-ai (TWN/CAS NPC states, ch:algorithms),
+  fig:mondain-ai (Mondain's AI -- the FIRST Implementation-part targeted
+  figure, beside MONDAIN_TURN in the TM chapter).
+
+PDF 1013 -> 1018 (D1) -> 1021 (D2) pages. 16/16 byte-perfect throughout.
+See TODO.md "Diagram campaign" for remaining per-subsystem coverage: the
+per-mode loop variants (OUT/DNG/SPA), the RLE decompressors, boot/overlay
+load flow, memory/record bytefield (dgrecord) layouts, engine-API/dispatch
+call graphs, rendering-pipeline diagrams.
