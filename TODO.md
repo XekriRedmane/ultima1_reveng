@@ -9,6 +9,40 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 20 scout (2026-06-13): SPA scouted -- the space-combat overlay
+
+SPA ($8956-$B01F, 9930 bytes) is the SPACE COMBAT overlay and the
+source of the Space Ace status CAS gates the princess rescue on. It
+is structurally unlike the other overlays: a real-time rotation+
+thrust flight sim (movement names "Thrust/Retro/Clockwise/Counter-
+Clockwise" via DIR_STR_PTR=$9219), NO patched-JSR dispatch (commands
+go GET_COMMAND -> handler-address table $91D3, self-modified into the
+loop at $8AB1).
+
+- ENTRY $8956: restore space position from $7EEF/$7EF0, liftoff
+  countdown ("10..9..8.." with KEY_PENDING abort), "Thou hast lifted
+  off!", seed starfield/enemy tables ($9BFF/$9C29 via RND, $B020/
+  $B099 grids).
+- MAIN LOOP $8A53: "Shld|Fuel" status; flight commands gated on fuel
+  ($7EE9/$7EEA "No fuel!! Wilt thou drift forever?!?"); integrate
+  velocity $6E/$6F into position $9288/$9289 on a torus; move enemies;
+  collide vs $8C47/$8C4B; star hazard ("Thy ship melts near the
+  star!" -> RESPAWN).
+- COMBAT (~$96E2): a hit drains enemy HP, awards +100 exp, and
+  INC PLR_VESSELS at $9732 -- THE kill counter. Hitting exactly $14
+  (20) fires "Thou hast achieved the rank of Space Ace!" -- the gate
+  CAS reads. Enemies fire back ("Alien fires!", "You've been hit!").
+- DOCKING/LANDING: "Docked! Welcome to Base!" (refuel); landing needs
+  a shuttle ("Only space shuttles are heat-shielded for landings" ->
+  "Thou hast landed safely!").
+- Win-condition loop now traced end to end: SPA grows PLR_VESSELS ->
+  CAS princess rescue (>=20) sets TM_REVEAL -> TM endgame.
+- Full scout in agent memory (spa_subsystem.md). Decompose next with a
+  cloned gen_cas pipeline; render the starfield/ship sprites when the
+  format is pinned.
+- All 16 targets still byte-perfect; PDF clean. ORG stubs unchanged
+  at 4 (spa, gen, tm, makeindata) -- this round added no code.
+
 ### Round 19 (2026-06-13): CAS fully decomposed, byte-perfect
 
 - The castle overlay is annotated across 25 chunks (entry/loader,
@@ -616,9 +650,11 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       (Get/Steal/Unlock), castle tick all decomposed. Pins the quest
       assignment and the endgame breadcrumb trail.
 - [x] tcmaps: DONE (Round 16: structured + rendered).
-- [ ] SPA overlay (9930 bytes): the space/shuttle layer (likely the
-      ace-pilot combat that grows PLR_VESSELS toward the space-ace
-      gate CAS just pinned). Largest remaining overlay. NEXT.
+- [ ] SPA overlay (9930 bytes): SCOUTED (Round 20, agent memory). The
+      space-combat flight sim that grows PLR_VESSELS to the Space Ace
+      gate. Decompose next from the scout: clone the gen_cas pipeline,
+      pin the code/data boundary ($91xx-$92xx), render the starfield/
+      ship sprites. Largest remaining overlay. NEXT.
 - [ ] GEN overlay (8932): character generation / new game (the A=0
       GAME_LOAD slot). TM overlay (8123): the time-machine endgame
       (TM_REVEAL pays off here -- Mondain's gem, the win).
