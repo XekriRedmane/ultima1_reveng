@@ -387,6 +387,234 @@ what is portable (the tile codes, the vector shape lists, the animation
 timing) lives in the engine and overlays. The per-mode rendering chapters
 mark the boundary explicitly.
 
+\chapter{Data-structure reference}
+\label{ch:datastructures}
+
+This chapter describes every persistent game-state structure abstractly:
+its fields, its invariants, and who reads and writes it. It is the
+companion to the architecture overview (chapter~\ref{ch:architecture}):
+where that chapter described how the modes communicate, this one
+describes \emph{what they communicate through}. Each structure is given
+as language-neutral pseudocode using the same symbol names as the
+assembly, so a reader can drill from the abstract layout down to the
+annotated bytes in the engine and overlay chapters.
+
+A note on numbers throughout: the game stores every \emph{quantity} ---
+hit points, food, experience, gold, attributes --- as a plain 16-bit
+binary integer, little-endian, and converts to decimal digits only when
+printing. The only structures stored in binary-coded decimal are the two
+\emph{display counters} (the move count and the food fraction), which are
+incremented directly in BCD to avoid a conversion every turn. A port uses
+ordinary integers everywhere and formats on output; the BCD is an Apple~II
+micro-optimisation, not a design choice.
+
+\section{The player block: the save format}
+
+The single most important structure is the \textbf{player block}, a
+contiguous record in the resident engine's memory beginning at
+[[PLR_SAVE]]. It is also exactly the byte image written to and read from
+the \texttt{/U1.PLAYER} disk file --- the record's first word is its own
+length ([[$01CA]] = 458 bytes), and saving the game is one block-write of
+those 458 bytes. So this layout \emph{is} the save format; there is no
+serialisation step.
+
+\begin{verbatim}
+struct PlayerBlock {            // at PLR_SAVE; 458 bytes; = /U1.PLAYER
+  u16  length;                  // PLR_SAVE: own length, 0x01CA
+  u8   continent;               // PLR_CONT: 0..3, which continent
+  u8   continent_bits;          // PLR_CONT_BITS: continent << 6 (Y tag)
+  u8   sound_on, sfx_on;        // PLR_SOUND/PLR_SFX: saved audio flags
+  u8   out_x, out_y;            // PLR_OUT_X/Y: outdoor map position
+  u8   gems[4];                 // OWNED_GEMS: red, green, blue, white
+  u8   ready_spell;             // READY_SPELL: index, 0 = none
+  u8   ready_weapon;            // READY_WEAPON: index, 0 = hands
+  u8   ready_armour;            // READY_ARMOUR: index, 0 = skin
+  u8   ready_transport;         // READY_TRANSPORT: current craft index
+  u8   owned_armour[6];         // OWNED_ARMOUR: count per armour type
+  u8   owned_weapons[16];       // OWNED_WEAPONS: count per weapon type
+  u8   owned_spells[11];        // OWNED_SPELLS: count per spell
+  u8   owned_transport[11];     // OWNED_TRANSPORT: count per craft type
+  u8   quest_flags[8];          // QUEST_FLAGS: 0 unset, 1 active, FF done
+  u8   court_cells[4];          // COURT_CELLS: 4 cells around last town
+  u8   tm_reveal;               // TM_REVEAL: arm the endgame breadcrumb
+  u8   vessels;                 // PLR_VESSELS: space kills (Space Ace=20)
+  u8   sex;                     // PLR_SEX: 0 = male, else female
+  char name[14];                // PLR_NAME: zero-padded
+  u16  hits;                    // PLR_HITS: hit points (binary)
+  u16  attr[6];                 // STR, AGI, STA, CHA, WIS, INT (binary)
+  u16  coin;                    // PLR_COIN: gold (binary)
+  u16  race;                    // PLR_RACE: index into STR_RACES
+  u16  class;                   // PLR_CLASS: index into STR_CLASSES
+  u8   move_count[10];          // MOVE_CNT: BCD, low byte first
+  u8   food_fraction;           // FOOD_FRAC: BCD hundredths of a food
+  u16  food;                    // PLR_FOOD: food (binary)
+  u16  experience;              // PLR_EXP: experience (binary)
+  u16  _reserved[2];            // two 1000-valued words, role unidentified
+  u8   place;                   // PLR_PLACE: which of the 84 places, 0..83
+  u8   last_landmark;           // PLR_LASTMARK: last boon site (no repeat)
+  ...                           // object records follow (next section)
+};
+\end{verbatim}
+
+\noindent Field notes and invariants:
+
+\begin{description}
+\item[The six attributes] live at [[PLR_HITS]]+2 as 16-bit words in the
+  fixed order Strength, Agility, Stamina, Charisma, Wisdom, Intelligence.
+  Character generation (chapter~\ref{ch:gen}) seeds them from a 30-point
+  pool with a floor of 10 and a ceiling of 25, then adds race and class
+  bonuses. Charisma drives shop prices; the others gate class abilities
+  and combat.
+\item[The owned-item arrays] are \emph{counts}, not booleans: index $i$
+  holds how many of item~$i$ the player has. Index~0 of each is the
+  ``empty'' choice (hands / skin / no spell) and is always available.
+  Buying increments, using or selling decrements. The readied-item fields
+  index into these arrays.
+\item[Experience determines level] --- the displayed level is
+  $\lfloor \mathit{experience} / 1000 \rfloor + 1$, recomputed on every
+  stats draw; level is not stored.
+\item[The coin purse is one number] shown three ways: the
+  inventory screen splits the single [[PLR_COIN]] value into pence
+  (ones), silver (tens), and gold (hundreds-and-up) for display only.
+\item[continent\_bits] is [[PLR_CONT]] shifted into the top two bits,
+  precomputed once so the object-record code can tag and test coordinates
+  with a mask instead of a shift (see the next section).
+\end{description}
+
+\section{The object records: the mutable world}
+
+The world map itself never changes (next section); everything that moves
+or can be picked up --- monsters, ships, parked transports, the time
+machines --- is an \textbf{object record}. The records are stored as a
+\emph{structure of arrays}: five parallel 80-entry arrays, indexed by a
+common slot number, with [[OBJ_COUNT]] giving the number of live slots.
+
+\begin{verbatim}
+struct ObjectRecords {          // max 80 slots, OBJ_COUNT live
+  u8   count;                   // OBJ_COUNT: number of active slots
+  u8   x[80];                   // OBJ_X:    world column
+  u8   yc[80];                  // OBJ_YC:   world row | (continent << 6)
+  u8   tile[80];                // OBJ_TILE: the cell glyph to draw
+  u8   under[80];               // OBJ_UNDER: terrain cell beneath it
+  u8   hp[80];                  // OBJ_HP: hit points (in UNSAVED RAM)
+};
+\end{verbatim}
+
+\noindent Invariants and behaviour:
+
+\begin{description}
+\item[The continent tag.] [[OBJ_YC]] packs the row in its low six bits and
+  the continent in its top two. Records for all four continents coexist in
+  the arrays; a map redraw paints only the records whose top two bits
+  match [[PLR_CONT_BITS]]. This is how a ship the player left on one
+  continent is still there on return without a per-continent record set.
+\item[under.] Because an object hides the terrain beneath it, the cell it
+  is standing on is saved in [[OBJ_UNDER]] so the map can be repainted
+  correctly when the object moves or is removed.
+\item[Hit points are not saved.] [[OBJ_HP]] lives in unsaved RAM
+  ([[OBJ_HP]] = the page at [[$B600]]), and [[OBJ_HP]]+0 doubles as a
+  ``world has been initialised'' sentinel. Reloading a game respawns
+  monster health; only the records' positions and kinds persist.
+\item[Parked transports] are object records too: buying a ship or other
+  craft writes a record at the player's location with the craft's tile;
+  boarding removes it and sets [[READY_TRANSPORT]]. The outdoor overlay
+  recounts [[OWNED_TRANSPORT]] from these records on entry, which is why
+  that array is the one owned-item array not trusted from the save.
+\end{description}
+
+This single 80-slot table is the entire mutable overworld. A port that
+keeps an entity list with these five fields per entity, tagged by
+continent, reproduces the world model exactly.
+
+\section{Town and castle maps: the TCMAPS records}
+
+Towns and castles do not generate their layout; they load it. The
+\texttt{TCMAPS} file (documented in detail in the game-data chapter) is a
+directory of ten fixed \textbf{764-byte records}, one per town or castle.
+On entry, the overlay copies the chosen record into a live buffer at
+[[TOWN_MAP]] and works from there.
+
+\begin{verbatim}
+struct TownCastleMap {          // 764 bytes; copied to TOWN_MAP on entry
+  u8   cells[38 * 18];          // 684 bytes: the displayed grid, row-major
+  // NPC table: 5 parallel 16-entry arrays at offset 684 (= TOWN_MAP+684)
+  u8   npc_type[16];            // NPC_TYPE: FF empty, kind code otherwise
+  u8   npc_x[16];               // NPC_X: column on the grid
+  u8   npc_y[16];               // NPC_Y: row on the grid
+  u8   npc_hp_lo[16];           // NPC hit points, low byte
+  u8   npc_hp_hi[16];           //               high byte
+};
+\end{verbatim}
+
+\noindent Notes:
+
+\begin{description}
+\item[The grid is $38 \times 18$.] Each cell is a glyph code drawn through
+  the town/castle tile bank (\texttt{MAPCHARS}); shop signs (``ARMOUR'',
+  ``THE PUB'', \dots) are spelled into the grid as ASCII glyph codes.
+  Walking off the $38\times18$ edge leaves the place. (An earlier draft of
+  this document said $38\times19$; the move handler's bounds prove 18.)
+\item[The NPC table] is the same structure-of-arrays flavour as the
+  outdoor object records, 16 slots wide. The \emph{kind} code selects
+  behaviour: hostiles home in and attack, wanderers drift (and may sing,
+  pick a pocket, or, at a shop counter, trade). Counter NPCs with kind
+  codes in a small range select one of six shop classes; a king's
+  audience kind triggers the quest system.
+\item[The live buffer persists] at [[TOWN_MAP]] across the visit so NPC
+  positions and health survive turns; it is reloaded fresh from
+  \texttt{TCMAPS} on the next entry.
+\end{description}
+
+The ten rendered maps appear as a figure in the game-data chapter.
+
+\section{The world map}
+
+The overworld is four continents, each a $64 \times 64$ grid of terrain
+cells. The grids are stored \textbf{RLE-compressed and read-only}: they
+arrive in the \texttt{/U1.VARS} file, sit packed above the overlay region
+at [[MAP_PACKED]], and are decompressed into the working map area at
+[[$6000]] on every continent change. Nothing the player does writes back
+to the stored map --- the entire mutable overworld is the object-record
+table of the previous section. (The \texttt{/U1.VARS} file is absent from
+the preservation disk this document is built from, so the four continents
+cannot be imaged here; the ten town and castle maps, which live in the
+present \texttt{TCMAPS} file, are rendered in the game-data chapter.)
+
+A terrain cell's value encodes both what to draw and what it means:
+ordinary terrain classes (water, grass, forest, mountains, \dots) index
+the tile bank directly, while higher cell-byte ranges mark towns,
+castles, dungeon entrances, and landmark sites. The dungeon overlay, by
+contrast, stores \emph{no} map at all --- each of the ten levels of each
+dungeon is regenerated deterministically from a seed derived from the
+player's position (chapter~\ref{ch:overlays} and the algorithm chapter).
+
+\section{Coordinate systems}
+
+Three distinct coordinate frames appear, and a porter must keep them
+separate:
+
+\begin{description}
+\item[World coordinates] (continent, column~0--63, row~0--63) locate the
+  player and the object records on the overworld grid. The continent is
+  carried separately ([[PLR_CONT]]) and, for object rows, folded into the
+  high bits of [[OBJ_YC]].
+\item[Grid coordinates] (column~0--37, row~0--17) locate the player and
+  NPCs inside a town or castle. They are unrelated to world coordinates;
+  the overlay derives them on entry.
+\item[Screen/viewport coordinates.] The grid modes draw a fixed
+  \textbf{$19 \times 9$ tile viewport} centred on the player: world or
+  grid cell $(x, y)$ maps to a viewport slot offset from the centre, and
+  cells outside the window are not drawn. The first-person modes have no
+  cell-to-pixel mapping at all --- they project depth and facing through
+  perspective tables (the rendering chapter).
+\end{description}
+
+The recurring conversion ``centre the viewport on the player'' is the
+same in every grid mode: for each of the $19 \times 9$ viewport slots,
+read the map cell at the player's position plus the slot's signed offset,
+and blit that cell's glyph. Keeping world/grid coordinates and viewport
+coordinates distinct is the one thing a port must not conflate.
+
 \chapter{Disk layout and boot chain}
 
 \section{Disk image format}

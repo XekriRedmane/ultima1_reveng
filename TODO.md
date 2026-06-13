@@ -9,6 +9,33 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 27 (2026-06-13): Synthesis -- the Data-structure reference chapter
+
+- Second synthesis chapter: \chapter{Data-structure reference}
+  (label ch:datastructures), placed after the Architecture overview.
+  Documents every persistent structure abstractly with language-neutral
+  pseudocode (same symbol names as the asm) + field tables + invariants:
+  (1) THE PLAYER BLOCK as a struct -- it IS the /U1.PLAYER save format
+  (458 bytes, first word = own length); all 30 fields named, the six
+  attributes (STR/AGI/STA/CHA/WIS/INT at PLR_HITS+2), owned-item arrays
+  as counts, level = exp/1000+1, coin shown as pence/silver/gold; the
+  binary-vs-BCD note (only MOVE_CNT + FOOD_FRAC are BCD, a micro-opt).
+  (2) THE OBJECT RECORDS -- five parallel 80-entry arrays (structure of
+  arrays), OBJ_YC packs continent in top 2 bits, OBJ_HP unsaved, parked
+  transports are object records. (3) THE TCMAPS town/castle record (764b:
+  38x18 grid + 5x16 NPC arrays at offset 684). (4) The world map (4x
+  64x64, RLE read-only from /U1.VARS, absent here). (5) The three
+  coordinate frames (world / grid / 19x9 viewport) a port must not
+  conflate.
+- Prose-only; all 16 targets still byte-perfect; hygiene green; PDF 991
+  pages, 0 errors, 0 undefined refs. verbatim struct blocks exempt from
+  prose address-wrapping (literal, like code).
+- NEXT: per-subsystem Algorithm descriptions (the biggest remaining
+  synthesis gap) -- the dungeon maze generator + ray-marcher, the shop
+  pricing/haggle, monster spawn/AI, the SPA flight model, chargen math,
+  the PRNG, the turn/food/time economy. Then a Rendering-pipeline
+  chapter, then Porting notes. Optionally the TM CRAFT_GFX render.
+
 ### Round 26 (2026-06-13): Synthesis begun -- the Architecture overview chapter
 
 - FIRST synthesis chapter written: \chapter{Architecture overview}
