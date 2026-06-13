@@ -31,6 +31,23 @@ evidence):
 These five cover all six synthesize-skill section types (overview +
 architecture are both in #1). PDF grew 962 -> 1005 pages across the layer.
 
+ROUND 31-32 (final polish, all optional items now resolved):
+- ch:algorithms gained TWO more sections: "The space-flight model" (SPA's
+  real-time rotation/thrust torus sim -- the one non-turn-based mode) and
+  "Character generation: the point-buy" (the 30-pt pool, floor 10/ceiling 25,
+  race/class deltas applied AFTER point-buy with no ceiling re-check, derived
+  values from GAME_IMAGE). All constants verified firsthand from the asm.
+- THE DOCUMENT IS NOW SPLIT INTO TWO \part's: \part{Design} (part:design,
+  before ch:architecture) holds the five synthesis chapters; \part{Implementation}
+  (part:implementation, before the disk-layout chapter) holds the nine
+  annotated-assembly chapters. Purely additive -- the chapters were already
+  in that order. Introduction got a two-part roadmap paragraph. Both part
+  labels resolve; both appear in the ToC. PDF now 1013 pages.
+- THE DOC IS COMPLETE. Nothing valuable left. The two un-imaged graphics
+  (world map, TM craft interior) are blocked with full evidence they cannot
+  be faithfully produced from the materials on hand (see TODO blocked list,
+  makeindata_subsystem.md, tm_subsystem.md).
+
 Added chapter labels for cross-refs: ch:boot, ch:intro, ch:stuph,
 ch:engine (the assembly chapters), plus the five above. sec:makeindata is
 the MAKE.INDATA section (a \section under \chapter{Game data}, NOT a chapter).
@@ -46,10 +63,14 @@ KEY CONVENTIONS proven for synthesis prose:
 - \ref a section as section~\ref{sec:...}, not chapter~\ref -- mismatched
   \chapter/\section labels show as "undefined" only on the 2nd pdflatex pass.
 
-WHAT REMAINS (all optional; the doc is functionally done): dedicated
-algorithm sections for the SPA flight model + chargen point-buy math if
-deeper treatment is wanted; the TM CRAFT_GFX render (own focused round, twin
-of DNG 15, recipe in tm_subsystem.md); a possible Round-7 reorg promoting the
-five synthesis chapters into a \part{Design} ahead of a \part{Implementation}.
-BLOCKED: the four-continent world map render (needs /U1.VARS, absent from the
-crack disk -- see makeindata_subsystem.md + TODO blocked list).
+WHAT REMAINS: nothing valuable. All three formerly-open optional items are
+resolved (rounds 31-32): the SPA flight-model + chargen point-buy algorithm
+sections were ADDED; the \part{Design}/\part{Implementation} reorg was DONE;
+and the TM CRAFT_GFX render was RE-ASSESSED as INFEASIBLE (not just deferred)
+-- it is a scanline-RLE display list over ~13 indirect ZP base pointers the
+resident STUPH/MI.U1 actor engine sets up at runtime, none initialized in any
+target, so a faithful image needs a full actor-engine emulator with no
+correctness guarantee (tm_subsystem.md). BLOCKED (genuinely, not lazy): the
+four-continent world map render needs /U1.VARS, absent from the crack disk
+(makeindata_subsystem.md + TODO blocked list). Both un-imaged graphics are
+documented in prose + their verbatim data, the honest level of treatment.
