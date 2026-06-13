@@ -831,6 +831,156 @@ Towns and castles use the same pursuit and melee logic on their 16-slot
 NPC table, with the kind code selecting hostile (home and attack) versus
 peaceful (wander, trade, or perform) behaviour.
 
+\section{The space-flight model}
+
+The space-combat mode ([[SPA]]) is the one part of the game that does
+\emph{not} use the turn-based grid model. It is a real-time
+rotation-and-thrust flight simulator --- closer to \emph{Asteroids} than to
+the rest of \emph{Ultima} --- and a porter who treats it like the outdoor
+move handler will get it wrong. The model is small and worth stating
+exactly.
+
+\textbf{Ship state.} The ship has an integer position on a wrap-around
+torus, a \emph{signed} velocity vector, and a coarse heading that is one of
+four cardinal directions:
+
+\begin{verbatim}
+    position   = (x, y)              // SHIP_X, SHIP_Y
+    velocity   = (vx, vy)            // ZP_VX, ZP_VY, each signed -8..+8
+    heading    = 0 | 1 | 2 | 3       // HEAD_CUR: up, right, down, left
+\end{verbatim}
+
+The original stores these in overlapping zero-page cells and shuffles them
+between roles each step (the prior position doubles as a scratch base);
+that juggling is a 6502 register-pressure artifact, not part of the model.
+A port keeps position and velocity as two ordinary vectors.
+
+\textbf{Integration.} Every physics step ([[PHYSICS]]) adds the velocity to
+the position and wraps on the torus. The horizontal axis wraps in a narrow
+band and the vertical axis is masked to seven bits:
+
+\begin{verbatim}
+    step():
+        x = x + vx
+        y = (y + vy) AND 0x7F                  // y wraps 0..127
+        if x <  0x0E:  x = 0xF4                 // left edge -> right
+        if x >= 0xF5:  x = 0x0E                 // right edge -> left
+\end{verbatim}
+
+\textbf{Thrust and retro.} Acceleration is heading-indexed. Thrust adds a
+fixed per-heading delta to the velocity; retro adds the negated delta. The
+two delta tables ([[THRUST_DX]]/[[THRUST_DY]], [[RETRO_DX]]/[[RETRO_DY]])
+are, by heading $0,1,2,3$:
+
+\begin{verbatim}
+    thrust delta = (0,-1) (+2,0) (0,+1) (-2,0)   // up right down left
+    retro  delta = (0,+1) (-2,0) (0,-1) (+2,0)   // exactly negated
+\end{verbatim}
+
+Note the asymmetry: the horizontal thrust impulse is $\pm2$ but the
+vertical is only $\pm1$, because the hi-res pixel aspect makes a vertical
+step cover more visual distance. After each addition both velocity
+components are clamped to $[-8, +8]$ ([[CLAMP_VEL]]), so the ship has a
+top speed.
+
+\textbf{Rotation.} The clockwise and counter-clockwise commands turn the
+heading by one cardinal step, modulo four ([[CMD_CLOCKWISE]] adds $1$ and
+masks with $3$; [[CMD_COUNTER]] subtracts $1$ and wraps $-1\to3$), and kick
+a short turn-animation timer. The \emph{flight} heading is only this coarse
+four-way value, but the \emph{rendered} ship is finer: the sprite index is
+$\mathit{base}(\mathit{scale}) + \mathit{heading} + \mathit{rot\_step}$,
+where the animation timer briefly sets $\mathit{rot\_step}$ to a non-zero
+in-between frame so the turn looks smooth. A port can either reproduce the
+27-frame rotation atlas (chapter~\ref{ch:rendering}) or simply draw the
+four headings and skip the tween --- the simulation is identical either
+way.
+
+\textbf{Fuel.} Every manoeuvre burns from a 16-bit fuel reserve through
+[[FUEL_BURN]]: thrust and retro cost $5$, each rotation costs $2$, firing
+costs more. When fuel reaches zero every flight command is rejected (``No
+fuel!! Wilt thou drift forever?!?''): the ship keeps its current velocity
+and drifts. There is no friction --- velocity persists until thrust,
+collision, or a rail clamp changes it.
+
+\textbf{Hazards.} Two proximity tests run each step. Docking with the base
+zeroes the velocity and refuels. Colliding with the enemy craft prints
+``Crunch!'', reflects the velocity (a bounce), and subtracts shield. The
+central star ([[STAR_HAZARD]]) is graded by distance ([[ACTOR_DIST]]):
+inside the lethal radius the ship melts (``Thy ship melts near the star!''
+$\to$ respawn); in the surrounding warning band only a hazard sound plays.
+
+\textbf{The Space Ace counter.} A kill ([[HIT_ENEMY]]) awards $+100$
+experience (saturating at $9999$) and increments the persistent vessel
+counter [[PLR_VESSELS]] with saturation. This counter is the
+\emph{only} bridge out of the flight model: reaching exactly $20$
+($\$14$) announces the rank of Space Ace, and the castle quest reads the
+same counter to gate the princess rescue that opens the endgame
+(chapter~\ref{ch:architecture}). The flight model is otherwise self-contained.
+
+\section{Character generation: the point-buy}
+
+A new character ([[GEN]]) is built by distributing a fixed pool of points
+across six attributes, then applying race and class bonuses. The exact
+numbers matter because they define the legal range of a starting character.
+
+\textbf{The six attributes} are 16-bit values in a fixed order ---
+Strength, Agility, Stamina, Charisma, Wisdom, Intelligence --- stored
+contiguously so that attribute $i$ ($1 \le i \le 6$) lives at
+[[PLR_HITS]]$+2i$. Each starts at the floor and is raised by spending
+points.
+
+\textbf{The point-buy.} The editor ([[CHARGEN]]) seeds a pool of $30$
+points ([[POINT_POOL]] $= \$1E$) and lets the player move points into the
+six stats under two hard limits: a per-stat floor of $10$ ($\$0A$) and a
+ceiling of $25$ ($\$19$). The player cannot leave the editor until the
+pool is empty.
+
+\begin{verbatim}
+    point_buy():
+        for each attribute: attribute = 10        // the floor
+        pool = 30
+        loop:
+            on raise(stat):                        // right arrow
+                if pool > 0 and stat < 25:
+                    stat += 1; pool -= 1
+            on lower(stat):                        // left arrow
+                if stat > 10:
+                    stat -= 1; pool += 1
+            on done: if pool == 0: break
+\end{verbatim}
+
+So an unmodified character has every stat in $[10, 25]$ and their sum is
+exactly $6\times10 + 30 = 90$.
+
+\textbf{Race and class bonuses} are applied \emph{after} the point-buy,
+from hardcoded per-choice deltas:
+
+\begin{verbatim}
+    race:   Human  +5 INT
+            Elf    +5 AGI
+            Dwarf  +5 STR
+            Bobbit +10 WIS, -5 STR
+    class:  Fighter +10 STR, +10 AGI
+            Cleric  +10 WIS
+            Wizard  +10 INT
+            Thief   +10 AGI
+\end{verbatim}
+
+A subtlety a faithful port must preserve: these bonuses are added with
+\emph{no ceiling re-check}, so a race or class bonus can legitimately push
+an attribute above the $25$ point-buy ceiling (a Dwarf Fighter can reach
+$25+5+10 = 40$ Strength). The ceiling governs only how the player
+\emph{spends points}, not the final stat. Sex is purely cosmetic and
+modifies no attribute.
+
+\textbf{Derived starting values.} Hit points, food, coin, and the initial
+world and inventory are \emph{not} computed from the attributes. They come
+from [[GAME_IMAGE]], a 13-page snapshot of a fresh game embedded in the
+overlay and stamped into the player and world state when the new game
+launches; experience starts at zero, so the starting level is
+$\lfloor 0/1000\rfloor + 1 = 1$ (chapter~\ref{ch:datastructures}). A port
+can hold the same starting bundle as plain initialisation data.
+
 \chapter{The rendering pipeline}
 \label{ch:rendering}
 

@@ -9,6 +9,50 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 31 (2026-06-13): Final polish -- SPA + chargen algorithm sections; TM render judged infeasible
+
+- Optional-polish pass on the functionally-done document. Two outcomes:
+- (1) TM CRAFT_GFX render: RE-ASSESSED as INFEASIBLE from the materials on
+  hand, NOT merely deferred. SHAPE_STEP/BLIT_LINE is a scanline run-length
+  blitter (not a self-contained vector interpreter like the DNG/SPA shape
+  galleries that rendered cleanly); CRAFT_GFX is pre-rasterized hi-res byte
+  runs, not (dx,dy,pen) vectors. The stroker + ANIM_SETUP dereference ~13
+  indirect ZP base pointers (($D6)..($FA),Y) that the RESIDENT STUPH/MI.U1
+  shape-actor engine sets up at runtime -- verified by grep that NONE is
+  initialized in any of the 16 targets. Imaging it needs a full actor-engine
+  emulator + the live projection state, no correctness guarantee -> would
+  risk a broken render (violates the don't-ship-broken-renders rule). Left
+  un-imaged, documented in prose + the HEX blob + the SHAPE_STEP/BLIT_LINE
+  plates. Moved from the work queue to the blocked list with full evidence;
+  tm_subsystem.md updated. This is the honest call, not a skipped chore.
+- (2) Added TWO new sections to the Algorithm descriptions chapter
+  (ch:algorithms), the two gaps that genuinely help a porter and carry no
+  render risk: "The space-flight model" (SPA -- the real-time
+  rotation/thrust torus sim: ship state, the integration step + torus wrap
+  $0E/$F4 and y AND $7F, the heading-indexed thrust/retro delta tables
+  (0,-1)(+2,0)(0,+1)(-2,0) and their negation, the +/-8 velocity clamp,
+  the coarse-4 flight heading vs the fine 27-frame render index, fuel costs
+  5/5/2/fire, the star/dock/collide hazards, and PLR_VESSELS as the ONLY
+  bridge to CAS at $14=20) and "Character generation: the point-buy" (the
+  six 16-bit stats at PLR_HITS+2i, pool 30 floor 10 ceiling 25, the
+  race/class bonus deltas applied AFTER point-buy with NO ceiling re-check
+  so a Dwarf Fighter can reach 40 STR, sex cosmetic, derived values from
+  GAME_IMAGE so starting level = 1). ALL CONSTANTS VERIFIED FIRSTHAND from
+  the assembly (THRUST_DX/DY, RETRO_DX/DY, CLAMP_VEL, FUEL_BURN costs,
+  POINT_POOL/floor/ceiling, the hardcoded PICK_RACE/PICK_CLASS deltas) --
+  not taken on trust from the scout, which had a couple of self-flagged
+  ambiguities (the star "drains shield" doc-vs-code; corrected to a warning).
+- Prose-only; all 16 targets byte-perfect (16/16); hygiene fully green
+  (0 stubs/TODO-SYM/missing-plates(348)/placement/raw-hex); PDF 1008 pages
+  (was 1005), 0 LaTeX errors, 0 genuinely-undefined references (the only
+  warnings are the pre-existing benign font-substitution + multiply-defined
+  @ %def-overlap, unchanged -- my edit added 0 new labels). verbatim
+  pseudocode blocks exempt from address-wrapping as established.
+- REMAINING optional polish: only the Round-7-style reorganization
+  (promote the 5 synthesis chapters into \part{Design} ahead of a
+  \part{Implementation}) -- evaluate whether it cleanly improves the doc,
+  skip if risky. After that the document has nothing valuable left to do.
+
 ### Round 30 (2026-06-13): Synthesis -- the Porting notes chapter (all 6 types done)
 
 - Fifth synthesis chapter: \chapter{Porting notes: the 6502 idioms}
@@ -1071,13 +1115,17 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       a full actor-engine emulator + the live projection state, with no
       correctness guarantee -> would risk a broken render. Documented in prose +
       the HEX blob + the SHAPE_STEP/BLIT_LINE plates instead. See tm_subsystem.md.
-- [~] Synthesis chapters (the quality bar that makes the doc "done").
-      Started Round 26: the Architecture overview chapter (engine/overlay
-      model, GAME_LOAD dispatch, the mode template, shared state, the win
-      condition as a state machine, rendering overview). Still to write:
-      Data-structure reference, per-subsystem Algorithm descriptions,
-      Rendering pipeline, Porting notes. See the Round 26 milestone for
-      the priority order.
+- [x] Synthesis chapters (the quality bar that makes the doc "done").
+      DONE Rounds 26-30: all six synthesize-skill section types exist --
+      Architecture overview (ch:architecture), Data-structure reference
+      (ch:datastructures), Algorithm descriptions (ch:algorithms),
+      Rendering pipeline (ch:rendering), Porting notes (ch:porting).
+      Round 31 added the SPA flight-model and chargen point-buy sections
+      to ch:algorithms (the two deepest remaining algorithm gaps).
+- [ ] (optional) Round-7-style reorganization: promote the 5 synthesis
+      chapters into a \part{Design} ahead of a \part{Implementation} for
+      the assembly chapters. ONLY if it cleanly improves the document;
+      skip if it risks the green build. This is the last optional item.
 
 ## Structural
 
