@@ -74,8 +74,16 @@ FIGURES SO FAR (label -> chapter -> page at time of writing):
   "anatomy of a mode"), fig:npc-ai (TWN/CAS NPC states, ch:algorithms),
   fig:mondain-ai (Mondain's AI -- the FIRST Implementation-part targeted
   figure, beside MONDAIN_TURN in the TM chapter).
+- Round D3 (ch:datastructures, record/memory layouts): fig:playerblock (the
+  458-byte /U1.PLAYER save image via dgrecord), fig:soa (the 80-slot object
+  table as a structure-of-arrays grid -- plain TikZ + accent brace, NOT
+  dgrecord, because the SoA point is the transpose), fig:tcmap (the 764-byte
+  TCMAPS record via dgrecord). NOTE: \dgfield was refined this round -- height
+  is now CLAMPED (sqrt-compressed past 4 bytes, guarded max(span-4,0) because
+  pgfmath ternary evaluates BOTH branches so a bare sqrt(span-4) crashes on
+  span<4) and the byte size prints in a right column.
 
-PDF 1013 -> 1018 (D1) -> 1021 (D2) pages. 16/16 byte-perfect throughout.
+PDF 1013 -> 1018 (D1) -> 1021 (D2) -> 1023 (D3) pages. 16/16 byte-perfect.
 See TODO.md "Diagram campaign" for remaining per-subsystem coverage: the
 per-mode loop variants (OUT/DNG/SPA), the RLE decompressors, boot/overlay
 load flow, memory/record bytefield (dgrecord) layouts, engine-API/dispatch

@@ -154,13 +154,20 @@
   \end{tikzpicture}%
 }
 % \dgfield{<span>}{<label>}{<off-lo>}{<off-hi>}
+% Row height grows with the byte span but is CLAMPED so a big array does not
+% dominate the page: proportional up to ~4 bytes, compressed (sqrt-like)
+% beyond.  The span itself is printed at the right so the exact size is never
+% lost.  The offset gutter (off-lo..off-hi) sits at the left.
 \newcommand{\dgfield}[4]{%
-  \pgfmathsetmacro{\dgh}{#1*\dgrowunit/1mm}%
+  \pgfmathsetmacro{\dgh}{(#1<=4 ? #1 : 4+sqrt(max(#1-4,0)))*\dgrowunit/1mm}%
   \node[dgfld, minimum height=\dgh mm, anchor=north west]
         at (0,\dglasty mm) {#2};%
   \node[font=\tiny, anchor=east, draw=none, fill=none]
         at (-1mm,\dglasty mm - \dgh mm/2)
         {\ifnum#3=#4 +#3\else +#3..#4\fi};%
+  \node[font=\tiny, anchor=west, draw=none, fill=none, text=dgline]
+        at (\dgrecordwidth + 2mm,\dglasty mm - \dgh mm/2)
+        {\ifnum#1=1 1 byte\else #1 bytes\fi};%
   \pgfmathsetmacro{\dgnexty}{\dglasty-\dgh}%
   \xdef\dglasty{\dgnexty}%
 }
@@ -782,6 +789,43 @@ struct PlayerBlock {            // at PLR_SAVE; 458 bytes; = /U1.PLAYER
 };
 \end{verbatim}
 
+Figure~\ref{fig:playerblock} draws the same record as a byte-layout map,
+grouped into its logical bands. The row heights reflect the byte spans (so
+the four owned-item arrays in the middle read as the bulk of the record),
+and the byte offsets run down the left gutter. This is the on-disk
+\texttt{/U1.PLAYER} image exactly --- a port that lays out its save file in
+this order interoperates with the original.
+
+\begin{figure}[ht]
+\centering
+\begin{dgrecord}
+  \dgfield{2}{length = 0x01CA}{0}{1}
+  \dgfield{6}{continent, audio, OUT x/y}{2}{7}
+  \dgfield{4}{OWNED\_GEMS [4]}{8}{11}
+  \dgfield{4}{readied spell/weapon/armour/transport}{12}{15}
+  \dgfield{6}{OWNED\_ARMOUR [6]}{16}{21}
+  \dgfield{16}{OWNED\_WEAPONS [16]}{22}{37}
+  \dgfield{11}{OWNED\_SPELLS [11]}{38}{48}
+  \dgfield{11}{OWNED\_TRANSPORT [11]}{49}{59}
+  \dgfield{8}{QUEST\_FLAGS [8]}{60}{67}
+  \dgfield{6}{COURT\_CELLS, TM\_REVEAL, vessels, sex}{68}{73}
+  \dgfield{14}{PLR\_NAME [14]}{74}{87}
+  \dgfield{2}{PLR\_HITS}{88}{89}
+  \dgfield{12}{attributes STR/AGI/STA/CHA/WIS/INT}{90}{101}
+  \dgfield{6}{PLR\_COIN, PLR\_RACE, PLR\_CLASS}{102}{107}
+  \dgfield{11}{MOVE\_CNT [10] + FOOD\_FRAC (BCD)}{108}{118}
+  \dgfield{4}{PLR\_FOOD, PLR\_EXP}{119}{122}
+  \dgfield{6}{reserved, PLR\_PLACE, PLR\_LASTMARK}{123}{128}
+\end{dgrecord}
+\caption{The player block as a byte-layout map --- the byte image of
+  \texttt{/U1.PLAYER}, abbreviated past the fixed header through the vitals
+  (object records follow). Row height tracks byte span; offsets are at the
+  left, sizes at the right. Saving the game is one block-write of these
+  bytes, so this layout \emph{is} the save format. Quantities are 16-bit
+  little-endian binary; only [[MOVE_CNT]] and [[FOOD_FRAC]] are BCD.}
+\label{fig:playerblock}
+\end{figure}
+
 \noindent Field notes and invariants:
 
 \begin{description}
@@ -825,6 +869,43 @@ struct ObjectRecords {          // max 80 slots, OBJ_COUNT live
   u8   hp[80];                  // OBJ_HP: hit points (in UNSAVED RAM)
 };
 \end{verbatim}
+
+Figure~\ref{fig:soa} shows why this is a \emph{structure of arrays} rather
+than an array of structures: the five fields are five separate arrays, and
+one logical object is a \emph{column} read at the same slot index across
+all of them (the highlighted slot~$k$). The 6502 reads field~$f$ of
+slot~$k$ as \texttt{ARRAY\_f[k]} --- one indexed load --- which is why the
+layout is transposed from the C-struct intuition.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, node distance=0pt, font=\footnotesize]
+  \def\cw{17mm}
+  \foreach \name/\i in {OBJ\_X/0, OBJ\_YC/1, OBJ\_TILE/2, OBJ\_UNDER/3, OBJ\_HP/4} {
+    % header
+    \node[dgmemblock, fill=dgproc, minimum width=\cw, minimum height=6mm,
+          font=\scriptsize\ttfamily] (h\i) at (\i*\cw,0) {\name};
+    % slots 0..2, k, .., 79  (show a few + the highlighted k + ellipsis)
+    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (a\i) at (\i*\cw,-6mm) {[0]};
+    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (b\i) at (\i*\cw,-11mm) {[1]};
+    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (c\i) at (\i*\cw,-16mm) {\vdots};
+    \node[dgmemblock, fill=dgdeci, minimum width=\cw, minimum height=5mm] (k\i) at (\i*\cw,-21mm) {[k]};
+    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (d\i) at (\i*\cw,-26mm) {\vdots};
+    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (e\i) at (\i*\cw,-31mm) {[79]};
+  }
+  % bracket the highlighted row = one logical object
+  \draw[dgaccent, very thick, decorate, decoration={brace, amplitude=4pt, mirror}]
+        ($(k0.south west)+(0,-1.5mm)$) -- ($(k4.south east)+(0,-1.5mm)$)
+        node[midway, below=2.5mm, font=\scriptsize\itshape, text=dgaccent]
+        {one object = slot $k$ read across all five arrays};
+\end{tikzpicture}
+\caption{The 80-slot object table as a structure of arrays. Each named
+  field is its own array; one logical object is a column at a common slot
+  index (highlighted slot~$k$). [[OBJ_COUNT]] gives the live slot count,
+  [[OBJ_YC]] folds the continent into its top two bits, and [[OBJ_HP]] lives
+  in unsaved RAM. Towns and castles use the same shape with 16 slots.}
+\label{fig:soa}
+\end{figure}
 
 \noindent Invariants and behaviour:
 
@@ -871,6 +952,30 @@ struct TownCastleMap {          // 764 bytes; copied to TOWN_MAP on entry
   u8   npc_hp_hi[16];           //               high byte
 };
 \end{verbatim}
+
+Figure~\ref{fig:tcmap} draws the 764-byte record: the 684-byte displayed
+grid dominates, and the five 16-entry NPC arrays sit packed at offset~684
+(another structure of arrays, like the outdoor object records). On entry
+the overlay copies the whole record into the live buffer at [[TOWN_MAP]] and
+plays from there.
+
+\begin{figure}[ht]
+\centering
+\begin{dgrecord}
+  \dgfield{18}{cells[38 x 18] -- the displayed grid, row-major}{0}{683}
+  \dgfield{2}{NPC\_TYPE [16]}{684}{699}
+  \dgfield{2}{NPC\_X [16]}{700}{715}
+  \dgfield{2}{NPC\_Y [16]}{716}{731}
+  \dgfield{2}{npc\_hp\_lo [16]}{732}{747}
+  \dgfield{2}{npc\_hp\_hi [16]}{748}{763}
+\end{dgrecord}
+\caption{The 764-byte town/castle record (\texttt{TCMAPS}), copied to the
+  live buffer [[TOWN_MAP]] on entry. The 684-byte $38\times18$ glyph grid is
+  the bulk; the five 16-entry NPC arrays at offset~684 are a structure of
+  arrays (kind, grid x, grid y, and 16-bit hit points split lo/hi). Row
+  heights here are schematic --- the grid is far larger than the table.}
+\label{fig:tcmap}
+\end{figure}
 
 \noindent Notes:
 

@@ -9,6 +9,34 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D3 (2026-06-13): Memory/record bytefield layouts (data-structure chapter)
+
+- Exercised the plain-TikZ bytefield substitute (dgrecord/\dgfield) on the
+  three persistent structures, all in ch:datastructures:
+  * fig:playerblock -- the 458-byte player block / /U1.PLAYER save image as a
+    byte-layout map (logical bands, offset gutter, size column, row height
+    tracking span so the 4 owned-item arrays read as the bulk). Page 30.
+  * fig:soa -- the 80-slot object table drawn as a STRUCTURE OF ARRAYS (5
+    named field-arrays as columns, one object = a highlighted slot-k row read
+    across all five, with an accent brace). Page 31. Plain-TikZ grid, not
+    dgrecord -- the SoA point is the transpose, which a vertical stack hides.
+  * fig:tcmap -- the 764-byte TCMAPS town/castle record (684-byte grid + the
+    5x16 NPC arrays at offset 684). Page 33.
+- Refined \dgfield: row height now grows with span but is CLAMPED
+  (proportional to ~4 bytes, sqrt-compressed beyond, guarded with
+  max(span-4,0) so pgfmath never sqrt's a negative -- the ternary evaluates
+  both branches), and the exact byte size is printed in a right column so it
+  is never lost. The clamp keeps a 458-byte record compact on the page.
+- All faithful to the verbatim structs already in the chapter (same field
+  names/offsets); diagrams COMPLEMENT the structs, they don't replace them.
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs; all 3 labels resolve + \ref'd. PDF 1021 -> 1023 pages.
+  (The \dgfield macro change did not disturb the D1/D2 figures.)
+- NEXT: the engine-API/dispatch CALL GRAPHS (STUPH jump-vector table, the
+  patched-JSR dispatch, overlay<->engine call directions); the per-mode loop
+  VARIANTS (OUT/DNG/SPA); the RLE decompressors; boot/overlay-load flow; the
+  rendering-pipeline diagrams (double-buffer flip, ray-marcher slice loop).
+
 ### Round D2 (2026-06-13): AI state diagrams + universal mode-loop flowchart
 
 - Continued the diagram campaign with 3 figures across BOTH parts:
@@ -1255,12 +1283,12 @@ Priority families (do in this rough order):
 - [ ] (b cont.) boot/overlay-load flow: the boot chain (PROM->boot block->
       ProDOS->U1.SYSTEM->U1.INTRO->engine+overlay) as a sequence/flow
       diagram (ch:boot/ch:architecture); the GAME_LOAD dispatch as a flow.
-- [ ] memory/disk maps + dgrecord bytefield layouts: the resident memory map
-      (have tab:memmap-arch as a table -- consider a bytefield/blocks
-      version); the PlayerBlock save format (ch:datastructures struct);
-      object-record structure-of-arrays; TCMAPS 764-byte record; the $B400
-      live map buffer (grid + 5 NPC arrays at offset 684). Use dgrecord/
-      \dgfield (bytefield is NOT installed -- see diagram-infrastructure.md).
+- [~] memory/disk maps + dgrecord bytefield layouts: PlayerBlock
+      (fig:playerblock), object-record SoA (fig:soa), TCMAPS 764-byte record
+      (fig:tcmap) all DONE round D3. STILL TODO: a bytefield/blocks version of
+      the resident MEMORY MAP (have tab:memmap-arch as a table) and a
+      DISK-LAYOUT diagram (the boot chain / ProDOS file load order); the
+      $B400 live map buffer is covered by fig:tcmap (it IS the copied record).
 - [ ] engine-API / dispatch call graphs (manual TikZ layout): the STUPH
       jump-vector table + who-calls-what; the patched-JSR command dispatch;
       overlay -> engine call directions.
