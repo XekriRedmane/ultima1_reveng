@@ -9,6 +9,37 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D5 (2026-06-13): Rendering-pipeline diagrams (ch:rendering)
+
+- Four conceptual figures, all in ch:rendering (Design part) -- the first
+  figures in that chapter:
+  * fig:pageflip -- the two-page XOR double-buffer flip: ZP_PAGE_XOR
+    high-byte XOR ($00/$60) retargets every write; PAGE_FLIP = FRAME_SYNC ->
+    show drawn page -> XOR ZP_PAGE_TGL to swap. Inserted after the "Two
+    display pages, flipped" paragraph.
+  * fig:tileblit -- the DRAW_MAP 19x9 tile-viewport blit as a nested-loop
+    flowchart (terrain pass, then object/NPC overlay, then player tile).
+    After the draw_viewport pseudocode.
+  * fig:raymarch -- the DNG_DRAW ray-marcher slice loop (step forward,
+    probe ahead+/-90 sides, draw_slice from DNG_GEOM[depth], SHAPE_DRAW
+    monsters halved per depth, stop at solid/VIEW_DEPTH). Cross-refs
+    fig:dng-gen. In the wireframe subsection.
+  * fig:sprite -- the SPA/TM BLIT_SHAPE_AT sprite path (project -> pick
+    frame -> SHAPE_PRESHIFT -> DRAW_MODE selects XOR draw/erase pass with
+    ZP_BLIT_HIT collision vs OR/AND copy pass). Cross-refs fig:pageflip.
+- All faithful to the asm: fig:pageflip from PAGE_FLIP/PAGE_COPY/VIEW_CLEAR
+  (the EOR ZP_PAGE_XOR idiom + FRAME_SYNC + TXTPAGE soft switch + the
+  ZP_PAGE_TGL swap); fig:raymarch from the DNG_DRAW pseudocode + the
+  +/-90 integer-swap rotation; fig:sprite from BLIT_SHAPE_AT's two unrolled
+  passes (DRAW_MODE bit6 = XOR+collision EOR write, BLIT_OP/BLIT_EOR copy).
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs; all 4 labels resolve + are \ref'd from prose. PDF
+  1026 -> 1030 pages.
+- NEXT: the two makeindata RLE decompressors as flowcharts; the per-mode
+  loop variants (OUT/DNG/SPA); the remaining structural call/memory graphs
+  (STUPH jump-vector table, overlay->engine directions, GAME_LOAD
+  internals, resident memory map + disk layout).
+
 ### Round D4 (2026-06-13): Dispatch call graph + boot/overlay-load flow
 
 - Two structural diagrams:
@@ -1323,10 +1354,10 @@ Priority families (do in this rough order):
       STUPH jump-vector table + who-calls-what; the overlay -> engine call
       directions (the engine never calls a specific overlay -- a porting
       point worth a diagram).
-- [ ] rendering-pipeline diagrams (ch:rendering): the two-page XOR
-      double-buffer flip; the tile-viewport blit; the ray-marcher slice loop
-      (companion to fig:dng-gen); the SPA/TM projected-vector + XOR-sprite
-      path.
+- [x] rendering-pipeline diagrams (ch:rendering): the two-page XOR
+      double-buffer flip (fig:pageflip); the tile-viewport blit (fig:tileblit);
+      the ray-marcher slice loop (fig:raymarch, companion to fig:dng-gen);
+      the SPA/TM projected-vector + XOR-sprite path (fig:sprite). DONE round D5.
 
 Coverage by subsystem (figures so far): architecture (mode-fsm, win-fsm),
 algorithms (dng-gen, combat). REMAINING with no figure yet: boot/intro,
