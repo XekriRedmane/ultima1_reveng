@@ -9,6 +9,35 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D7 (2026-06-13): Per-mode main-loop variants (OUT/DNG/SPA)
+
+- Three targeted loop-variant flowcharts in the Implementation part, each
+  beside its overlay's main loop, each distinct from the generic
+  fig:mode-loop in dispatch + tick contents:
+  * fig:out-loop -- OUT_MAIN: reset stack/prompt -> STATS_VALUES -> death
+    gate (hits=0 OR food=0 -> DEATH) -> KEY_OR_IDLE -> idle (food -0.05,
+    time +0.50, TURN_PASS) or cmd (GET_COMMAND -> CMD_TBL -> patch
+    DISPATCH_VEC -> JSR) -> TURN_PASS -> loop. After the OUT_MAIN chunk.
+  * fig:dng-loop -- DNG_MAIN: DNG_DRAW redraw at top (accent-highlighted)
+    -> death gate -> DNG_PROMPT (idle cheaper 0.01/0.10, MON_TURNS each
+    beat, FIGHT_FLAG re-prompt) -> DNG_CMDS patched JSR -> MON_TURNS -> loop.
+    After the DNG_CMDS table.
+  * fig:spa-loop -- SPA_LOOP: status -> KEY_GET (timeout -> straight to
+    PHYSICS) -> SPEND_TURN/GET_COMMAND -> flight cmd (idx<8) gated on fuel
+    -> DISPATCH_PATCH self-modified JMP (tail jump, NOT JSR) -> PHYSICS
+    (torus integrate + dock/collide/star hazard, continuous, no discrete
+    tick) -> loop. After the spa main loop chunk; added a short intro para.
+- All faithful to the asm (read OUT_MAIN, DNG_MAIN+DNG_PROMPT, SPA_LOOP+
+  PHYSICS firsthand): the idle food/time costs, the DNG top-of-turn redraw,
+  the SPA tail-jump dispatch + fuel gate + continuous physics. dgaccentnode
+  must be LAYERED on a base style (dgprocess, dgaccentnode) -- alone it sets
+  only the draw colour and triggers a "missing \item" error.
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs; all 3 labels resolve + \ref'd. PDF 1032 -> 1033 pages.
+- NEXT: the remaining structural call/memory graphs (STUPH jump-vector
+  table, overlay->engine call directions, GAME_LOAD internals flow,
+  resident memory map + disk track/sector layout).
+
 ### Round D6 (2026-06-13): The two makeindata RLE decompressors as flowcharts
 
 - Two targeted flowcharts in the MAKE.INDATA section (sec:makeindata,
@@ -1356,10 +1385,13 @@ Priority families (do in this rough order):
       combat resolution (fig:combat). DONE round D1.
 - [x] (a cont.) monster/NPC AI state diagrams: TWN/CAS idle-anim NPC states
       (fig:npc-ai) + Mondain's AI (fig:mondain-ai). DONE round D2.
-- [~] (b cont.) per-mode main-loop flowcharts: the GENERIC template is DONE
-      (fig:mode-loop, ch:architecture, round D2). STILL TODO: targeted
-      variants beside the OUT / DNG / SPA loops in the Implementation part
-      (each differs only in dispatch + tick contents).
+- [x] (b cont.) per-mode main-loop flowcharts: the GENERIC template
+      (fig:mode-loop, ch:architecture, round D2) PLUS the three targeted
+      variants -- fig:out-loop (OUT: hits+food death gate, idle 0.05/0.50,
+      TURN_PASS, CMD_TBL patched JSR), fig:dng-loop (DNG: DNG_DRAW redraw at
+      top, idle 0.01/0.10 + MON_TURNS each beat, DNG_CMDS), fig:spa-loop
+      (SPA: no discrete tick, continuous PHYSICS, fuel-gated flight cmds,
+      tail-jump JMP dispatch). DONE round D7.
 - [x] (b cont.) the two RLE decompressors (makeindata MI_DECODE column-major
       RLE state machine = fig:mi-decode + the $8700 high-bit RLE = fig:mi-payload;
       makeindata_subsystem.md) as flowcharts, in the MAKE.INDATA section.

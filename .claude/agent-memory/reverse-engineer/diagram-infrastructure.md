@@ -44,6 +44,11 @@ augmentation phase. Diagrams are conceptual in the Design part and targeted
   * memory: dgmemblock; plus dgrecord/\dgfield above.
   Every tikzpicture opens with [dg, >=Stealth] to get the shared defaults
   (dark-grey Stealth arrowheads, footnotesize). Pass node distance per-fig.
+  PITFALL: dgaccentnode and dgaccentedge set ONLY draw=dgaccent+thick (no
+  shape/fill/align). dgaccentedge is fine on a \draw. But dgaccentnode must
+  be LAYERED on a base node style -- write [dgprocess, dgaccentnode] (or
+  dgmode/dgstate + dgaccentnode). Used alone on a \node it has no shape and
+  pdflatex dies with "Something's wrong--perhaps a missing \item."
 
 - QUALITY BAR (non-negotiable, enforced every round): clean 2-pass
   pdflatex (0 errors, 0 NEW undefined refs); every diagram is a float with

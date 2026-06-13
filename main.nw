@@ -11573,7 +11573,7 @@ STASH_DST = *+2
 
 The main loop is four steps: print the prompt, wait for a key
 (idle turns happen by themselves), dispatch the command, then let
-the world act. Dispatch is a self-modified [[JSR]]:
+the world act (Figure~\ref{fig:out-loop}). Dispatch is a self-modified [[JSR]]:
 [[GET_COMMAND]] returns X = twice the command index, the handler's
 address is copied from [[CMD_TBL]] into [[DISPATCH_VEC]], and the
 patched [[JSR]] calls it. (On disk the operand rests at
@@ -11633,6 +11633,38 @@ DISPATCH_VEC = *+1
         JMP OUT_MAIN
 .dead   JSR DEATH
 @ %def OUT_MAIN DISPATCH_VEC
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=5.5mm and 14mm]
+  \node[dgterminal] (entry) {OUT\_MAIN\\\scriptsize reset stack, prompt};
+  \node[dgprocess, below=of entry] (stats) {STATS\_VALUES};
+  \node[dgdecision, below=of stats] (dead) {hits = 0\\or food = 0?};
+  \node[dgterminal, right=20mm of dead] (death) {DEATH\\\scriptsize reload OUT -> RESURRECT};
+  \node[dgio, below=of dead] (poll) {KEY\_OR\_IDLE};
+  \node[dgprocess, below right=7mm and 2mm of poll] (idle)
+        {idle tick:\\food $-$0.05, time $+$0.50\\TURN\_PASS};
+  \node[dgsub, below left=7mm and 2mm of poll] (disp)
+        {GET\_COMMAND -> CMD\_TBL\\patch DISPATCH\_VEC, JSR};
+  \node[dgprocess, below=20mm of poll] (world) {TURN\_PASS\\\scriptsize the world acts};
+
+  \draw[->] (entry)--(stats); \draw[->] (stats)--(dead);
+  \draw[->] (dead) -- node[dgnote,above]{yes} (death);
+  \draw[->] (dead) -- node[dgnote,left]{no} (poll);
+  \draw[->] (poll) -- node[dgnote,right]{timeout} (idle);
+  \draw[->] (poll) -- node[dgnote,left]{key} (disp);
+  \draw[->] (disp) |- (world);
+  \draw[->] (idle.south) |- (stats.west);
+  \draw[->] (world) -- ($(world.south)+(0,-4mm)$) -| ($(entry.west)+(-8mm,0)$) |- (stats.west);
+\end{tikzpicture}
+\caption{The \texttt{OUT} turn loop, a specialization of the universal
+  template (Figure~\ref{fig:mode-loop}). Outdoors the death test guards
+  both hit points \emph{and} food at the top of every turn; an idle turn
+  costs $0.05$ food and $0.50$ time and still runs the world
+  ([[TURN_PASS]]); commands dispatch through [[CMD_TBL]] by patching
+  [[DISPATCH_VEC]]. The world always acts once per lap, key or not.}
+\label{fig:out-loop}
+\end{figure}
 
 \section{OUT: death and resurrection}
 
@@ -21560,9 +21592,10 @@ DNG_GEN SUBROUTINE
 
 \section{DNG: the main loop}
 
-The turn loop has the same skeleton as \texttt{OUT} --- prompt,
-poll, dispatch through a table by patching a \texttt{JSR} --- with
-two dungeon twists. First, the whole view is redrawn at the top of
+The turn loop has the same skeleton as \texttt{OUT}
+(Figure~\ref{fig:out-loop}) --- prompt, poll, dispatch through a table by
+patching a \texttt{JSR} --- with two dungeon twists
+(Figure~\ref{fig:dng-loop}). First, the whole view is redrawn at the top of
 every turn ([[DNG_DRAW]]), because almost any command can change
 what the corridor looks like. Second, the idle turn is cheaper
 than outdoors: food burns at $0.01$ and the clock at $0.10$ per
@@ -21702,6 +21735,39 @@ DNG_CMDS
         DC.W QUERY_MARK                 ; 24 X-it
         DC.W ZTATS_CMD                  ; 25 Ztats
 @ %def DNG_MAIN DNG_VEC DNG_CMDS
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=5.5mm and 14mm]
+  \node[dgterminal] (entry) {DNG\_MAIN};
+  \node[dgprocess, dgaccentnode, below=of entry] (draw) {DNG\_DRAW\\\scriptsize redraw the whole view};
+  \node[dgdecision, below=of draw] (dead) {hits = 0\\or food = 0?};
+  \node[dgterminal, right=20mm of dead] (death) {DNG\_DEATH};
+  \node[dgio, below=of dead] (poll) {DNG\_PROMPT\\\scriptsize poll (KEY\_SHORT)};
+  \node[dgprocess, right=20mm of poll] (idle)
+        {idle tick:\\food $-$0.01, time $+$0.10\\MON\_TURNS each beat};
+  \node[dgsub, below=of poll] (disp)
+        {GET\_COMMAND -> DNG\_CMDS\\patch DNG\_VEC, JSR};
+  \node[dgprocess, below=of disp] (mon) {MON\_TURNS\\\scriptsize monsters move};
+
+  \draw[->] (entry)--(draw); \draw[->] (draw)--(dead);
+  \draw[->] (dead) -- node[dgnote,above]{yes} (death);
+  \draw[->] (dead) -- node[dgnote,left]{no} (poll);
+  \draw[->] (poll) -- node[dgnote,above]{timeout} (idle);
+  \draw[->] (poll) -- node[dgnote,left]{key} (disp);
+  \draw[->] (idle.south) -- ($(idle.south)+(0,-3mm)$) -| (poll.north);
+  \draw[->] (disp)--(mon);
+  \draw[->] (mon.west) -- ($(mon.west)+(-9mm,0)$) |- (draw.west);
+\end{tikzpicture}
+\caption{The \texttt{DNG} turn loop. Two dungeon twists distinguish it from
+  the outdoor loop (Figure~\ref{fig:out-loop}): the entire first-person
+  view is redrawn at the top of every turn ([[DNG_DRAW]], highlighted),
+  because almost any command changes the corridor; and the idle turn is
+  cheaper ($0.01$ food, $0.10$ time) but the monsters still take a turn
+  ([[MON_TURNS]]) every idle beat. Dispatch is the same patched-[[JSR]]
+  idiom, through [[DNG_CMDS]].}
+\label{fig:dng-loop}
+\end{figure}
 
 \section{DNG: turning and walking}
 
@@ -25820,6 +25886,11 @@ LIFTOFF_COUNT
         JSR DRAW_ALL_ACTORS
 @
 
+The space loop is the one mode that genuinely breaks the universal template
+(Figure~\ref{fig:mode-loop}): it has no discrete end-of-turn tick, only the
+continuous [[PHYSICS]] step, and it dispatches by patching a [[JMP]] (a tail
+jump) instead of a [[JSR]]. Figure~\ref{fig:spa-loop} draws it.
+
 <<spa main loop>>=
         ORG $8A53
 SPA_LOOP
@@ -25861,6 +25932,45 @@ DISPATCH_PATCH
 DISP_OP = *+1
         JMP SPA_LOOP
 @
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=5.5mm and 14mm]
+  \node[dgterminal] (entry) {SPA\_LOOP};
+  \node[dgprocess, below=of entry] (status) {Shld$|$Fuel status};
+  \node[dgio, below=of status] (poll) {KEY\_GET};
+  \node[dgprocess, below=of poll] (spend) {SPEND\_TURN\\GET\_COMMAND};
+  \node[dgdecision, below=of spend] (flight) {flight cmd\\(index $<$ 8)?};
+  \node[dgdecision, right=18mm of flight] (fuel) {fuel $>$ 0?};
+  \node[dgnote, right=14mm of fuel] (nofuel) {"No fuel!!"};
+  \node[dgsub, below=of flight] (disp)
+        {patch DISP\_OP from DISPATCH\_TBL\\\scriptsize JMP (tail-jump dispatch)};
+  \node[dgprocess, right=20mm of disp] (phys)
+        {PHYSICS\\\scriptsize integrate ZP\_VX/VY into\\SHIP\_X/Y on the torus;\\dock / collide / star hazard};
+
+  \draw[->] (entry)--(status); \draw[->] (status)--(poll);
+  \draw[->] (poll) -- node[dgnote,left]{key} (spend);
+  \draw[->] (poll.east) -- node[dgnote,above]{none} ($(poll.east)+(40mm,0)$) |- (phys.north);
+  \draw[->] (spend)--(flight);
+  \draw[->] (flight) -- node[dgnote,above]{yes} (fuel);
+  \draw[->] (flight) -- node[dgnote,left]{no} (disp);
+  \draw[->] (fuel) -- node[dgnote,left]{yes} (disp);
+  \draw[->] (fuel) -- node[dgnote,above]{no} (nofuel);
+  \draw[->] (nofuel) |- (phys.north);
+  \draw[->] (disp) -- (phys);
+  \draw[->] (phys.south) -- ($(phys.south)+(0,-4mm)$) -| ($(entry.east)+(34mm,0)$) |- (status.east);
+\end{tikzpicture}
+\caption{The \texttt{SPA} main loop --- the one that breaks the template
+  (Figure~\ref{fig:mode-loop}). There is no discrete end-of-turn tick:
+  every lap runs [[PHYSICS]], which integrates the velocity vector into the
+  ship position on a wrapping torus and resolves the docking, collision,
+  and star hazards in real time. A keypress that decodes to a flight
+  command (index $< 8$) is first gated on remaining fuel; dispatch
+  self-modifies a [[JMP]] (a tail jump, not a [[JSR]]), so the handlers
+  return by jumping back into the loop. A timeout simply runs the physics
+  with no command.}
+\label{fig:spa-loop}
+\end{figure}
 
 <<spa physics>>=
         ORG $8AB3
