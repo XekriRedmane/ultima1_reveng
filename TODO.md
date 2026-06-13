@@ -9,6 +9,54 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D1 (2026-06-13): Diagram campaign begun -- infrastructure + 4 marquee figures
+
+- NEW WORK PHASE (decided with the user): lean the doc INTO TikZ
+  diagrams/flowcharts that augment the prose. TikZ/PGF only (no
+  graphviz/mermaid -- can't install without root; TikZ is the right fit for a
+  LaTeX print doc anyway), builds with stock TeX Live for reproducibility.
+- INFRASTRUCTURE (the foundation every later round reuses): added a
+  documented shared-diagram block to main.nw's preamble (right after the
+  existing tikz line -- NOT noweb.sty, which loads before tikz and is a
+  vendored "don't edit" file; rationale recorded). Loaded shapes.misc,
+  automata, fit, chains, backgrounds. Defined a muted 8-colour palette and a
+  set of REUSABLE named tikzstyles: dgprocess/dgdecision/dgterminal/dgio/
+  dgsub/dgnote (flowchart), dgstate/dgmode/dgaccentedge/dgaccentnode (state
+  machine), dgmemblock (memory). bytefield is NOT installed and can't be
+  added without root, so I built a plain-TikZ substitute: the dgrecord
+  environment + \dgfield macro (a labelled vertical cell stack with an
+  offset gutter) -- to be used for record/memory layouts in later rounds.
+- 4 MARQUEE PRIORITY FIGURES authored (all in the Design part, all faithful
+  to the RE'd behavior derived from the asm + agent-memory subsystem notes):
+  * fig:mode-fsm -- the overall game as a 7-state machine over the overlays
+    (GEN start, OUT hub, the flag-gated CAS->TM win arrow highlighted, the
+    death->RESPAWN dashed path). In ch:architecture after the GAME_LOAD
+    dispatch paragraph.
+  * fig:win-fsm -- the SPA->CAS->TM win condition as a flag-GUARDED state
+    machine (gem loop in castles, kill loop in space, the highlighted spine
+    from rescue-the-princess -> TM_REVEAL -> destroy gem -> kill Mondain ->
+    VICTORIOUS). In the new-labelled sec:winfsm.
+  * fig:dng-gen -- the 5-pass procedural dungeon generator flowchart, with
+    pass-4's level-1/level-10 special cases as dashed decisions. In
+    ch:algorithms after the generator pseudocode.
+  * fig:combat -- the monster-AI/combat-resolution flowchart (tier-gated
+    spawn, fire-vs-close-vs-melee, to-hit vs armour, death frees slot +
+    grants tier exp). In ch:algorithms after the spawn/pursuit prose.
+- Every figure is a float with \caption + \label and is referenced from the
+  surrounding prose via Figure~\ref{} (the doc uses plain \ref, not
+  cleveref). All 4 labels + sec:winfsm resolve to real page numbers.
+- DIAGRAMS ARE PROSE-SIDE ONLY -- not one code chunk touched. Full gate
+  green: tangle clean, ALL 16 TARGETS BYTE-PERFECT (16/16), 2-pass pdflatex
+  0 errors / 0 undefined refs (only the pre-existing benign font-shape +
+  multiply-defined warnings remain, unchanged). PDF 1013 -> 1018 pages.
+- NEXT: comprehensive per-subsystem fill-in across BOTH parts (see the
+  "Diagram campaign" work-queue section). Priority families still to do:
+  AI/NPC state diagrams (TWN/CAS idle anim, Mondain's AI), per-mode main
+  loops, the RLE decompressors + boot/overlay-load flow flowcharts, then
+  memory/disk maps + dgrecord bytefield layouts (player block, object
+  arrays, TCMAPS, live map buffer), then engine-API/dispatch call graphs.
+  Targeted Implementation-part diagrams beside the routines they explain.
+
 ### Round 32 (2026-06-13): Final polish -- Design/Implementation \part split
 
 - The Round-7-style reorganization, evaluated and DONE because it cleanly
@@ -1153,6 +1201,55 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       assembly chapters. Purely additive (the chapters were already in the
       right order), zero content churn, both part labels resolve, both parts
       in the ToC. THIS WAS THE LAST OPTIONAL ITEM -- the document is complete.
+
+## Diagram campaign (rounds D1+)
+
+Lean the doc into TikZ diagrams/flowcharts. Infrastructure + styles are in
+main.nw's preamble (see diagram-infrastructure.md). Per-figure quality bar:
+clean 2-pass build, float + \caption + \label + \ref'd from prose, FAITHFUL
+to the asm (never invented), symbols not raw hex (except memory/disk maps),
+prose-side only (16/16 byte-perfect must stay green).
+
+Priority families (do in this rough order):
+
+- [x] (a) state machines & mode flow: overall mode FSM (fig:mode-fsm),
+      SPA->CAS->TM win FSM (fig:win-fsm). DONE round D1.
+- [x] (b) control-flow flowcharts: dungeon generator (fig:dng-gen),
+      combat resolution (fig:combat). DONE round D1.
+- [ ] (a cont.) monster/NPC AI state diagrams: TWN/CAS idle-anim NPC states
+      (empty/player-start/hostile-home-and-attack/wanderer per the TYPE
+      codes $00/$02/$03/$04 in twn_cas_subsystem.md); Mondain's AI
+      (approach/melee/cast his 3 spells, tm_subsystem.md).
+- [ ] (b cont.) per-mode main-loop flowcharts (the universal mode template:
+      entry -> status -> key-or-timeout -> dispatch -> tick -> loop; one
+      generic in ch:architecture, targeted variants beside OUT/DNG/TWN/SPA
+      loops in the Implementation part).
+- [ ] (b cont.) the two RLE decompressors (makeindata MI_DECOMP column-major
+      RLE + the $8700 high-bit RLE; makeindata_subsystem.md) as flowcharts,
+      beside the MAKE.INDATA section.
+- [ ] (b cont.) boot/overlay-load flow: the boot chain (PROM->boot block->
+      ProDOS->U1.SYSTEM->U1.INTRO->engine+overlay) as a sequence/flow
+      diagram (ch:boot/ch:architecture); the GAME_LOAD dispatch as a flow.
+- [ ] memory/disk maps + dgrecord bytefield layouts: the resident memory map
+      (have tab:memmap-arch as a table -- consider a bytefield/blocks
+      version); the PlayerBlock save format (ch:datastructures struct);
+      object-record structure-of-arrays; TCMAPS 764-byte record; the $B400
+      live map buffer (grid + 5 NPC arrays at offset 684). Use dgrecord/
+      \dgfield (bytefield is NOT installed -- see diagram-infrastructure.md).
+- [ ] engine-API / dispatch call graphs (manual TikZ layout): the STUPH
+      jump-vector table + who-calls-what; the patched-JSR command dispatch;
+      overlay -> engine call directions.
+- [ ] rendering-pipeline diagrams (ch:rendering): the two-page XOR
+      double-buffer flip; the tile-viewport blit; the ray-marcher slice loop
+      (companion to fig:dng-gen); the SPA/TM projected-vector + XOR-sprite
+      path.
+
+Coverage by subsystem (figures so far): architecture (mode-fsm, win-fsm),
+algorithms (dng-gen, combat). REMAINING with no figure yet: boot/intro,
+STUPH, MI.U1 engine, OUT, DNG renderer, TWN, CAS, SPA, GEN, TM, makeindata,
+data structures, rendering, porting. Lean in -- every subsystem that
+warrants a diagram should get one in both the Design and Implementation
+parts.
 
 ## Structural
 

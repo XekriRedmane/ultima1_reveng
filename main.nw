@@ -33,6 +33,137 @@
 
 \usepackage {tikz}
 \usetikzlibrary {positioning, shapes.geometric, shapes.multipart, svg.path, arrows.meta, quotes, calc, decorations.pathreplacing}
+\usetikzlibrary {shapes.misc, automata, fit, chains, backgrounds}
+
+% ======================================================================
+% Shared diagram infrastructure (the diagram campaign, round D1+).
+%
+% Every flowchart, state machine, memory map and call graph in this
+% document is built from the reusable named styles defined below, on a
+% single muted palette, so the figures look uniform throughout both the
+% Design part (conceptual diagrams) and the Implementation part (targeted
+% diagrams beside the routines they explain).
+%
+% Toolchain note: TikZ/PGF only (TeX Live, no shell-escape). The bytefield
+% package is NOT in this TeX Live install and cannot be added without root,
+% so record/struct layouts use the plain-TikZ \dgbytefield helpers defined
+% at the end of this block rather than the bytefield package. Everything
+% here builds with a stock TeX Live install for full reproducibility.
+% ======================================================================
+
+% --- Muted palette (all diagrams share these five fills + line/accent) ---
+\definecolor{dgproc}{HTML}{DCE6F1}   % process / action  (pale blue)
+\definecolor{dgdeci}{HTML}{FCE9CF}   % decision          (pale amber)
+\definecolor{dgterm}{HTML}{D9EAD3}   % terminal/start/end (pale green)
+\definecolor{dgio}{HTML}{EAD9F2}     % input / output     (pale violet)
+\definecolor{dgstate}{HTML}{E8E8E8}  % state / mode node  (neutral grey)
+\definecolor{dgmem}{HTML}{F2F2EA}    % memory block       (pale parchment)
+\definecolor{dgaccent}{HTML}{B03A2E} % accent (win path, hazards)  (brick)
+\definecolor{dgline}{HTML}{404040}   % all strokes        (dark grey)
+
+% --- Global picture defaults: dark-grey strokes, sleek arrowheads -------
+\tikzset{
+  dg/.style={
+    >={Stealth[length=2.2mm,width=1.6mm]},
+    line/.style={draw=dgline},
+    node distance=8mm and 14mm,
+    font=\footnotesize,
+    every node/.style={draw=dgline, thick},
+  },
+}
+
+% --- Reusable node styles (flowchart) -----------------------------------
+\tikzset{
+  dgprocess/.style={        % a process / action step
+    rectangle, rounded corners=1pt, draw=dgline, thick, fill=dgproc,
+    align=center, inner sep=4pt, minimum height=8mm, minimum width=22mm,
+    font=\footnotesize},
+  dgdecision/.style={       % a branch / test
+    diamond, aspect=2, draw=dgline, thick, fill=dgdeci,
+    align=center, inner sep=1pt, minimum width=22mm,
+    font=\footnotesize},
+  dgterminal/.style={       % start / end / entry / return
+    rounded rectangle, draw=dgline, thick, fill=dgterm,
+    align=center, inner sep=4pt, minimum height=7mm,
+    font=\footnotesize\bfseries},
+  dgio/.style={             % input / output (screen, key, disk, save)
+    trapezium, trapezium left angle=70, trapezium right angle=110,
+    draw=dgline, thick, fill=dgio, align=center, inner sep=3pt,
+    minimum height=7mm, font=\footnotesize},
+  dgsub/.style={            % call out to another routine / subsystem
+    rectangle, draw=dgline, thick, fill=dgproc, align=center,
+    inner sep=4pt, minimum height=8mm, minimum width=22mm,
+    font=\footnotesize, double distance=1.2pt,
+    append after command={
+      \pgfextra{\draw[dgline,thick]
+        ([xshift=2.4pt]\tikzlastnode.north west)--
+        ([xshift=2.4pt]\tikzlastnode.south west);
+        \draw[dgline,thick]
+        ([xshift=-2.4pt]\tikzlastnode.north east)--
+        ([xshift=-2.4pt]\tikzlastnode.south east);}}},
+  dgnote/.style={           % side annotation, no border
+    draw=none, fill=none, align=left, font=\scriptsize\itshape,
+    text=dgline},
+}
+
+% --- Reusable node styles (state machine / mode flow) -------------------
+\tikzset{
+  dgstate/.style={          % a game mode / AI state
+    circle, draw=dgline, thick, fill=dgstate, align=center,
+    inner sep=2pt, minimum size=13mm, font=\footnotesize},
+  dgmode/.style={           % a mode node drawn as a soft box (mode flow)
+    rectangle, rounded corners=2pt, draw=dgline, thick, fill=dgstate,
+    align=center, inner sep=4pt, minimum height=9mm, minimum width=20mm,
+    font=\footnotesize},
+  dgaccentedge/.style={     % the win path / critical transition
+    draw=dgaccent, very thick},
+  dgaccentnode/.style={     % a node on the win path
+    draw=dgaccent, very thick},
+}
+
+% --- Reusable node styles (memory / record layout) ----------------------
+\tikzset{
+  dgmemblock/.style={       % one block in a memory map
+    rectangle, draw=dgline, thick, fill=dgmem, align=center,
+    inner sep=3pt, minimum height=8mm, font=\footnotesize},
+}
+
+% --- Plain-TikZ "bytefield": a struct/record drawn as a stack of cells. -
+% The bytefield package is unavailable in this TeX Live (see note above),
+% so records and memory maps are drawn as a vertical stack of labelled
+% boxes with the \dgrecord environment.  Each \dgfield is one field; its
+% height is proportional to its byte span so big regions read as big.
+% Usage:
+%   \begin{dgrecord}
+%     \dgfield{2}{own length}{0}{1}      % {span}{label}{off-lo}{off-hi}
+%     \dgfield{1}{race}{2}{2}
+%     ...
+%   \end{dgrecord}
+% {span} scales the row height; {off-lo}/{off-hi} are printed as the byte
+% offset gutter at the left.  Offsets are the documented exception to the
+% address-wrapping rule (this is a layout table, like a memory map).
+\newlength{\dgrowunit}\setlength{\dgrowunit}{4.2mm}
+\newcommand{\dgrecordwidth}{42mm}
+\newsavebox{\dgrecordbox}
+\newenvironment{dgrecord}{%
+  \begin{tikzpicture}[dg, node distance=0pt, baseline=(current bounding box.north)]%
+    \tikzset{dgfld/.style={dgmemblock, text width=\dgrecordwidth,
+                           inner ysep=0pt, font=\scriptsize}}%
+    \def\dglasty{0}%
+}{%
+  \end{tikzpicture}%
+}
+% \dgfield{<span>}{<label>}{<off-lo>}{<off-hi>}
+\newcommand{\dgfield}[4]{%
+  \pgfmathsetmacro{\dgh}{#1*\dgrowunit/1mm}%
+  \node[dgfld, minimum height=\dgh mm, anchor=north west]
+        at (0,\dglasty mm) {#2};%
+  \node[font=\tiny, anchor=east, draw=none, fill=none]
+        at (-1mm,\dglasty mm - \dgh mm/2)
+        {\ifnum#3=#4 +#3\else +#3..#4\fi};%
+  \pgfmathsetmacro{\dgnexty}{\dglasty-\dgh}%
+  \xdef\dglasty{\dgnexty}%
+}
 
 \noweboptions {smallcode,longchunks}
 
@@ -270,6 +401,60 @@ never returns. A port can implement it as a state-machine transition ---
 \texttt{set\_mode(mode\_id)} that tears down the current mode and starts
 the next --- with no stack gymnastics.
 
+Because every mode change is one [[GAME_LOAD]] call, the whole game is a
+small state machine over the seven overlays. Figure~\ref{fig:mode-fsm}
+draws it: \texttt{GEN} (character generation) is the start state, all
+exploration radiates from \texttt{OUT} (outdoors), and the single
+win-path arrow \texttt{CAS}~$\to$~\texttt{TM} (highlighted) is the only
+transition gated on a progress flag rather than a terrain tile or a menu
+key --- the subject of section~\ref{sec:winfsm}.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=11mm and 17mm]
+  % start
+  \node[dgterminal] (gen) {GEN\\\scriptsize chargen};
+  % the hub
+  \node[dgmode, right=22mm of gen] (out) {OUT\\\scriptsize outdoors};
+  % satellites of OUT
+  \node[dgmode, above right=8mm and 16mm of out] (twn) {TWN\\\scriptsize town};
+  \node[dgmode, right=of out] (cas) {CAS\\\scriptsize castle};
+  \node[dgmode, below right=8mm and 16mm of out] (dng) {DNG\\\scriptsize dungeon};
+  \node[dgmode, below=14mm of out] (spa) {SPA\\\scriptsize space};
+  % endgame
+  \node[dgmode, dgaccentnode, right=18mm of cas] (tm) {TM\\\scriptsize endgame};
+
+  % GEN -> OUT (new game / continue)
+  \draw[->] (gen) -- node[dgnote, above, align=center]{new game\\/ continue} (out);
+
+  % OUT <-> satellites (enter via terrain tile; leave back to OUT)
+  \draw[->] (out) to[bend left=12] node[dgnote, above, sloped]{enter} (twn);
+  \draw[->] (twn) to[bend left=12] node[dgnote, below, sloped]{X-it} (out);
+  \draw[->] (out) to[bend left=8]  node[dgnote, above]{enter} (cas);
+  \draw[->] (cas) to[bend left=8]  node[dgnote, below]{X-it} (out);
+  \draw[->] (out) to[bend right=12] node[dgnote, below, sloped]{descend} (dng);
+  \draw[->] (dng) to[bend right=12] node[dgnote, above, sloped]{climb out} (out);
+  \draw[->] (out) to[bend right=10] node[dgnote, left]{lift off} (spa);
+  \draw[->] (spa) to[bend right=10] node[dgnote, right]{land} (out);
+
+  % the win path (accent)
+  \draw[->, dgaccentedge] (cas) -- node[dgnote, above, text=dgaccent,
+        align=center]{endgame flag\\(TM\_REVEAL)} (tm);
+
+  % death funnels back to OUT via RESPAWN (dashed, from the danger modes)
+  \draw[->, dashed] (dng.south) to[bend left=22]
+        node[dgnote, below, pos=0.4]{death = RESPAWN} (out.south east);
+  \draw[->, dashed] (spa.west) to[bend right=30] (out.south west);
+\end{tikzpicture}
+\caption{The game as a seven-state machine over the overlays. Every
+  transition is one [[GAME_LOAD]] call (it never returns; it abandons the
+  old mode's stack). \texttt{GEN} is the start state and \texttt{OUT} the
+  hub; solid arrows are terrain/menu transitions, dashed arrows the
+  death-to-[[RESPAWN]] path, and the single highlighted arrow is the
+  flag-gated win path to the endgame.}
+\label{fig:mode-fsm}
+\end{figure}
+
 \section{The anatomy of a mode}
 
 Every overlay is built to the same template, which makes the seven modes
@@ -357,6 +542,7 @@ both engine and overlays; these are working storage, not game state, and
 a port re-implements them however its host prefers.
 
 \section{The win condition, as a state machine}
+\label{sec:winfsm}
 
 The modes are not peers in a menu; they are wired into a specific
 progression that constitutes ``winning,'' and the linkage is entirely in
@@ -391,6 +577,77 @@ the win condition). The progression is data, not control flow --- which is
 why it survives the overlay swaps intact, and why a port can model the
 whole game as one shared state object that the mode modules read and
 write.
+
+Figure~\ref{fig:win-fsm} traces that flag plumbing as a state machine
+whose edges are guarded by the shared progress flags rather than by the
+mode the player happens to be in. Read it as ``the player wins when these
+flags reach these values, in this order'': the four [[OWNED_GEMS]] arrive
+from castle quests; [[PLR_VESSELS]] reaches twenty only in space;
+rescuing the princess with both in hand sets [[TM_REVEAL]]; and only then
+does the [[TM]] overlay's destroy-gem-then-kill sequence end the game.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=9mm and 13mm]
+  \node[dgterminal] (start) {new character};
+
+  % gem-gathering loop (castles)
+  \node[dgprocess, below=of start] (quests)
+        {complete castle quests\\\scriptsize (CAS quest system)};
+  \node[dgdecision, below=of quests] (gems)
+        {all four\\OWNED\_GEMS?};
+  \node[dgnote, right=2mm of gems] {prophecies reveal\\the win condition};
+
+  % space-ace counter (space)
+  \node[dgprocess, below left=10mm and 2mm of gems] (space)
+        {destroy enemy craft\\\scriptsize (SPA: HIT\_ENEMY)};
+  \node[dgdecision, below=of space] (ace)
+        {PLR\_VESSELS\\$\geq 20$?};
+
+  % the meeting point (castle)
+  \node[dgprocess, below right=10mm and 2mm of ace] (rescue)
+        {rescue the princess\\\scriptsize (CAS: CMD\_MOVE)};
+  \node[dgdecision, below=of rescue] (arm)
+        {Space Ace\\\& gems?};
+  \node[dgprocess, dgaccentnode, below=of arm] (reveal)
+        {set TM\_REVEAL\\\scriptsize endgame armed};
+
+  % time machine (endgame)
+  \node[dgprocess, dgaccentnode, below=of reveal] (destroy)
+        {TM\_GET: destroy\\the Gem (GEM\_GONE)};
+  \node[dgprocess, dgaccentnode, below=of destroy] (kill)
+        {kill Mondain\\\scriptsize (GEM\_HP $\to 0$)};
+  \node[dgterminal, dgaccentnode, below=of kill] (win)
+        {THOU ART\\VICTORIOUS};
+
+  \draw[->] (start) -- (quests);
+  \draw[->] (quests) -- (gems);
+  \draw[->] (gems) -- node[dgnote,left]{no, keep questing}
+        ($(gems.west)+(-6mm,0)$) |- (quests.west);
+  \draw[->] (gems) -- node[dgnote,left,pos=0.3]{yes} (space);
+  \draw[->] (space) -- (ace);
+  \draw[->] (ace.west) -- node[dgnote,above]{no} ($(ace.west)+(-6mm,0)$)
+        |- (space.west);
+  \draw[->] (ace) -- node[dgnote,left,pos=0.3]{yes (= Space Ace)} (rescue);
+  \draw[->] (rescue) -- (arm);
+  \draw[->] (arm.east) -- node[dgnote,above]{no} ($(arm.east)+(7mm,0)$)
+        |- (rescue.east);
+  \draw[->, dgaccentedge] (arm) -- node[dgnote,left,text=dgaccent]{yes} (reveal);
+  \draw[->, dgaccentedge] (reveal) -- node[dgnote,left,text=dgaccent]
+        {TM overlay} (destroy);
+  \draw[->, dgaccentedge] (destroy) -- (kill);
+  \draw[->, dgaccentedge] (kill) -- (win);
+\end{tikzpicture}
+\caption{The win condition as a flag-guarded state machine
+  (\texttt{SPA}~$\to$~\texttt{CAS}~$\to$~\texttt{TM}). Each diamond tests
+  a shared progress flag, not the current mode; the two loops are the
+  gem-gathering grind in castles and the kill grind in space. The
+  highlighted spine is the only path to victory: rescuing the princess
+  while holding Space-Ace rank sets [[TM_REVEAL]], which unlocks the time
+  machine, where the Gem of Immortality must be destroyed
+  \emph{before} Mondain can be killed.}
+\label{fig:win-fsm}
+\end{figure}
 
 \section{Rendering, in one paragraph}
 
@@ -760,6 +1017,55 @@ doors --- evidence the design once put trapdoors on the lattice and
 changed its mind. A faithful port can collapse this to the three outcomes
 above.
 
+Figure~\ref{fig:dng-gen} shows the five passes as a flowchart. The only
+loop that varies with depth is pass~2 (walls scale as $2\times level+1$);
+passes~3 and~4 add containers and ladders; the level-1 and level-10
+special cases in pass~4 are the two decisions on the right.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=6.5mm and 10mm]
+  \node[dgterminal] (e) {DNG\_GEN(level)};
+  \node[dgprocess, below=of e] (seed)
+        {seed maze PRNG\\\scriptsize from place/x/y/continent/level};
+  \node[dgprocess, below=of seed] (tmpl)
+        {map = copy(DNG\_TEMPLATE)\\\scriptsize border + even/even pillars};
+  \node[dgprocess, below=of tmpl] (p1)
+        {pass 1: edge openings\\\scriptsize open 6/secret 6/door 8 (of 20)};
+  \node[dgprocess, below=of p1] (p2)
+        {pass 2: walls + fields\\\scriptsize $2{\cdot}level{+}1$ times; field if rand $<$ 96/256};
+  \node[dgprocess, below=of p2] (p3)
+        {pass 3: containers\\\scriptsize $level$ times; chest/coffin (lib PRNG)};
+  \node[dgprocess, below=of p3] (p4)
+        {pass 4: fixed cells\\\scriptsize arrival open; ladders at (7,3),(3,7)};
+  % the two pass-4 special cases
+  \node[dgdecision, right=18mm of p4] (l10) {level\\$=10$?};
+  \node[dgdecision, above=8mm of l10] (l1) {level\\$=1$?};
+  \node[dgprocess, right=10mm of l1, text width=24mm] (l1a)
+        {arrival up-ladder at (1,1); drop the (7,3) up};
+  \node[dgprocess, right=10mm of l10, text width=24mm] (l10a)
+        {delete the down ladder (no level 11)};
+  \node[dgprocess, below=of p4] (p5)
+        {pass 5: spawn monsters\\\scriptsize (tier-gated, see below)};
+  \node[dgterminal, below=of p5] (r) {return map};
+
+  \draw[->] (e)--(seed); \draw[->] (seed)--(tmpl); \draw[->] (tmpl)--(p1);
+  \draw[->] (p1)--(p2); \draw[->] (p2)--(p3); \draw[->] (p3)--(p4);
+  \draw[->] (p4)--(p5); \draw[->] (p5)--(r);
+  % special cases hang off pass 4 conceptually
+  \draw[->, dashed] (p4.east) -- (l1.west);
+  \draw[->, dashed] (p4.east) -- (l10.west);
+  \draw[->] (l1) -- node[dgnote,above]{yes} (l1a);
+  \draw[->] (l10) -- node[dgnote,above]{yes} (l10a);
+\end{tikzpicture}
+\caption{The five-pass dungeon generator [[DNG_GEN]]. The maze is never
+  stored; the same level of the same dungeon regenerates identically from
+  its seed. Only pass~2's count depends on depth; the two dashed decisions
+  are pass~4's level-1 (arrival ladder) and level-10 (no exit downward)
+  special cases.}
+\label{fig:dng-gen}
+\end{figure}
+
 \section{The dungeon view: ray marching}
 
 The first-person dungeon view is drawn by [[DNG_DRAW]], a \textbf{ray
@@ -851,6 +1157,63 @@ experience.
 Towns and castles use the same pursuit and melee logic on their 16-slot
 NPC table, with the kind code selecting hostile (home and attack) versus
 peaceful (wander, trade, or perform) behaviour.
+
+Figure~\ref{fig:combat} draws the end-of-turn loop for one monster: the
+spawn check, then the three-way choice between firing (ranged kinds in
+line), closing the greedy integer-square-root distance, and melee when
+adjacent --- with the to-hit roll against armour and the death path that
+frees the slot and grants tier-scaled experience. The same control flow
+serves outdoors and the 16-slot town/castle NPC tables.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=7mm and 12mm]
+  \node[dgterminal] (e) {end-of-turn};
+  \node[dgdecision, below=of e] (spawn) {spawn check:\\tier $\leq$ bar?};
+  \node[dgprocess, right=14mm of spawn] (add)
+        {add object record\\\scriptsize hp,exp $= 10{\cdot}$tier; terrain-matched};
+  \node[dgprocess, below=of spawn] (each) {for each active monster};
+  \node[dgdecision, below=of each] (ranged)
+        {ranged kind\\\& in line?};
+  \node[dgprocess, right=14mm of ranged] (fire)
+        {fire at player\\\scriptsize ranged attack};
+  \node[dgprocess, below=of ranged] (step)
+        {step to reduce dist\\\scriptsize dist $=\sqrt{dx^2+dy^2}$ (ISQRT)};
+  \node[dgdecision, below=of step] (adj) {adjacent to\\player?};
+  \node[dgdecision, below=of adj] (hit)
+        {to-hit roll\\vs armour?};
+  \node[dgprocess, right=14mm of hit] (dmg) {apply damage\\to player HP};
+  \node[dgdecision, below=of dmg] (dead) {monster\\HP $\leq 0$?};
+  \node[dgprocess, below=of dead] (free)
+        {free slot; grant\\tier-scaled exp};
+  \node[dgterminal, below=of hit] (loop) {next monster};
+
+  \draw[->] (e) -- (spawn);
+  \draw[->] (spawn) -- node[dgnote,above]{yes} (add);
+  \draw[->] (spawn) -- node[dgnote,left]{no} (each);
+  \draw[->] (add) |- (each.east);
+  \draw[->] (each) -- (ranged);
+  \draw[->] (ranged) -- node[dgnote,above]{yes} (fire);
+  \draw[->] (ranged) -- node[dgnote,left]{no} (step);
+  \draw[->] (fire) |- (loop.east);
+  \draw[->] (step) -- (adj);
+  \draw[->] (adj) -- node[dgnote,left]{no} (hit);
+  \draw[->] (adj.west) -- node[dgnote,above]{no contact} ($(adj.west)+(-8mm,0)$)
+        |- (loop.west);
+  \draw[->] (hit) -- node[dgnote,above]{hit} (dmg);
+  \draw[->] (hit) -- node[dgnote,left]{miss} (loop);
+  \draw[->] (dmg) -- (dead);
+  \draw[->] (dead) -- node[dgnote,left]{yes} (free);
+  \draw[->] (free) |- (loop.east);
+\end{tikzpicture}
+\caption{Combat resolution and the monster AI step, run once per
+  end-of-turn per active monster. Spawning is tier-gated on a rising
+  difficulty bar; an active monster fires (ranged kinds), else closes the
+  greedy integer-square-root distance and melees when adjacent. A to-hit
+  roll against armour gates damage; a monster reduced to zero hit points
+  frees its object-record slot and grants tier-scaled experience.}
+\label{fig:combat}
+\end{figure}
 
 \section{The space-flight model}
 
