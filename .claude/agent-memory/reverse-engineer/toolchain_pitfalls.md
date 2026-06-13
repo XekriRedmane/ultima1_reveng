@@ -59,3 +59,31 @@ Toolchain facts proven byte-perfect in rounds 0-2.
   branch to the TAY lands inside "CMP #$A8" (OUT $97EF). Also the
   6502 trick catalog there: patched-JSR dispatch (operand rests on
   an engine RTS), LDY #imm whose immediate is STA'd to preserve Y.
+- LITERATE CHUNK BOUNDARIES must fall on instruction starts, never
+  inside inline-arg text (round 22/GEN: 3 picker labels were placed
+  on the menu TEXT, 7 bytes past the real entry -- the routine begins
+  at the LDY/LDX/JSR MSG_AT that PRINTS the menu, and the text is its
+  inline arg). A chunk that ORGs mid-inline-text re-disassembles the
+  text as garbage code and dasm dies "Origin Reverse-indexed". The
+  byte-perfect single-SUBROUTINE emission gets it right (labels via
+  labelnames); the per-chunk split must reuse those same starts.
+- DATA-vs-CODE TELL: a region that disassembles to many JSR/JMP with
+  absolute operands spelling ASCII ("JSR $4F42" = "BO", "JSR $2020"
+  = "  ") is a STRING/DATA blob, not code. Confirm with a ref scan
+  (does any KNOWN-GOOD code region JSR/JMP into it?) -- if nothing
+  references it, emit HEX (round 22: GEN's $A3C5-$A7B7 boot-loader
+  image executes only on the booted player disk, inert in GEN's space;
+  emitting it as code created 28 phantom raw-hex operands).
+- SHARED LABEL NAMES across separate dasm targets are fine at assembly
+  time (each target has its own defines) but the noweb @ %def index is
+  global: declare a shared name (OVERLAY_ENTRY) in @ %def exactly ONCE
+  (the first overlay), and rename any genuinely-different routine that
+  reuses an existing @ %def name (round 22: GEN DO_BSAVE->SAVE_PLAYER,
+  PRESS_SPACE->FMT_PRESS_SPACE). Duplicate @ %def across defines blocks
+  (MON_CH/MON_HOME) only yields a benign "multiply defined label"
+  LaTeX warning, not an error -- but distinct-routine collisions must
+  be renamed for correct [[xref]] navigation.
+- gen_chapter_* name() must fall back to a literal $XXXX for a branch/
+  jump target that is NOT an instruction start (operand-byte targets
+  from relocated/data code) -- guard with `a16 in targets and a16 in
+  starts`, and map targets that land in a named data span to LABEL+off.

@@ -9,6 +9,49 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 22 (2026-06-13): GEN fully decomposed, byte-perfect
+
+- The new-game / title overlay is annotated across 37 chunks: the
+  title menu + the two paths (new char / continue), the character
+  generator (chargen entry, the point-buy attribute editor, the
+  race/sex/class/name pickers with their bonus tables, the save
+  prompt), the local text/window helpers, and -- the intricate half
+  -- a complete bundled DISK FORMATTER. byte-perfect (8932/8932);
+  full doc tangles + builds. PDF 895 pages, clean (0 errors).
+- THE FORMATTER is two layers, the only code in the game that bypasses
+  MLIB and touches the drive: RWTS_FORMAT ($A800) is a hand-rolled
+  Disk II RWTS (35-track arm stepping via the SEEK_DELAY tables, 16
+  sectors/track written as D5/AA/96 address fields + 6-and-2 GCR data,
+  read-back verified, raw $C0xx soft switches); FORMAT_VOLUME ($A119)
+  is the ProDOS volume-directory writer (patches WRITE_BLOCK
+  paramblocks, scans PRODOS_DEVLST, writes the 4 dir blocks + bitmap
+  via the MLI). DO_FORMAT brackets both with a zp $D0-$DD save.
+- THE CODE/DATA INTERLEAVE pinned: the file block-copies $9440-$A13F
+  to $6000 -- GAME_IMAGE (data, the 13-page new-game state image) then
+  FORMAT_VOLUME code; past it BOOT_IMAGE ($A3C5-$A7B7) is a ProDOS boot
+  loader stamped onto the new disk's block 0, PURE DATA in GEN's space
+  (no GEN code refs it), emitted as HEX -- disassembling it as code had
+  produced 28 phantom raw-hex operands (ASCII string bytes as JSRs).
+- CHARGEN math pinned: six 16-bit stats at PLR_HITS,X (X=2*idx, idx
+  1..6 = STR/AGI/STA/CHA/WIS/INT), 30-point pool, floor 10 ceil 25.
+  Race: Human +5INT/Elf +5AGI/Dwarf +5STR/Bobbit +10WIS-5STR. Class:
+  Fighter +10STR+AGI/Cleric +10WIS/Wizard +10INT/Thief +10AGI.
+- Pitfalls recorded in agent memory: 3 picker labels were mis-placed
+  on inline menu TEXT (real entries $8C7E/$8D3C/$8D98); chunk
+  boundaries must fall on instruction starts; shared @ %def names
+  (OVERLAY_ENTRY once; GEN DO_BSAVE->SAVE_PLAYER, PRESS_SPACE->
+  FMT_PRESS_SPACE renamed). Pipeline kept: .claude/scripts/gen_gen.py,
+  gen_symmap.py, gen_labels.py, gen_chapter_gen.py, gen_emit_chunks.py,
+  gen_author.py, gen_build_section.py.
+- All 16 targets byte-perfect. Hygiene: 0 EQU stubs, 0 raw-hex
+  operands, 0 missing plates (315 routines), 0 placement violations,
+  1 TODO-SYM (intro art, resolves with makeindata). ORG stubs 3 -> 2
+  (tm, makeindata).
+- Next session: TM (8123, the time-machine endgame where TM_REVEAL
+  pays off -- Mondain's gem, the win); then makeindata (13877,
+  world-map render, resolves ART_* + the last TODO-SYM); then the
+  synthesis chapters.
+
 ### Round 21 (2026-06-13): SPA fully decomposed, byte-perfect
 
 - The space-combat overlay is annotated across 62 chunks (entry/
@@ -720,15 +763,17 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       chunks). Rotation+thrust flight sim; HIT_ENEMY pins PLR_VESSELS /
       the Space Ace gate; sprite atlas rendered. Pins the SPA->CAS->TM
       win-condition loop in code.
-- [ ] GEN overlay (8932): SCOUTED (Round 21, agent memory
-      gen_subsystem.md). The title menu + character generator
-      (race/sex/class/name + the attribute-point editor) AND a bundled
-      ProDOS disk formatter for the player save disk. Decompose next
-      from the scout: clone the gen_spa pipeline, watch the SMC clear
-      loop and the disk-formatter SMC, decode the ROM/disk-soft-switch
-      EQUs in the formatter. NEXT.
+- [x] GEN overlay (8932): DONE (Round 22, byte-perfect, 37 chunks).
+      Title menu + character generator (race/sex/class/name + the
+      attribute-point editor) AND the bundled ProDOS disk formatter
+      (RWTS_FORMAT + FORMAT_VOLUME). Pins the new-game path, the
+      chargen attribute math, and the only raw-hardware disk code in
+      the game.
 - [ ] TM overlay (8123): the time-machine endgame (TM_REVEAL pays off
-      here -- Mondain's gem, the win). After GEN.
+      here -- Mondain's gem, the win). NEXT. Decompose from a cloned
+      gen_gen pipeline; expect the cellular grid math visible in the
+      stub ($8AD7 entry, the 16-bit shift/multiply helpers $8A40/$8A44/
+      $89FE and the GLYPH/blit at $8A00-$8A5F).
 - [ ] makeindata: builds intro art AND (likely) generates the
       world map for /U1.VARS -- render the four continents then;
       resolves ART_* semantics and the one TODO-SYM.

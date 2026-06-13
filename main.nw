@@ -27601,1138 +27601,3225 @@ of the craft and the planet/sun disc used in the navigation view.}
 <<spa sprite tables>>
 @
 
-\section{GEN}
+\section{GEN: character generation and the disk formatter}
+\label{ch:gen}
 
-\texttt{GEN} --- character generation overlay, 8932 bytes at [[$8956]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
+\texttt{GEN} is the overlay the engine loads for slot~0 of \texttt{GAME\_LOAD}
+--- the \emph{new game} slot reached from the title screen and whenever a save
+is absent. It is two programs sharing one file. The first is the
+character generator: the \texttt{Ultima~I} title, a race/sex/class/name
+questionnaire, and a point-buy attribute editor, ending in a player record
+written to disk. The second, reached only when that write fails for want of a
+formatted disk, is a complete \emph{ProDOS disk formatter} --- a hand-rolled
+Disk~II RWTS that physically initialises a blank disk plus a ProDOS
+volume-directory writer that makes it a valid, empty \texttt{/U1.PLAYER}
+volume. The formatter is the only place in the whole game that bypasses the
+MLIB library and touches the drive hardware directly, so it is documented here
+in full.
 
-<<gen blob>>=
-        ORG $8956
-GEN_BLOB
-        ; STUB — not yet disassembled (character generation overlay)
-        HEX a9 ff 8d 3c b7 20 9e 15
-        HEX 85 80 85 7f 20 f7 93 20
-        HEX cc 93 a0 06 a2 0c 20 15
-        HEX 81 1b 1b 1b 20 55 6c 74
-        HEX 69 6d 61 20 49 20 1b 1b
-        HEX 1b 7c 7c 7f 0e 66 72 6f
-        HEX 6d 20 64 61 72 6b 65 73
-        HEX 74 7c 7f 0e 64 75 6e 67
-        HEX 65 6f 6e 73 2c 20 74 6f
-        HEX 7c 7f 0d 64 65 65 70 65
-        HEX 73 74 20 73 70 61 63 65
-        HEX 21 7c 7c 7c 7f 07 61 29
-        HEX 20 47 65 6e 65 72 61 74
-        HEX 65 20 6e 65 77 20 63 68
-        HEX 61 72 61 63 74 65 72 7c
-        HEX 7f 07 62 29 20 43 6f 6e
-        HEX 74 69 6e 75 65 20 70 72
-        HEX 65 76 69 6f 75 73 20 67
-        HEX 61 6d 65 7c 7c 7f 0d 54
-        HEX 68 79 20 63 68 6f 69 63
-        HEX 65 3a 20 00 20 ad 15 20
-        HEX bf 15 48 20 cc 93 68 c9
-        HEX 41 d0 03 4c c3 8a c9 42
-        HEX d0 ed a9 62 20 b0 15 20
-        HEX 21 b7 00 60 38 7e b0 0e
-        HEX ad 00 60 c9 ca d0 07 ad
-        HEX 01 60 c9 01 f0 2f 20 b4
-        HEX 83 a2 02 a0 15 20 15 81
-        HEX 50 6c 65 61 73 65 20 70
-        HEX 75 74 20 69 6e 20 74 68
-        HEX 65 20 50 6c 61 79 65 72
-        HEX 20 64 69 73 6b 2e 00 20
-        HEX a9 83 4c fd 89 ad 00 60
-        HEX 8d 6d 7e ee 5c 8a d0 03
-        HEX ee 5d 8a ee 5f 8a d0 03
-        HEX ee 60 8a ad 5f 8a 49 37
-        HEX d0 e3 ad 60 8a 49 80 d0
-        HEX dc a8 a2 0d b9 40 94 99
-        HEX 00 60 c8 d0 f7 ee 84 8a
-        HEX ee 87 8a ca d0 ee 8e 00
-        HEX 6d ad 71 7e 8d 80 15 20
-        HEX e0 15 ad 72 7e 8d 81 15
-        HEX a9 60 85 7f 20 4b 81 20
-        HEX a4 15 20 92 15 20 31 83
-        HEX a9 60 85 80 20 ad 15 20
-        HEX 8f 15 4c fb 88 20 9e 15
-        HEX 20 f7 93 a0 00 a2 08 20
-        HEX 15 81 0e 20 43 68 61 72
-        HEX 61 63 74 65 72 20 47 65
-        HEX 6e 65 72 61 74 69 6f 6e
-        HEX 20 18 7e 00 20 cc 93 a9
-        HEX 6f 8d 05 8b a9 7e 8d 06
-        HEX 8b a9 4f 8d 02 8b a9 90
-        HEX 8d 03 8b ad ff ff 8d ff
-        HEX ff ee 02 8b d0 03 ee 03
-        HEX 8b ee 05 8b d0 03 ee 06
-        HEX 8b ad 02 8b c9 d7 d0 e3
-        HEX ad 03 8b c9 90 d0 dc 20
-        HEX b1 8f a9 1e 8d 3f 90 a2
-        HEX 01 8e 41 90 a0 0f 20 15
-        HEX 81 20 4d 6f 76 65 20 63
-        HEX 75 72 73 6f 72 20 77 69
-        HEX 74 68 20 75 70 20 61 6e
-        HEX 64 20 64 6f 77 6e 20 61
-        HEX 72 72 6f 77 73 7e 20 28
-        HEX 6f 72 20 72 65 74 75 72
-        HEX 6e 20 61 6e 64 20 73 6c
-        HEX 61 73 68 20 6b 65 79 73
-        HEX 29 2c 20 69 6e 63 72 65
-        HEX 61 73 65 7e 20 61 6e 64
-        HEX 20 64 65 63 72 65 61 73
-        HEX 65 20 61 74 74 72 69 62
-        HEX 75 74 65 73 20 77 69 74
-        HEX 68 20 6c 65 66 74 7e 20
-        HEX 61 6e 64 20 72 69 67 68
-        HEX 74 20 61 72 72 6f 77 73
-        HEX 2e 20 20 50 72 65 73 73
-        HEX 20 73 70 61 63 65 20 62
-        HEX 61 72 7e 20 77 68 65 6e
-        HEX 20 66 69 6e 69 73 68 65
-        HEX 64 2c 20 6f 72 20 65 73
-        HEX 63 61 70 65 20 6b 65 79
-        HEX 20 74 6f 7e 20 72 65 74
-        HEX 75 72 6e 20 74 6f 20 6d
-        HEX 61 69 6e 20 6d 65 6e 75
-        HEX 2e 00 20 b1 8f a9 63 85
-        HEX 24 20 bf 15 a8 ad 41 90
-        HEX 0a aa c0 1b d0 03 4c 5b
-        HEX 89 c0 08 d0 0f bd c6 7e
-        HEX c9 0a f0 de de c6 7e ee
-        HEX 3f 90 d0 d6 c0 15 d0 14
-        HEX ad 3f 90 f0 cd bd c6 7e
-        HEX c9 19 b0 c6 fe c6 7e ce
-        HEX 3f 90 10 be c0 2f f0 04
-        HEX c0 0a d0 11 ee 41 90 ad
-        HEX 41 90 c9 07 90 ac a9 01
-        HEX 8d 41 90 f0 a5 c0 0d f0
-        HEX 04 c0 0b d0 0c ce 41 90
-        HEX d0 98 a9 06 8d 41 90 d0
-        HEX 91 c0 20 d0 8d ac 3f 90
-        HEX f0 06 20 0f 84 4c 00 8c
-        HEX 8c 41 90 20 b1 8f 20 cc
-        HEX 93 a0 12 a2 0b 20 15 81
-        HEX 61 29 20 48 75 6d 61 6e
-        HEX 7c 7f 0b 62 29 20 45 6c
-        HEX 66 7c 7f 0b 63 29 20 44
-        HEX 77 61 72 66 7c 7f 0b 64
-        HEX 29 20 42 6f 62 62 69 74
-        HEX 00 a0 10 a2 02 20 15 81
-        HEX 53 65 6c 65 63 74 20 74
-        HEX 68 79 20 72 61 63 65 3a
-        HEX 20 00 20 bf 15 c9 41 90
-        HEX f9 c9 45 b0 f5 38 e9 40
-        HEX 8d d6 7e a0 0c a2 0d 20
-        HEX 15 81 52 61 63 65 20 20
-        HEX 00 ae d6 7e 20 b1 80 af
-        HEX 73 20 cc 93 ad d6 7e c9
-        HEX 01 d0 0b ad d2 7e 18 69
-        HEX 05 8d d2 7e d0 30 c9 02
-        HEX d0 0b ad ca 7e 18 69 05
-        HEX 8d ca 7e d0 21 c9 03 d0
-        HEX 0b ad c8 7e 18 69 05 8d
-        HEX c8 7e d0 12 ad d0 7e 18
-        HEX 69 0a 8d d0 7e ad c8 7e
-        HEX 38 e9 05 8d c8 7e 20 b1
-        HEX 8f a0 12 a2 0b 20 15 81
-        HEX 61 29 20 4d 61 6c 65 7c
-        HEX 7f 0b 62 29 20 46 65 6d
-        HEX 61 6c 65 00 a0 10 a2 02
-        HEX 20 15 81 53 65 6c 65 63
-        HEX 74 20 74 68 79 20 73 65
-        HEX 78 3a 20 00 20 bf 15 c9
-        HEX 41 90 f9 c9 43 b0 f5 38
-        HEX e9 41 8d b7 7e a0 0d a2
-        HEX 0e 20 15 81 53 65 78 20
-        HEX 20 00 ae b7 7e 20 b1 80
-        HEX 43 90 20 cc 93 a0 12 a2
-        HEX 0b 20 15 81 61 29 20 46
-        HEX 69 67 68 74 65 72 7c 7f
-        HEX 0b 62 29 20 43 6c 65 72
-        HEX 69 63 7c 7f 0b 63 29 20
-        HEX 57 69 7a 61 72 64 7c 7f
-        HEX 0b 64 29 20 54 68 69 65
-        HEX 66 00 a0 10 a2 02 20 15
-        HEX 81 53 65 6c 65 63 74 20
-        HEX 74 68 79 20 63 6c 61 73
-        HEX 73 3a 20 00 20 bf 15 c9
-        HEX 41 90 f9 c9 45 b0 f5 38
-        HEX e9 40 8d d8 7e a0 0e a2
-        HEX 0c 20 15 81 43 6c 61 73
-        HEX 73 20 20 00 ae d8 7e 20
-        HEX b1 80 5d 75 ad d8 7e c9
-        HEX 01 d0 14 ad c8 7e 18 69
-        HEX 0a 8d c8 7e ad ca 7e 18
-        HEX 69 0a 8d ca 7e d0 27 c9
-        HEX 02 d0 0b ad d0 7e 18 69
-        HEX 0a 8d d0 7e d0 18 c9 03
-        HEX d0 0b ad d2 7e 18 69 0a
-        HEX 8d d2 7e d0 09 ad ca 7e
-        HEX 18 69 0a 8d ca 7e 20 b1
-        HEX 8f 20 b9 15 8d ef 7e 20
-        HEX b9 15 8d f0 7e a0 10 a2
-        HEX 02 20 15 81 45 6e 74 65
-        HEX 72 20 74 68 79 20 6e 61
-        HEX 6d 65 3a 20 00 20 cc 93
-        HEX a9 00 8d 42 90 20 bf 15
-        HEX ae 42 90 c9 0d d0 16 8a
-        HEX f0 f3 c6 25 20 cc 93 a9
-        HEX 0b 85 24 a9 03 85 25 20
-        HEX 37 88 4c ee 8e c9 08 f0
-        HEX 04 c9 7f d0 10 ca 30 d5
-        HEX 8e 42 90 a9 00 9d b8 7e
-        HEX c6 24 4c 83 8e e0 00 d0
-        HEX 14 c9 41 90 c0 c9 5b b0
-        HEX bc 9d b8 7e ee 42 90 20
-        HEX 62 80 4c 83 8e e0 0d b0
-        HEX ac c9 20 90 a8 c9 41 90
-        HEX e8 c9 5b b0 e4 bc b7 7e
-        HEX c0 20 f0 dd 09 20 d0 d9
-        HEX 20 88 93 7e 20 53 61 76
-        HEX 65 20 74 68 69 73 20 63
-        HEX 68 61 72 61 63 74 65 72
-        HEX 3f 20 28 59 2d 4e 29 20
-        HEX 00 20 cc 93 20 bf 15 20
-        HEX b0 15 c9 59 f0 07 c9 4e
-        HEX d0 ce 4c c3 8a 20 24 b7
-        HEX 6d 7e ca 01 38 7e b0 03
-        HEX 4c 5b 89 c9 04 f0 04 c9
-        HEX 0a d0 26 20 88 93 54 68
-        HEX 65 20 64 69 73 6b 20 69
-        HEX 73 20 77 72 69 74 65 20
-        HEX 70 72 6f 74 65 63 74 65
-        HEX 64 2e 00 20 96 93 4c ee
-        HEX 8e 20 88 93 4e 6f 20 70
-        HEX 6c 61 79 65 72 20 64 69
-        HEX 73 6b 20 66 6f 75 6e 64
-        HEX 2e 7e 20 46 6f 72 6d 61
-        HEX 74 20 61 20 6e 65 77 20
-        HEX 70 6c 61 79 65 72 20 64
-        HEX 69 73 6b 3f 20 28 59 2d
-        HEX 4e 29 20 00 20 bf 15 c9
-        HEX 59 f0 07 c9 4e d0 f5 4c
-        HEX ee 8e 20 d7 90 20 c6 93
-        HEX 4c 23 8f a9 00 8d 49 82
-        HEX 8d 4e 7e a2 05 86 24 a0
-        HEX 03 84 25 ad 41 90 f0 25
-        HEX 20 19 81 50 6f 69 6e 74
-        HEX 73 20 6c 65 66 74 20 74
-        HEX 6f 20 64 69 73 74 72 69
-        HEX 62 75 74 65 3a 20 00 ad
-        HEX 3f 90 20 0d 82 c6 21 20
-        HEX 98 15 e6 21 20 7e 80 ee
-        HEX 4e 7e e6 25 a2 0a 86 24
-        HEX a9 20 ae 4e 7e ec 41 90
-        HEX d0 02 a9 0e 20 62 80 20
-        HEX b1 80 8e 74 a9 2e 8d 49
-        HEX 82 20 62 80 a6 24 e0 1a
-        HEX 90 f7 ad 4e 7e 0a aa bd
-        HEX c6 7e 20 0d 82 a9 20 ae
-        HEX 4e 7e ec 41 90 d0 02 a9
-        HEX 18 20 62 80 e0 06 90 b7
-        HEX 60 00 00 00 00 6d 61 6c
-        HEX e5 66 65 6d 61 6c e5 ca
-        HEX 01 00 00 ff ff 27 21 00
-        HEX 00 00 00 00 01 01 00 01
-        HEX 01 00 00 00 00 01 02 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 01 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 01 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 ff ff ff ff 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 96 00 0a 00 0a 00 0a 00
-        HEX 0a 00 0a 00 0a 00 64 00
-        HEX 01 00 01 00 00 00 00 00
-        HEX 00 00 00 00 00 00 95 c8
-        HEX 00 00 00 e8 03 e8 03 00
-        HEX ff ef be 00 00 00 00 00
-        HEX 00 ad 30 bf aa 29 80 0a
-        HEX 2a 69 01 85 aa 8a 4a 4a
-        HEX 4a 4a 29 07 85 ab 20 c6
-        HEX 93 20 88 93 45 6e 74 65
-        HEX 72 20 74 68 65 20 53 6c
-        HEX 6f 74 20 26 20 44 72 69
-        HEX 76 65 20 6e 75 6d 62 65
-        HEX 72 73 7e 20 66 6f 72 20
-        HEX 74 68 65 20 6e 65 77 20
-        HEX 70 6c 61 79 65 72 20 64
-        HEX 69 73 6b 2e 00 a2 09 a0
-        HEX 09 20 15 81 53 6c 6f 74
-        HEX 3a 20 28 20 29 00 a2 08
-        HEX a0 0b 20 15 81 44 72 69
-        HEX 76 65 3a 20 28 20 29 00
-        HEX a9 10 85 24 a9 09 85 25
-        HEX a5 ab 20 58 80 a9 10 85
-        HEX 24 a9 0b 85 25 a5 aa 20
-        HEX 58 80 a9 13 85 24 a9 09
-        HEX 85 25 20 bf 15 c9 0d f0
-        HEX 0b 38 e9 30 f0 16 c9 08
-        HEX b0 12 85 ab a9 13 85 24
-        HEX a9 09 85 25 a5 ab 20 58
-        HEX 80 4c 97 91 20 39 b7 f0
-        HEX d9 a9 13 85 24 a9 0b 85
-        HEX 25 20 bf 15 c9 1b d0 01
-        HEX 60 c9 0d f0 0b 38 e9 30
-        HEX f0 16 c9 03 b0 12 85 aa
-        HEX a9 13 85 24 a9 0b 85 25
-        HEX a5 aa 20 58 80 4c cb 91
-        HEX 20 39 b7 f0 d4 20 bd 93
-        HEX a9 00 85 a7 a5 ab 09 c0
-        HEX 85 a8 a0 01 b1 a7 c9 20
-        HEX d0 31 a0 03 b1 a7 d0 2b
-        HEX a0 05 b1 a7 c9 03 d0 23
-        HEX a0 ff b1 a7 d0 1d a5 ab
-        HEX 0a a6 aa e0 02 d0 03 18
-        HEX 69 10 aa bd 10 bf cd 10
-        HEX bf d0 27 bd 11 bf cd 11
-        HEX bf d0 1f 20 88 93 4e 6f
-        HEX 20 44 69 73 6b 20 49 49
-        HEX 20 63 6f 6e 6e 65 63 74
-        HEX 65 64 2e 00 20 96 93 4c
-        HEX ec 90 a6 aa ca 8a 0a 0a
-        HEX 0a 05 ab 0a 0a 0a 0a 8d
-        HEX e4 93 20 00 bf 80 e3 93
-        HEX f0 0a c9 28 d0 03 4c 11
-        HEX 92 4c ba 92 20 39 b7 20
-        HEX 88 93 45 72 61 73 65 20
-        HEX 00 ad 04 bb 29 0f d0 16
-        HEX 20 19 81 4e 6f 6e 2d 50
-        HEX 72 6f 44 4f 53 20 64 69
-        HEX 73 6b 00 4c a0 92 85 a9
-        HEX a2 00 8a 1d 05 bb e8 e4
-        HEX a9 90 f8 29 80 d0 d9 a2
-        HEX 00 bd 05 bb 29 7f c9 2e
-        HEX 90 03 20 62 80 e8 e4 a9
-        HEX 90 ef 20 19 81 3f 20 28
-        HEX 59 2d 4e 29 20 00 20 bf
-        HEX 15 c9 59 f0 07 c9 4e d0
-        HEX f5 4c ec 90 a2 0d b5 d0
-        HEX 9d e9 93 ca 10 f8 ad e4
-        HEX 93 20 00 a8 08 48 a2 0d
-        HEX bd e9 93 95 d0 ca 10 f8
-        HEX 68 28 90 65 c9 27 d0 1d
-        HEX 20 88 93 55 6e 61 62 6c
-        HEX 65 20 74 6f 20 66 6f 72
-        HEX 6d 61 74 20 64 69 73 6b
-        HEX 2e 00 4c 39 93 c9 2b d0
-        HEX 1f 20 88 93 44 69 73 6b
-        HEX 20 69 73 20 77 72 69 74
-        HEX 65 20 70 72 6f 74 65 63
-        HEX 74 65 64 2e 00 4c 39 93
-        HEX 20 88 93 44 69 73 6b 20
-        HEX 64 72 69 76 65 20 73 70
-        HEX 65 65 64 20 65 72 72 6f
-        HEX 72 2e 00 20 96 93 4c ec
-        HEX 90 ad e4 93 a2 00 a0 bb
-        HEX 20 19 a1 48 a9 01 85 24
-        HEX a9 0f 85 25 20 cc 93 68
-        HEX d0 01 60 48 20 88 93 46
-        HEX 6f 72 6d 61 74 20 66 61
-        HEX 69 6c 65 64 2e 20 20 4d
-        HEX 4c 49 20 65 72 72 6f 72
-        HEX 20 23 00 68 20 4f 80 a9
-        HEX 2e 20 62 80 20 96 93 4c
-        HEX ec 90 a2 02 86 24 a0 14
-        HEX 84 25 20 cc 93 4c 19 81
-        HEX a2 02 a0 15 20 15 81 50
-        HEX 72 65 73 73 20 53 70 61
-        HEX 63 65 20 74 6f 20 63 6f
-        HEX 6e 74 69 6e 75 65 3a 20
-        HEX 00 20 39 b7 20 bf 15 20
-        HEX 81 80 a9 14 85 25 d0 06
-        HEX 20 9e 15 20 39 94 20 b4
-        HEX 83 c6 21 20 98 15 20 81
-        HEX 80 e6 25 a4 25 c8 c4 23
-        HEX 90 f1 4c a9 83 03 00 00
-        HEX bb 02 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 a9 10 20 62 80 a2 26
-        HEX a9 04 20 44 81 a9 12 20
-        HEX b0 15 e6 25 20 9c 80 a9
-        HEX 0a 20 b0 15 a9 27 85 24
-        HEX a9 08 20 b0 15 20 bc 15
-        HEX a5 25 49 16 d0 e4 85 24
-        HEX e6 25 a9 14 20 62 80 a2
-        HEX 26 a9 02 20 44 81 a9 16
-        HEX 20 b0 15 a2 01 86 24 86
-        HEX 25 60 08 00 e7 02 58 06
-        HEX b6 09 f8 f8 30 1a 21 78
-        HEX 19 d8 09 0a 19 30 1a 31
-        HEX 60 11 0d 11 48 09 12 09
-        HEX 68 09 2a 09 28 22 31 58
-        HEX 19 48 23 1a 09 58 09 1a
-        HEX 0d 0a 09 20 1a 0b 0a 09
-        HEX 0b 29 a8 19 0f 0b 2a 09
-        HEX 50 09 22 09 20 12 3b 21
-        HEX 90 31 3a 09 50 09 22 09
-        HEX 18 22 13 0f 1b 31 70 41
-        HEX 22 0b 12 09 50 09 12 11
-        HEX 18 2a 0b 09 0b 12 41 58
-        HEX 51 1a 0b 09 0a 1b 40 19
-        HEX 28 11 3a 81 18 61 12 23
-        HEX 0a 09 88 11 2a 91 18 61
-        HEX 12 0b 12 19 80 19 1a a1
-        HEX 10 59 2a 21 88 c1 28 31
-        HEX 0b 3a 29 80 c9 28 29 0b
-        HEX 12 0b 1a 49 70 c9 20 29
-        HEX 23 22 49 68 f9 29 23 0a
-        HEX 13 41 20 11 38 f9 31 0b
-        HEX 0f 1b 39 0e 20 21 28 69
-        HEX 18 c1 13 41 20 29 28 61
-        HEX 28 39 0b 81 13 39 18 31
-        HEX 28 11 0a 49 30 31 13 19
-        HEX 12 59 13 79 28 09 22 39
-        HEX 30 21 2b 09 0a 0b 22 49
-        HEX 0b 11 0b 61 20 0a 09 22
-        HEX 49 20 0c 23 1a 23 0a 61
-        HEX 5b 0a 21 20 3a 51 0b 10
-        HEX 0b 18 22 13 12 09 0e 1a
-        HEX 39 0b 22 0b 0a 13 1a 21
-        HEX 20 42 49 13 30 6a 31 13
-        HEX 0f 0b 1a 0b 1a 29 18 52
-        HEX 39 13 40 6a 29 13 4a 21
-        HEX 20 5a 29 58 62 39 13 0a
-        HEX 0b 2a 29 20 4a 21 78 12
-        HEX 09 3a 49 23 22 29 20 32
-        HEX 29 88 0a 21 22 69 13 1a
-        HEX 29 28 2a 0e a8 b9 13 1a
-        HEX 19 f8 10 c1 13 1a 11 a8
-        HEX 1b 40 c9 0b 2a 09 a0 13
-        HEX 0f 13 38 d1 0a 11 12 09
-        HEX a8 0b 09 0b 40 09 0c e1
-        HEX 50 09 12 11 98 0e 11 22
-        HEX a1 58 2a 0b 12 11 90 12
-        HEX 08 22 91 28 12 20 0a 13
-        HEX 12 13 12 09 0b 70 12 20
-        HEX 2a 89 0e 18 1a 18 1b 42
-        HEX 13 11 50 09 1a 08 42 91
-        HEX 22 20 0b 0f 0b 12 13 2a
-        HEX 0b 19 48 11 12 10 11 2a
-        HEX 89 22 28 0b 1a 13 12 0b
-        HEX 1a 0b 19 48 19 4a 89 22
-        HEX 11 20 0b 12 13 1a 0b 12
-        HEX 13 19 0a 38 31 2a 81 32
-        HEX 21 18 13 32 0b 12 0b 21
-        HEX 12 28 41 1a 79 52 11 20
-        HEX 0b 12 2b 12 13 21 12 08
-        HEX 12 c9 6a 09 20 12 09 0b
-        HEX 3a 13 19 12 10 12 c1 12
-        HEX 13 12 10 22 11 20 09 1b
-        HEX 12 1b 09 12 0b 21 12 08
-        HEX 12 c9 0a 0b 0f 09 0a 18
-        HEX 12 11 28 09 0b 1a 13 09
-        HEX 13 09 13 21 12 10 1a c1
-        HEX 0b 11 28 19 28 1b 0a 13
-        HEX 19 1b 31 12 08 22 b1 1b
-        HEX 09 70 09 22 61 12 10 11
-        HEX 0a a9 13 08 13 70 11 12
-        HEX 71 22 a9 08 13 10 0b 09
-        HEX 70 a1 1a a1 20 13 09 70
-        HEX f9 79 08 0b 11 70 49 1a
-        HEX 91 13 71 90 21 13 09 18
-        HEX 1a 81 13 99 70 21 0b 38
-        HEX 12 71 13 a1 68 21 0a 0b
-        HEX 38 12 51 1b 09 0b a9 68
-        HEX 19 12 0b 11 18 11 1a 39
-        HEX 1b 0f 1b a1 40 13 18 29
-        HEX 1a 09 1b 09 0e 2a 39 0b
-        HEX 31 38 59 38 11 0b 18 31
-        HEX 2a 0b 19 32 19 88 51 30
-        HEX 19 0b 18 39 1a 09 1b 32
-        HEX a0 0e 51 0a 20 11 0e 09
-        HEX 0b 20 59 0b 32 88 69 42
-        HEX 19 0b 20 81 60 23 71 5a
-        HEX 09 13 20 71 68 13 11 0b
-        HEX 79 52 13 20 61 70 23 31
-        HEX 33 41 3a 13 28 39 90 0b
-        HEX 0f 29 13 09 13 20 3b 21
-        HEX 22 13 30 11 b8 0b 11 28
-        HEX 1b 58 23 11 0a f8 f8 50
-        HEX 00 f8 f8 f8 f8 40 22 09
-        HEX 70 22 40 2b 78 11 18 19
-        HEX 18 32 19 48 42 28 12 0b
-        HEX 0f 12 13 0a 11 0b 48 49
-        HEX 10 22 0b 1a 21 18 29 3a
-        HEX 28 0a 1b 2a 1b 09 38 49
-        HEX 18 1a 13 22 49 4a 20 09
-        HEX 0a 0b 1a 0b 12 09 0b 0a
-        HEX 0b 0a 09 30 49 18 0a 09
-        HEX 12 13 22 39 52 20 2a 13
-        HEX 0a 1b 22 20 11 0a 41 18
-        HEX 21 1b 1a 41 4a 20 22 13
-        HEX 12 0b 1a 0b 12 18 11 1a
-        HEX 39 18 19 13 0f 09 1a 41
-        HEX 3a 09 0e 20 09 13 0a 0b
-        HEX 1a 0b 12 13 0a 20 23 12
-        HEX 31 18 21 1b 12 59 2a 09
-        HEX 28 09 0a 0b 2a 0b 0a 13
-        HEX 30 0b 18 1a 21 20 21 13
-        HEX 12 69 22 09 30 22 23 0a
-        HEX 0b 60 12 21 28 21 0b 0a
-        HEX 79 12 11 30 09 42 13 50
-        HEX 0b 12 21 30 a9 0a 11 30
-        HEX 11 3a 09 13 48 0b 0a 29
-        HEX 38 b1 40 13 12 1b 12 09
-        HEX 0b 20 0a 20 1b 21 40 a9
-        HEX 48 23 08 13 0a 13 20 12
-        HEX 20 09 13 11 50 99 80 1b
-        HEX 28 12 18 0e 09 0b 0a 11
-        HEX 50 59 18 29 c0 09 2a 09
-        HEX 12 11 50 51 20 29 28 0b
-        HEX 88 19 3a 09 60 49 28 19
-        HEX 28 1b 30 12 30 39 2a 09
-        HEX 60 49 28 11 0b 28 0b 0f
-        HEX 40 1a 20 41 22 70 49 20
-        HEX 1b 28 1b 40 22 10 41 22
-        HEX 70 51 20 0b 38 0b 58 22
-        HEX 49 12 78 61 0c 98 0a 18
-        HEX 1a 41 0a 80 61 13 90 1a
-        HEX 18 0a 49 50 11 20 61 0b
-        HEX 98 09 22 08 12 41 50 11
-        HEX 20 61 0b a0 11 12 09 12
-        HEX 41 48 09 0d 09 20 59 13
-        HEX a8 09 12 11 0a 29 0b 09
-        HEX 50 11 30 51 0b 12 a8 09
-        HEX 12 39 0b 09 30 13 10 11
-        HEX 38 09 08 29 1b 1a 58 12
-        HEX 09 38 41 1b 28 0b 0f 09
-        HEX 70 29 13 2a 30 09 0e 08
-        HEX 1a 09 38 39 0b 0f 09 28
-        HEX 0b 11 48 09 28 29 13 32
-        HEX 18 09 0c 09 10 1a 09 40
-        HEX 29 13 09 20 13 09 48 21
-        HEX 18 31 13 22 18 21 0a 18
-        HEX 0a 09 48 29 0b 09 18 1b
-        HEX 09 40 29 18 29 0a 13 1a
-        HEX 20 19 12 08 0a 08 12 50
-        HEX 11 1b 09 18 0b 19 38 39
-        HEX 10 21 0a 13 2a 18 19 0a
-        HEX 10 0a 09 1a 48 09 13 11
-        HEX 20 0b 19 38 69 42 09 18
-        HEX 11 22 09 1a 48 13 09 30
-        HEX 13 09 0b 30 79 0a 11 2a
-        HEX 20 09 42 48 0b 09 38 19
-        HEX 13 20 0b 79 0a 09 0e 2a
-        HEX 30 32 98 21 0b 20 0b 79
-        HEX 0a 09 32 30 2a a0 19 13
-        HEX 18 09 0b 0f 81 32 38 22
-        HEX 98 19 13 20 0a 13 0a 29
-        HEX 1b 39 2a 09 40 12 50 21
-        HEX 30 19 0b 28 2a 21 12 0b
-        HEX 41 1a 19 78 49 28 19 0b
-        HEX 28 09 2a 19 12 13 41 0a
-        HEX 29 60 69 18 19 0b 30 32
-        HEX 09 12 23 71 38 91 08 0e
-        HEX 19 0b 30 09 52 0b 0f f9
-        HEX 69 13 30 12 1b 2a 1b f9
-        HEX 69 0b 30 09 12 09 13 2a
-        HEX 1b f9 61 0b 38 09 12 0b
-        HEX 1a 09 0a 13 09 13 f9 59
-        HEX 0b 40 09 13 0a 21 0b 19
-        HEX 33 b1 10 69 0b 48 0b 0a
-        HEX 59 0b 0a 1b a9 0b 08 69
-        HEX 0b 48 0b 61 0b 0a 0f 0a
-        HEX 13 71 12 19 13 08 51 0a
-        HEX 11 13 50 51 13 0a 0b 12
-        HEX 0b 71 1a 09 13 20 41 12
-        HEX 11 0b 60 49 0b 1a 13 69
-        HEX 12 23 10 13 08 39 1a 11
-        HEX 0b 68 41 13 1a 13 61 12
-        HEX 0b 0f 09 23 09 08 39 22
-        HEX 09 0b 68 41 0b 2a 13 51
-        HEX 22 19 0b 19 08 19 18 2a
-        HEX 11 68 19 0e 10 11 1b 22
-        HEX 1b 41 2a 70 2a 09 18 11
-        HEX 48 11 18 11 13 32 0b 12
-        HEX 39 1a 80 32 10 09 12 09
-        HEX 68 11 0b 4a 11 10 0e 11
-        HEX 22 80 2a 18 22 09 58 19
-        HEX 0b 1a 19 1a 11 18 09 32
-        HEX 78 2a 18 09 22 11 40 21
-        HEX 12 31 1a 09 18 42 68 09
-        HEX 22 0b 18 09 0a 0d 1a 09
-        HEX 38 71 12 20 1a 09 22 09
-        HEX 58 19 12 13 18 09 2a 09
-        HEX 30 89 18 1a 11 1a 11 50
-        HEX 11 0e 11 13 28 19 0a 09
-        HEX 38 69 30 1a 08 19 0a 19
-        HEX 48 0b 21 13 48 11 40 41
-        HEX 50 12 18 21 58 33 f8 f8
-        HEX 38 00 f8 f8 20 33 38 41
-        HEX 50 12 18 21 58 33 30 13
-        HEX 11 0a 09 13 28 69 30 1a
-        HEX 08 19 0a 19 48 0b 21 13
-        HEX 28 0b 2a 09 0b 28 89 18
-        HEX 1a 11 1a 11 50 11 0e 11
-        HEX 13 20 0b 0a 0d 1a 09 0b
-        HEX 30 71 12 20 1a 09 22 09
-        HEX 58 19 12 13 18 0b 22 11
-        HEX 0b 38 21 12 31 1a 09 18
-        HEX 42 68 09 22 0b 18 0b 1a
-        HEX 09 0b 08 0b 40 19 0b 1a
-        HEX 19 1a 11 18 09 32 78 2a
-        HEX 18 0b 12 09 13 58 11 0b
-        HEX 4a 11 10 0e 11 22 80 2a
-        HEX 18 2b 60 11 13 32 0b 12
-        HEX 39 1a 80 32 80 0e 10 11
-        HEX 1b 22 1b 41 2a 70 2a 09
-        HEX 80 29 0b 2a 13 51 22 19
-        HEX 0b 19 08 19 18 2a 11 88
-        HEX 21 13 1a 13 61 12 0b 0f
-        HEX 09 23 09 08 39 22 09 0b
-        HEX 98 11 0b 1a 13 69 12 23
-        HEX 10 13 08 39 1a 11 0b a0
-        HEX 13 0a 0b 12 0b 71 1a 09
-        HEX 13 20 41 12 11 0b 40 0b
-        HEX 60 0b 0a 0f 0a 13 71 12
-        HEX 19 13 08 51 0a 11 13 40
-        HEX 0b 0a 58 0b 0a 1b a9 0b
-        HEX 08 69 0b 40 09 13 0a 20
-        HEX 0b 18 33 b1 10 69 0b 38
-        HEX 09 12 0b 1a 08 0a 13 08
-        HEX 13 f9 59 0b 30 09 12 09
-        HEX 13 2a 1b f9 61 0b 30 12
-        HEX 1b 2a 1b f9 69 0b 28 09
-        HEX 52 0b 0f f9 69 13 28 32
-        HEX 09 12 23 f9 41 08 0e 19
-        HEX 0b 28 09 2a 19 12 13 41
-        HEX 0a f1 18 19 0b 28 2a 21
-        HEX 12 0b 41 1a e9 18 19 0b
-        HEX 28 0a 13 0a 29 1b 39 2a
-        HEX 49 12 89 18 19 0b 28 09
-        HEX 0b 0f 81 32 39 22 81 18
-        HEX 19 13 28 0b 79 0a 09 32
-        HEX 31 2a 81 20 19 13 20 0b
-        HEX 79 0a 09 0e 2a 31 32 79
-        HEX 20 21 0b 28 79 0a 11 2a
-        HEX 29 42 49 0b 21 20 19 13
-        HEX 30 69 42 31 22 09 1a 49
-        HEX 13 21 18 13 09 0b 38 39
-        HEX 10 21 0a 13 2a 31 0a 10
-        HEX 0a 09 1a 51 13 19 18 0b
-        HEX 19 40 29 18 29 0a 13 1a
-        HEX 39 12 08 0a 08 12 61 1b
-        HEX 09 18 0b 19 48 21 18 31
-        HEX 13 22 39 0a 18 0a 79 0b
-        HEX 09 18 1b 09 50 09 28 29
-        HEX 13 32 21 0c 09 10 1a 71
-        HEX 13 09 20 13 09 78 29 13
-        HEX 2a 20 19 0e 08 1a 79 0b
-        HEX 0f 09 28 0b 11 58 09 08
-        HEX 29 1b 1a 58 12 81 1b 28
-        HEX 0b 0f 09 10 23 20 51 0b
-        HEX 12 68 49 12 39 0b 09 30
-        HEX 13 10 0b 0d 09 23 59 13
-        HEX 88 29 12 11 0a 29 0b 09
-        HEX 50 13 09 23 61 0b 90 21
-        HEX 12 09 12 41 50 21 13 61
-        HEX 0b 98 09 22 08 12 41 58
-        HEX 89 13 90 1a 18 0a 49 60
-        HEX 81 0c 98 0a 18 1a 41 0a
-        HEX 68 69 20 0b 38 0b 58 22
-        HEX 49 12 68 59 20 1b 28 1b
-        HEX 40 22 51 22 68 49 28 11
-        HEX 0b 28 0b 0f 40 1a 61 22
-        HEX 68 49 28 19 70 12 31 10
-        HEX 29 2a 09 58 51 20 29 58
-        HEX 49 20 11 3a 09 58 59 18
-        HEX 29 50 49 30 2a 09 12 11
-        HEX 50 99 50 31 1b 28 12 18
-        HEX 0e 09 0b 0a 11 48 a9 48
-        HEX 23 09 13 0a 13 20 12 20
-        HEX 09 13 11 40 b1 40 13 12
-        HEX 1b 12 09 0b 20 0a 20 1b
-        HEX 21 30 a9 0a 11 30 11 3a
-        HEX 09 13 48 0b 0a 29 28 21
-        HEX 0b 0a 79 12 11 30 09 42
-        HEX 13 50 0b 12 21 20 21 13
-        HEX 12 69 22 09 30 22 23 0a
-        HEX 0b 60 12 21 20 21 1b 12
-        HEX 59 2a 09 28 09 0a 0b 2a
-        HEX 0b 0a 13 30 0b 18 1a 21
-        HEX 20 19 13 0f 09 1a 41 3a
-        HEX 09 0e 20 09 13 0a 0b 1a
-        HEX 0b 12 13 0a 20 23 12 31
-        HEX 18 21 1b 1a 41 4a 20 22
-        HEX 13 12 0b 1a 0b 12 20 0b
-        HEX 1a 39 18 0a 09 12 13 22
-        HEX 39 52 20 2a 13 0a 1b 22
-        HEX 18 13 09 0a 41 18 1a 13
-        HEX 22 49 4a 20 09 0a 0b 1a
-        HEX 0b 12 09 0b 0a 0b 0a 2b
-        HEX 59 18 22 0b 1a 21 18 29
-        HEX 3a 28 0a 1b 2a 2b 79 20
-        HEX 32 19 48 42 28 12 0b 0f
-        HEX 12 13 0a 11 0b 38 59 28
-        HEX 22 09 70 22 40 2b 70 19
-        HEX 18 19 f8 f8 f8 f8 28 00
-        HEX f8 f8 28 19 0a 09 d8 19
-        HEX 78 21 1a 30 09 2a 09 68
-        HEX 09 12 09 48 11 0d 11 60
-        HEX 31 1a 28 09 0a 0d 1a 09
-        HEX 58 09 1a 23 48 19 58 31
-        HEX 22 28 09 22 09 50 09 2a
-        HEX 0b 0f 19 a8 29 0b 09 0a
-        HEX 0b 1a 18 09 22 09 50 09
-        HEX 3a 31 90 21 3b 12 18 11
-        HEX 12 09 50 09 12 0b 22 41
-        HEX 70 31 1b 0f 13 22 28 19
-        HEX 40 1b 0a 09 0b 1a 51 58
-        HEX 41 12 0b 09 0b 2a 80 09
-        HEX 0a 23 12 61 18 81 3a 11
-        HEX 78 19 12 0b 12 61 18 12
-        HEX 81 2a 11 80 21 2a 59 10
-        HEX 09 12 89 1a 19 78 29 3a
-        HEX 0b 31 28 1a a9 68 49 1a
-        HEX 0b 12 0b 29 28 22 a9 60
-        HEX 49 22 23 29 20 09 2a 99
-        HEX 38 11 20 41 13 0a 23 49
-        HEX 52 69 50 21 20 0e 39 1b
-        HEX 0f 0b 51 5a 49 68 29 20
-        HEX 41 13 71 4a 09 18 19 78
-        HEX 31 18 39 13 81 0b 0a 11
-        HEX 22 b0 79 13 59 12 19 13
-        HEX 1a 09 12 60 19 40 61 0b
-        HEX 11 0b 49 22 0b 0a 09 2b
-        HEX 22 60 09 12 40 21 0a 5b
-        HEX 61 0a 23 1a 23 0c 58 11
-        HEX 1a 38 21 1a 13 0a 0b 22
-        HEX 0b 39 1a 0e 09 12 13 22
-        HEX 18 0b 10 0b 09 38 11 22
-        HEX 38 29 1a 0b 1a 0b 0f 13
-        HEX 31 6a 30 13 11 28 11 32
-        HEX 38 21 4a 13 29 6a 40 13
-        HEX 28 11 3a 38 29 2a 0b 0a
-        HEX 13 39 62 78 09 42 38 29
-        HEX 22 23 49 3a 09 12 80 19
-        HEX 32 38 29 1a 13 69 22 21
-        HEX 0a 90 21 12 48 19 1a 13
-        HEX b9 a8 0e 0a 50 11 1a 13
-        HEX 39 40 21 f8 38 09 2a 0b
-        HEX 21 80 19 50 1b a8 09 12
-        HEX 11 0a 88 41 40 13 0f 13
-        HEX b0 19 80 49 0c 09 40 0b
-        HEX 09 0b f8 50 29 22 11 0e
-        HEX 98 11 12 09 30 12 98 21
-        HEX 22 08 12 90 11 12 0b 2a
-        HEX 20 1a 18 0e 09 68 19 2a
-        HEX 20 12 70 0b 09 12 13 12
-        HEX 13 0a 28 22 19 68 11 42
-        HEX 08 1a 09 50 11 13 42 1b
-        HEX 28 22 09 70 11 2a 11 10
-        HEX 12 11 48 19 0b 2a 13 12
-        HEX 0b 0f 0b 20 11 22 70 19
-        HEX 4a 19 48 19 0b 1a 0b 12
-        HEX 13 1a 0b 18 21 32 50 31
-        HEX 2a 31 38 0a 19 13 12 0b
-        HEX 1a 13 12 0b 18 11 52 79
-        HEX 1a 41 28 12 21 0b 12 0b
-        HEX 32 13 18 09 6a c9 12 08
-        HEX 12 21 13 12 2b 12 0b 20
-        HEX 11 22 10 12 13 12 c1 12
-        HEX 10 12 19 13 3a 0b 09 12
-        HEX 28 11 12 18 0a 09 0f 0b
-        HEX 0a c9 12 08 12 21 0b 12
-        HEX 09 1b 12 1b 09 28 19 28
-        HEX 11 0b c1 1a 10 12 21 13
-        HEX 09 13 09 13 1a 0b 09 68
-        HEX 09 1b b1 22 08 12 31 1b
-        HEX 19 13 0a 1b 68 13 08 13
-        HEX 69 30 11 0a 20 12 61 22
-        HEX 09 70 09 0b 10 13 08 49
-        HEX 60 22 71 12 11 70 09 13
-        HEX 20 49 58 1a a1 70 11 0b
-        HEX 08 59 60 b9 90 51 20 13
-        HEX 11 30 51 1a 49 70 71 20
-        HEX 09 13 21 20 41 1a 18 09
-        HEX 13 21 70 71 18 19 13 21
-        HEX 20 31 12 38 0b 21 70 71
-        HEX 20 19 0b 09 1b 09 18 31
-        HEX 12 38 0b 0a 21 20 13 40
-        HEX 61 28 19 1b 0f 1b 10 29
-        HEX 1a 11 18 11 0b 12 19 20
-        HEX 0b 11 38 59 38 31 0b 09
-        HEX 20 11 2a 0e 09 1b 09 1a
-        HEX 29 18 0b 19 30 51 a0 32
-        HEX 19 0b 2a 31 18 0b 09 0e
-        HEX 11 20 0a 51 0e a0 32 1b
-        HEX 09 1a 39 18 0b 19 42 61
-        HEX 90 32 0b 59 20 13 09 5a
-        HEX 71 23 60 81 28 13 52 79
-        HEX 0b 11 13 68 71 30 13 3a
-        HEX 41 33 31 23 70 61 30 13
-        HEX 22 21 3b 20 13 09 13 29
-        HEX 0f 0b 90 39 50 0a 11 23
-        HEX 58 1b 28 11 0b b8 11 f8
-        HEX f8 20 00 09 55 31 2e 50
-        HEX 4c 41 59 45 52 20 20 20
-        HEX 20 20 20 8d 8d a1 8d 93
-        HEX a1 8d 91 a2 29 f0 8d 82
-        HEX a2 a5 02 8d 89 a1 a5 03
-        HEX 8d 8a a1 86 02 84 03 8e
-        HEX 92 a2 8c 93 a2 ae 31 bf
-        HEX bd 32 bf 29 f0 cd 82 a2
-        HEX f0 08 ca 10 f3 a9 28 38
-        HEX b0 2e bd 32 bf 29 0f c9
-        HEX 0f d0 05 a9 00 18 90 20
-        HEX 8d 8b a1 20 00 bf 81 8c
-        HEX a1 d0 15 20 00 bf 81 92
-        HEX a1 d0 0d 20 98 a1 b0 08
-        HEX 20 96 a2 b0 03 20 d8 a2
-        HEX ae 89 a1 86 02 ae 8a a1
-        HEX 86 03 60 00 00 00 03 00
-        HEX c5 a3 00 00 03 00 c5 a5
-        HEX 01 00 20 00 bf 82 00 00
-        HEX 20 90 a3 a0 02 a9 03 91
-        HEX 02 a0 04 ad 09 a1 09 f0
-        HEX 91 02 a2 00 c8 bd 0a a1
-        HEX 29 7f 91 02 e8 ec 09 a1
-        HEX d0 f2 a2 00 a0 1c bd 90
-        HEX bf 91 02 e8 c8 e0 04 d0
-        HEX f5 ad ff bf 91 02 c8 ad
-        HEX fe bf 91 02 c8 a9 c3 91
-        HEX 02 c8 a9 27 91 02 c8 a9
-        HEX 0d 91 02 a0 27 a9 06 91
-        HEX 02 20 0d a2 b0 16 a0 29
-        HEX 91 02 8d 0b a2 c8 8a 91
-        HEX 02 8d 0c a2 a9 01 8d 94
-        HEX a2 20 86 a2 60 00 00 ad
-        HEX 8b a1 c9 00 d0 06 a9 18
-        HEX a2 01 d0 2d ad 82 a2 4a
-        HEX 4a 4a 8d 83 a2 20 77 a2
-        HEX 84 03 a9 fc 85 02 a0 00
-        HEX b1 02 48 c8 b1 02 aa d0
-        HEX 0f 68 d0 0d 20 53 a2 b0
-        HEX 09 8a 48 98 aa 68 90 02
-        HEX 68 18 ac 92 a2 84 02 ac
-        HEX 93 a2 84 03 60 a9 00 85
-        HEX 42 85 46 85 47 ad 83 a2
-        HEX 20 77 a2 8d 84 a2 8c 85
-        HEX a2 ad 8d a1 85 43 8d ff
-        HEX cf 20 73 a2 60 6c 84 a2
-        HEX 00 a8 b9 10 bf 48 b9 11
-        HEX bf a8 68 60 00 00 00 00
-        HEX ee 94 a2 20 00 bf 81 90
-        HEX a2 60 03 00 00 00 00 00
-        HEX 20 90 a3 a9 02 a2 04 20
-        HEX af a2 b0 19 a9 03 a2 05
-        HEX 20 af a2 b0 10 a9 04 a2
-        HEX 00 a0 00 91 02 a0 02 8a
-        HEX 91 02 20 86 a2 60 ad 0b
-        HEX a2 29 07 8d d7 a2 ad 0b
-        HEX a2 29 f8 18 a2 03 6e 0c
-        HEX a2 6a ca d0 f9 8d 0b a2
-        HEX 60 00 20 bc a2 ad d7 a2
-        HEX f0 08 ee 0b a2 d0 03 ee
-        HEX 0c a2 ad 0c a2 18 6a b0
-        HEX 06 ae 0b a2 f0 01 38 69
-        HEX 06 48 ad d7 a2 f0 0d ce
-        HEX 0b a2 ad 0b a2 c9 ff d0
-        HEX 03 ce 0c a2 20 90 a3 ad
-        HEX 0c a2 c9 02 90 16 e9 02
-        HEX 8d 0c a2 20 94 a3 68 20
-        HEX 57 a3 20 86 a2 b0 52 a9
-        HEX 00 48 f0 e0 20 90 a3 ad
-        HEX 0c a2 f0 07 a9 ff 20 a1
-        HEX a3 e6 03 ac 0b a2 f0 03
-        HEX 20 7c a3 ac 0b a2 c8 20
-        HEX 84 a3 ad 0c a2 f0 02 c6
-        HEX 03 68 20 57 a3 20 86 a2
-        HEX 60 a0 00 aa f0 1a e0 08
-        HEX 90 0b a9 00 91 02 c8 8a
-        HEX 38 e9 08 10 ee a9 7f ca
-        HEX f0 04 18 6a b0 f9 91 02
-        HEX 60 aa 68 8a 38 60 a9 ff
-        HEX 88 91 02 d0 fb 60 ad d7
-        HEX a2 f0 06 20 a9 a3 88 91
-        HEX 02 60 a9 00 f0 02 a9 ff
-        HEX 20 a1 a3 e6 03 20 a1 a3
-        HEX c6 03 60 a0 00 91 02 c8
-        HEX d0 fb 60 38 a9 08 ed d7
-        HEX a2 f0 0d aa e0 08 f0 0b
-        HEX a9 ff 0a ca d0 fc f0 02
-        HEX a9 ff 60 a9 00 f0 fb 01
-        HEX 38 b0 03 4c 32 a1 86 43
-        HEX c9 03 08 8a 29 70 4a 4a
-        HEX 4a 4a 09 c0 85 49 a0 ff
-        HEX 84 48 28 c8 b1 48 d0 3a
-        HEX b0 0e a9 03 8d 00 08 e6
-        HEX 3d a5 49 48 a9 5b 48 60
-        HEX 85 40 85 48 a0 63 b1 48
-        HEX 99 94 09 c8 c0 eb d0 f6
-        HEX a2 06 bc 1d 09 bd 24 09
-        HEX 99 f2 09 bd 2b 09 9d 7f
-        HEX 0a ca 10 ee a9 09 85 49
-        HEX a9 86 a0 00 c9 f9 b0 2f
-        HEX 85 48 84 60 84 4a 84 4c
-        HEX 84 4e 84 47 c8 84 42 c8
-        HEX 84 46 a9 0c 85 61 85 4b
-        HEX 20 12 09 b0 68 e6 61 e6
-        HEX 61 e6 46 a5 46 c9 06 90
-        HEX ef ad 00 0c 0d 01 0c d0
-        HEX 6d a9 04 d0 02 a5 4a 18
-        HEX 6d 23 0c a8 90 0d e6 4b
-        HEX a5 4b 4a b0 06 c9 0a f0
-        HEX 55 a0 04 84 4a ad 02 09
-        HEX 29 0f a8 b1 4a d9 02 09
-        HEX d0 db 88 10 f6 29 f0 c9
-        HEX 20 d0 3b a0 10 b1 4a c9
-        HEX ff d0 33 c8 b1 4a 85 46
-        HEX c8 b1 4a 85 47 a9 00 85
-        HEX 4a a0 1e 84 4b 84 61 c8
-        HEX 84 4d 20 12 09 b0 17 e6
-        HEX 61 e6 61 a4 4e e6 4e b1
-        HEX 4a 85 46 b1 4c 85 47 11
-        HEX 4a d0 e7 4c 00 20 4c 3f
-        HEX 09 26 50 52 4f 44 4f 53
-        HEX 20 20 20 20 20 20 20 20
-        HEX 20 a5 60 85 44 a5 61 85
-        HEX 45 6c 48 00 08 1e 24 3f
-        HEX 45 47 76 f4 d7 d1 b6 4b
-        HEX b4 ac a6 2b 18 60 4c bc
-        HEX 09 a9 9f 48 a9 ff 48 a9
-        HEX 01 a2 00 4c 79 f4 20 58
-        HEX fc a0 1c b9 50 09 99 ae
-        HEX 05 88 10 f7 4c 4d 09 aa
-        HEX aa aa a0 d5 ce c1 c2 cc
-        HEX c5 a0 d4 cf a0 cc cf c1
-        HEX c4 a0 d0 d2 cf c4 cf d3
-        HEX a0 aa aa aa a5 53 29 03
-        HEX 2a 05 2b aa bd 80 c0 a9
-        HEX 2c a2 11 ca d0 fd e9 01
-        HEX d0 f7 a6 2b 60 a5 46 29
-        HEX 07 c9 04 29 03 08 0a 28
-        HEX 2a 85 3d a5 47 4a a5 46
-        HEX 6a 4a 4a 85 41 0a 85 51
-        HEX a5 45 85 27 a6 2b bd 89
-        HEX c0 20 bc 09 e6 27 e6 3d
-        HEX e6 3d b0 03 20 bc 09 bc
-        HEX 88 c0 60 a5 40 0a 85 53
-        HEX a9 00 85 54 a5 53 85 50
-        HEX 38 e5 51 f0 14 b0 04 e6
-        HEX 53 90 02 c6 53 38 20 6d
-        HEX 09 a5 50 18 20 6f 09 d0
-        HEX e3 a0 7f 84 52 08 28 38
-        HEX c6 52 f0 ce 18 08 88 f0
-        HEX f5 bd 8c c0 10 fb 00 00
-        HEX 00 00 00 00 00 00 00 4c
-        HEX 6e a0 53 4f 53 20 42 4f
-        HEX 4f 54 20 20 31 2e 31 20
-        HEX 0a 53 4f 53 2e 4b 45 52
-        HEX 4e 45 4c 20 20 20 20 20
-        HEX 53 4f 53 20 4b 52 4e 4c
-        HEX 49 2f 4f 20 45 52 52 4f
-        HEX 52 08 00 46 49 4c 45 20
-        HEX 27 53 4f 53 2e 4b 45 52
-        HEX 4e 45 4c 27 20 4e 4f 54
-        HEX 20 46 4f 55 4e 44 25 00
-        HEX 49 4e 56 41 4c 49 44 20
-        HEX 4b 45 52 4e 45 4c 20 46
-        HEX 49 4c 45 3a 00 00 0c 00
-        HEX 1e 0e 1e 04 a4 78 d8 a9
-        HEX 77 8d df ff a2 fb 9a 2c
-        HEX 10 c0 a9 40 8d ca ff a9
-        HEX 07 8d ef ff a2 00 ce ef
-        HEX ff 8e 00 20 ad 00 20 d0
-        HEX f5 a9 01 85 e0 a9 00 85
-        HEX e1 a9 00 85 85 a9 a2 85
-        HEX 86 20 be a1 e6 e0 a9 00
-        HEX 85 e6 e6 86 e6 86 e6 e6
-        HEX 20 be a1 a0 02 b1 85 85
-        HEX e0 c8 b1 85 85 e1 d0 ea
-        HEX a5 e0 d0 e6 ad 6c a0 85
-        HEX e2 ad 6d a0 85 e3 18 a5
-        HEX e3 69 02 85 e5 38 a5 e2
-        HEX ed 23 a4 85 e4 a5 e5 e9
-        HEX 00 85 e5 a0 00 b1 e2 29
-        HEX 0f cd 11 a0 d0 21 a8 b1
-        HEX e2 d9 11 a0 d0 19 88 d0
-        HEX f6 a0 00 b1 e2 29 f0 c9
-        HEX 20 f0 3e c9 f0 f0 08 ae
-        HEX 64 a0 a0 13 4c d4 a1 18
-        HEX a5 e2 6d 23 a4 85 e2 a5
-        HEX e3 69 00 85 e3 a5 e4 c5
-        HEX e2 a5 e5 e5 e3 b0 bc 18
-        HEX a5 e4 6d 23 a4 85 e2 a5
-        HEX e5 69 00 85 e3 c6 e6 d0
-        HEX 95 ae 4f a0 a0 1b 4c d4
-        HEX a1 a0 11 b1 e2 85 e0 c8
-        HEX b1 e2 85 e1 ad 66 a0 85
-        HEX 85 ad 67 a0 85 86 20 be
-        HEX a1 ad 68 a0 85 85 ad 69
-        HEX a0 85 86 ad 00 0c 85 e0
-        HEX ad 00 0d 85 e1 20 be a1
-        HEX a2 07 bd 00 1e dd 21 a0
-        HEX f0 08 ae 64 a0 a0 13 4c
-        HEX d4 a1 ca 10 ed a9 00 85
-        HEX e7 e6 e7 e6 86 e6 86 a6
-        HEX e7 bd 00 0c 85 e0 bd 00
-        HEX 0d 85 e1 a5 e0 d0 04 a5
-        HEX e1 f0 06 20 be a1 4c 8a
-        HEX a1 18 ad 6a a0 6d 08 1e
-        HEX 85 e8 ad 6b a0 6d 09 1e
-        HEX 85 e9 6c e8 00 a9 01 85
-        HEX 87 a5 e0 a6 e1 20 79 f4
-        HEX b0 01 60 ae 32 a0 a0 09
-        HEX 4c d4 a1 84 e7 38 a9 28
-        HEX e5 e7 4a 18 65 e7 a8 bd
-        HEX 29 a0 99 a7 05 ca 88 c6
-        HEX e7 d0 f4 ad 40 c0 4c ef
-        HEX a1 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 03 00 f6 50 52 4f 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 08 78 20 3a a8 28
-        HEX c9 00 d0 02 18 60 c9 02
-        HEX d0 05 a9 2b 4c 21 a8 c9
-        HEX 01 d0 05 a9 27 4c 21 a8
-        HEX 18 69 30 38 60 0a 0e 24
-        HEX ac 8d 36 ac 8a 4a 4a 4a
-        HEX 4a a8 ad 36 ac 20 c6 a9
-        HEX 4e 24 ac 60 aa 29 70 8d
-        HEX 23 ac 8a ae 23 ac 2a a9
-        HEX 00 2a d0 06 bd 8a c0 4c
-        HEX 53 a8 bd 8b c0 bd 89 c0
-        HEX a9 d7 85 da a9 50 8d 24
-        HEX ac a9 00 20 23 a8 a5 da
-        HEX f0 06 20 3a ab 4c 64 a8
-        HEX a9 01 85 d3 a9 aa 85 d0
-        HEX ad 20 ac 18 69 02 85 d4
-        HEX a9 00 85 d1 a5 d1 ae 23
-        HEX ac 20 23 a8 ae 23 ac bd
-        HEX 8d c0 bd 8e c0 a8 bd 8e
-        HEX c0 bd 8c c0 98 10 05 a9
-        HEX 02 4c f9 a8 20 63 ab 90
-        HEX 0e a9 01 a4 d4 cc 1f ac
-        HEX b0 02 a9 04 4c f9 a8 a4
-        HEX d4 cc 1f ac b0 05 a9 04
-        HEX 4c f9 a8 cc 20 ac 90 05
-        HEX a9 03 4c f9 a8 ad 22 ac
-        HEX 8d 25 ac ce 25 ac d0 05
-        HEX a9 01 4c f9 a8 ae 23 ac
-        HEX 20 6a a9 b0 ee a5 d8 d0
-        HEX ea ae 23 ac 20 07 a9 b0
-        HEX e2 e6 d1 a5 d1 c9 23 90
-        HEX 8b a9 00 48 ae 23 ac bd
-        HEX 88 c0 a9 00 20 23 a8 68
-        HEX 60 a0 20 88 f0 5c bd 8c
-        HEX c0 10 fb 49 d5 d0 f4 ea
-        HEX bd 8c c0 10 fb c9 aa d0
-        HEX f2 a0 56 bd 8c c0 10 fb
-        HEX c9 ad d0 e7 a9 00 88 84
-        HEX d5 bd 8c c0 10 fb c9 96
-        HEX d0 30 a4 d5 d0 f0 84 d5
-        HEX bd 8c c0 10 fb c9 96 d0
-        HEX 21 a4 d5 c8 d0 f0 bd 8c
-        HEX c0 10 fb c9 96 d0 13 bd
-        HEX 8c c0 10 fb c9 de d0 0a
-        HEX ea bd 8c c0 10 fb c9 aa
-        HEX f0 5c 38 60 a0 fc 84 dc
-        HEX c8 d0 04 e6 dc f0 f3 bd
-        HEX 8c c0 10 fb c9 d5 d0 f0
-        HEX ea bd 8c c0 10 fb c9 aa
-        HEX d0 f2 a0 03 bd 8c c0 10
-        HEX fb c9 96 d0 e7 a9 00 85
-        HEX db bd 8c c0 10 fb 2a 85
-        HEX dd bd 8c c0 10 fb 25 dd
-        HEX 99 d7 00 45 db 88 10 e7
-        HEX a8 d0 b7 bd 8c c0 10 fb
-        HEX c9 de d0 ae ea bd 8c c0
-        HEX 10 fb c9 aa d0 a4 18 60
-        HEX 8e 37 ac 8d 36 ac cd 24
-        HEX ac f0 5c a9 00 8d 38 ac
-        HEX ad 24 ac 8d 39 ac 38 ed
-        HEX 36 ac f0 37 b0 07 49 ff
-        HEX ee 24 ac 90 05 69 fe ce
-        HEX 24 ac cd 38 ac 90 03 ad
-        HEX 38 ac c9 0c b0 01 a8 38
-        HEX 20 1d aa b9 4b ab 20 3a
-        HEX ab ad 39 ac 18 20 20 aa
-        HEX b9 57 ab 20 3a ab ee 38
-        HEX ac d0 bd 20 3a ab 18 ad
-        HEX 24 ac 29 03 2a 0d 37 ac
-        HEX aa bd 80 c0 ae 37 ac 60
-        HEX 20 0e ac bd 8d c0 bd 8e
-        HEX c0 a9 ff 9d 8f c0 dd 8c
-        HEX c0 48 68 ea a0 04 48 68
-        HEX 20 a5 aa 88 d0 f8 a9 d5
-        HEX 20 a4 aa a9 aa 20 a4 aa
-        HEX a9 ad 20 a4 aa a0 56 ea
-        HEX ea ea d0 03 20 0e ac ea
-        HEX ea a9 96 9d 8d c0 dd 8c
-        HEX c0 88 d0 f0 24 00 ea 20
-        HEX 0e ac a9 96 9d 8d c0 dd
-        HEX 8c c0 a9 96 ea c8 d0 ef
-        HEX 20 a4 aa a9 de 20 a4 aa
-        HEX a9 aa 20 a4 aa a9 eb 20
-        HEX a4 aa a9 ff 20 a4 aa bd
-        HEX 8e c0 bd 8c c0 60 ea 48
-        HEX 68 9d 8d c0 dd 8c c0 60
-        HEX 38 bd 8d c0 bd 8e c0 30
-        HEX 5e a9 ff 9d 8f c0 dd 8c
-        HEX c0 48 68 20 1b ab 20 1b
-        HEX ab 9d 8d c0 dd 8c c0 ea
-        HEX 88 d0 f0 a9 d5 20 2d ab
-        HEX a9 aa 20 2d ab a9 96 20
-        HEX 2d ab a5 d3 20 1c ab a5
-        HEX d1 20 1c ab a5 d2 20 1c
-        HEX ab a5 d3 45 d1 45 d2 48
-        HEX 4a 05 d0 9d 8d c0 bd 8c
-        HEX c0 68 09 aa 20 2c ab a9
-        HEX de 20 2d ab a9 aa 20 2d
-        HEX ab a9 eb 20 2d ab 18 bd
-        HEX 8e c0 bd 8c c0 60 48 4a
-        HEX 05 d0 9d 8d c0 dd 8c c0
-        HEX 68 ea ea ea 09 aa ea ea
-        HEX 48 68 9d 8d c0 dd 8c c0
-        HEX 60 00 00 00 a2 11 ca d0
-        HEX fd e6 d9 d0 02 e6 da 38
-        HEX e9 01 d0 f0 60 01 30 28
-        HEX 24 20 1e 1d 1c 1c 1c 1c
-        HEX 1c 70 2c 26 22 1f 1e 1d
-        HEX 1c 1c 1c 1c 1c ad 21 ac
-        HEX 85 d6 a0 80 a9 00 85 d2
-        HEX 4c 73 ab a4 d4 ae 23 ac
-        HEX 20 ae aa 90 03 4c 0e ac
-        HEX ae 23 ac 20 2e aa e6 d2
-        HEX a5 d2 c9 10 90 e5 a0 0f
-        HEX 84 d2 ad 22 ac 8d 25 ac
-        HEX 99 26 ac 88 10 fa a5 d4
-        HEX 38 e9 05 a8 20 0e ac 20
-        HEX 0e ac 48 68 ea ea 88 d0
-        HEX f3 ae 23 ac 20 6a a9 b0
-        HEX 3c a5 d8 f0 13 c6 d4 a5
-        HEX d4 cd 1f ac b0 2f 38 60
-        HEX ae 23 ac 20 6a a9 b0 1a
-        HEX ae 23 ac 20 07 a9 b0 12
-        HEX a4 d8 b9 26 ac 30 0b a9
-        HEX ff 99 26 ac c6 d2 10 e0
-        HEX 18 60 ce 25 ac d0 d9 c6
-        HEX d6 d0 02 38 60 ad 22 ac
-        HEX 0a 8d 25 ac ae 23 ac 20
-        HEX 6a a9 b0 06 a5 d8 c9 0f
-        HEX f0 07 ce 25 ac d0 ed 38
-        HEX 60 a2 d6 20 0e ac 20 0e
-        HEX ac 24 00 ca d0 f5 4c 68
-        HEX ab 0e 1b 03 10 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00
-@ %def GEN_BLOB
+The overlay shares the engine's calling conventions: \texttt{MSG\_PRINT} and
+\texttt{MSG\_AT} take inline zero-terminated text, \texttt{STR\_NTH\_CAP} an
+inline name-table pointer, and the library's pointer-path
+\texttt{MLIB\_BLOAD\_AT\_P}/\texttt{MLIB\_BSAVE\_P} an inline address and path
+pointer. \texttt{GEN} adds one local convention of its own,
+\texttt{PROMPT\_LINE}, a trampoline that homes the cursor to the bottom line
+and falls into \texttt{MSG\_PRINT}.
+
+\subsection{Title screen and the two paths}
+
+Entry draws the title and offers ``Generate new character'' or ``Continue
+previous game''. The continue path \texttt{BLOAD}s the saved record to
+[[GAME_VARS]] and checks its first word against \texttt{\$01CA}, the byte
+length of a [[PLR_SAVE]] record, used here as a file signature.
+
+<<gen defines>>=
+        PROCESSOR 6502
+;
+; GEN runs at the shared overlay base and calls into the resident STUPH
+; library ($15xx), the MI.U1 engine API ($80xx-$88xx), the MLIB file library
+; ($B7xx), and -- uniquely among the overlays -- straight into the ProDOS MLI
+; ($BF00) and the Disk II card soft switches to format a player save disk.
+;
+; --- zero page ---
+ZP_A2L          EQU $0002
+ZP_A2H          EQU $0003
+MON_CH          EQU $0024
+MON_CV          EQU $0025
+ZP_PAGE_XOR     EQU $007F
+ZP_PAGE_TGL     EQU $0080
+ZP_BLK_PTR      EQU $00A7
+ZP_NAMLEN       EQU $00A9
+ZP_DRIVE        EQU $00AA
+ZP_SLOT         EQU $00AB
+RW_T0           EQU $00D0
+RW_SECTOR       EQU $00D1
+RW_T2           EQU $00D2
+RW_T3           EQU $00D3
+RW_COUNT        EQU $00D4
+RW_NIB          EQU $00D5
+RW_T6           EQU $00D6
+RW_ERR          EQU $00D8
+RW_T9           EQU $00D9
+RW_TA           EQU $00DA
+RW_TB           EQU $00DB
+RW_TC           EQU $00DC
+RW_TD           EQU $00DD
+RW_E0           EQU $00E0
+RW_E1           EQU $00E1
+RW_E2           EQU $00E2
+RW_E6           EQU $00E6
+RW_E7           EQU $00E7
+RW_E8           EQU $00E8
+RW_E9           EQU $00E9
+; --- STUPH resident library ---
+SOUND_ON        EQU $1580
+SFX_ON          EQU $1581
+FILE_LOAD_AT    EQU $158C
+PAGE_COPY       EQU $158F
+TEXT_SCROLL     EQU $1592
+CLR_EOL         EQU $1598
+CLR_WINDOW      EQU $159B
+WIN_FULL        EQU $159E
+WIN_STATS       EQU $15A1
+WIN_TEXT        EQU $15A4
+WIN_VIEW        EQU $15A7
+PAGE_FLIP       EQU $15AD
+FONT_DRAW       EQU $15B0
+RND             EQU $15B9
+KEY_POLL        EQU $15BC
+KEY_WAIT        EQU $15BF
+KEY_GET         EQU $15C2
+SOUND_SET       EQU $15E0
+; --- buffers ---
+HGR2            EQU $4000
+GAME_VARS       EQU $6000
+GAME_VARS_FLAG  EQU $6D00
+; --- MI.U1 string tables + player state ---
+STR_RACES       EQU $73AF
+STR_STATS       EQU $748E
+STR_CLASSES     EQU $755D
+DISK_PROMPT     EQU $7DCC
+PATH_PLAYER     EQU $7E38
+PLR_SAVE        EQU $7E6D
+PLR_SOUND       EQU $7E71
+PLR_SFX         EQU $7E72
+PLR_SEX         EQU $7EB7
+PLR_NAME        EQU $7EB8
+PLR_HITS        EQU $7EC6
+PLR_STR         EQU $7EC8
+PLR_AGI         EQU $7ECA
+PLR_STA         EQU $7ECC
+PLR_CHA         EQU $7ECE
+PLR_WIS         EQU $7ED0
+PLR_INT         EQU $7ED2
+PLR_RACE        EQU $7ED6
+PLR_CLASS       EQU $7ED8
+PLR_SPACE_X     EQU $7EEF
+PLR_SPACE_Y     EQU $7EF0
+; --- MI.U1 engine API ---
+PRINT_HEX       EQU $804F
+PRINT_DIGIT     EQU $8058
+CHAR_OUT        EQU $8062
+PUTCH_NL_COL1   EQU $807E
+CURSOR_COL1     EQU $8081
+CR              EQU $809C
+STR_NTH_CAP     EQU $80B1
+MSG_AT          EQU $8115
+MSG_PRINT       EQU $8119
+CHAR_REPEAT     EQU $8144
+DRAW_SCREEN     EQU $814B
+PRINT_NUM8      EQU $820D
+STATS_DRAW      EQU $8331
+PRINT_STAT16    EQU $8355
+WIN_RESTORE     EQU $83A9
+WIN_SAVE        EQU $83B4
+QUERY_MARK      EQU $8407
+BEEP_HUH        EQU $840F
+KBD_CLEAR       EQU $8414
+POPUP_FRAME     EQU $841E
+PRINT_NAME      EQU $8837
+EXIT_TO_OUT     EQU $88FB
+; --- MLIB file library + ProDOS MLI / global page ---
+MLIB_BLOAD_AT_P EQU $B721
+MLIB_BSAVE_P    EQU $B724
+MLIB_PARSE_PATH EQU $B733
+MLIB_ONLINE     EQU $B739
+MLIB_KEEP_FLAG  EQU $B73C
+PRODOS_BUF      EQU $BB00
+MLI             EQU $BF00
+PRODOS_DEVTAB   EQU $BF10
+PRODOS_DEVNUM   EQU $BF30
+PRODOS_DEVCNT   EQU $BF31
+PRODOS_DEVLST   EQU $BF32
+PRODOS_DATE     EQU $BF90
+; --- soft switches + ROM ---
+SPEAKER         EQU $C030
+STROBE          EQU $C040
+MON_PREAD_LIKE  EQU $F479
+STALE_FFFF      EQU $FFFF
+@ %def STALE_FFFF
 
 <<gen.asm>>=
         PROCESSOR 6502
-<<gen blob>>
+<<gen defines>>
+<<gen entry>>
+<<gen launch>>
+<<gen chargen>>
+<<gen attr input>>
+<<gen pick race>>
+<<gen pick sex>>
+<<gen pick class>>
+<<gen pick name>>
+<<gen save>>
+<<gen editor draw>>
+<<gen chargen data>>
+<<gen format entry>>
+<<gen vol check>>
+<<gen write voldir>>
+<<gen text helpers>>
+<<gen rdblk data>>
+<<gen border>>
+<<gen image data>>
+<<gen format volume>>
+<<gen fv paramblocks>>
+<<gen fv write dir>>
+<<gen fv bitmap ptr>>
+<<gen fv bitmap>>
+<<gen fv vectors>>
+<<gen fv write block>>
+<<gen fv wr3>>
+<<gen fv init dir>>
+<<gen fv remain>>
+<<gen fv fill>>
+<<gen boot image>>
+<<gen rwts bss>>
+<<gen rwts format>>
+<<gen rwts pad>>
+<<gen rwts delay>>
+<<gen seek tables>>
+<<gen rwts verify>>
+<<gen rwts tail>>
 @
+
+<<gen entry>>=
+        ORG $8956
+OVERLAY_ENTRY
+        SUBROUTINE
+        ; Overlay entry: draw the title screen and run the menu.
+        ;
+        ; Behavior:
+        ;   Set MLIB_KEEP_FLAG so the resident library survives, draw the
+        ;   decorative border + title ("Ultima I"), and offer two choices:
+        ;   (a) generate a new character (-> CHARGEN), or (b) continue a
+        ;   previous game -- BLOAD the saved player record to GAME_VARS and
+        ;   verify its signature ($CA,$01 = the PLR_SAVE byte length $01CA).
+        ;   A missing or bad disk prints "Please put in the Player disk."
+        ;   and re-prompts.
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$FF
+        STA MLIB_KEEP_FLAG
+TITLE_REDRAW
+        JSR WIN_FULL
+        STA ZP_PAGE_TGL
+        STA ZP_PAGE_XOR
+        JSR BORDER_DRAW
+        JSR CLEAR_LINES
+        LDY #$06
+        LDX #$0C
+        JSR MSG_AT
+        DC.B $1B,$1B,$1B," Ultima I ",$1B,$1B,$1B,"||",$7F,$0E,"from darkest|",$7F,$0E,"dungeons, to|",$7F,$0D,"deepest space!|||",$7F,$07,"a) Generate new character|",$7F,$07,"b) Continue previous game||",$7F,$0D,"Thy choice: ",0
+        JSR PAGE_FLIP
+MENU_KEYLOOP
+        JSR KEY_WAIT
+        PHA
+        JSR CLEAR_LINES
+        PLA
+        CMP #$41
+        BNE .L8A0C
+        JMP CHARGEN
+.L8A0C
+        CMP #$42
+        BNE MENU_KEYLOOP
+        LDA #$62
+        JSR FONT_DRAW
+        JSR MLIB_BLOAD_AT_P
+        DC.W GAME_VARS
+        DC.W PATH_PLAYER
+        BCS .L8A2C
+        LDA GAME_VARS
+        CMP #$CA
+        BNE .L8A2C
+        LDA GAME_VARS+1
+        CMP #$01
+        BEQ LAUNCH_GAME
+.L8A2C
+        JSR WIN_SAVE
+        LDX #$02
+        LDY #$15
+        JSR MSG_AT
+        DC.B "Please put in the Player disk.",0
+        JSR WIN_RESTORE
+        JMP MENU_KEYLOOP
+@ %def TITLE_REDRAW MENU_KEYLOOP
+
+When ``continue'' validates, \texttt{LAUNCH\_GAME} installs the loaded record
+and starts the overworld. Its two loops use self-modified pointers: the first
+copies the player record from the load buffer into the live player state at
+\texttt{PLR\_SAVE} (stopping when the destination reaches the end of the
+block), and the second overlays the 13-page initial game-state image
+(\texttt{GAME\_IMAGE}, stored in this file) onto \texttt{GAME\_VARS} before
+handing control to \texttt{EXIT\_TO\_OUT}. The same launch tail serves the new
+game once its record is saved.
+
+<<gen launch>>=
+        ORG $8A5B
+LAUNCH_GAME
+        SUBROUTINE
+        ; Copy the loaded save into the live player block and launch OUT.
+        ;
+        ; Behavior:
+        ;   The first loop copies the BLOADed player record (GAME_VARS, the
+        ;   $6000 load buffer) byte-by-byte into the live player state at
+        ;   PLR_SAVE, advancing two self-modified pointers (DECRYPT_SRC,
+        ;   DECRYPT_PTR) until the destination reaches the end of the block
+        ;   ($8037).  The second loop overlays the 13-page initial game-state
+        ;   image (GAME_IMAGE) into GAME_VARS, marks the world initialised
+        ;   (GAME_VARS_FLAG), restores the saved sound/sfx settings, draws the
+        ;   first map frame, and jumps to EXIT_TO_OUT to begin play.
+        ;
+        ; Clobbers: A, X, Y
+DECRYPT_SRC = *+1
+        LDA GAME_VARS
+DECRYPT_PTR = *+1
+        STA PLR_SAVE
+        INC DECRYPT_SRC
+        BNE .L8A69
+        INC DECRYPT_SRC+1
+.L8A69
+        INC DECRYPT_PTR
+        BNE .L8A71
+        INC DECRYPT_PTR+1
+.L8A71
+        LDA DECRYPT_PTR
+        EOR #$37
+        BNE LAUNCH_GAME
+        LDA DECRYPT_PTR+1
+        EOR #$80
+        BNE LAUNCH_GAME
+        TAY
+        LDX #$0D
+.L8A82
+COPY_SRC = *+2
+        LDA GAME_IMAGE,Y
+COPY_DST = *+2
+        STA GAME_VARS,Y
+        INY
+        BNE .L8A82
+        INC COPY_SRC
+        INC COPY_DST
+        DEX
+        BNE .L8A82
+        STX GAME_VARS_FLAG
+        LDA PLR_SOUND
+        STA SOUND_ON
+        JSR SOUND_SET
+        LDA PLR_SFX
+        STA SFX_ON
+        LDA #$60
+        STA ZP_PAGE_XOR
+        JSR DRAW_SCREEN
+        JSR WIN_TEXT
+        JSR TEXT_SCROLL
+        JSR STATS_DRAW
+        LDA #$60
+        STA ZP_PAGE_TGL
+        JSR PAGE_FLIP
+        JSR PAGE_COPY
+        JMP EXIT_TO_OUT
+@ %def LAUNCH_GAME
+
+\subsection{Character generation}
+
+The ``a'' choice enters \texttt{CHARGEN}. It blanks the stat area of the
+working template with a self-modified clear loop, primes the point pool
+(\texttt{POINT\_POOL} $\leftarrow$ 30) and the cursor, prints the on-screen
+instructions, and drops into the attribute editor.
+
+<<gen chargen>>=
+        ORG $8AC3
+CHARGEN
+        SUBROUTINE
+        ; Character generation: clear the portrait, run the attribute editor.
+        ;
+        ; Behavior:
+        ;   Draw the "Character Generation" header, then a self-modified clear
+        ;   loop (CLEAR_SRC/CLEAR_DST patched from #$904F/#$906F) blanks the
+        ;   stat region of the template.  Seed the point pool (POINT_POOL <-
+        ;   #$1E = 30 points) and the editor cursor (CURSOR_IDX <- #$01),
+        ;   print the instructions, and fall into ATTR_INPUT.
+        ;
+        ; Clobbers: A, X, Y
+        JSR WIN_FULL
+        JSR BORDER_DRAW
+        LDY #$00
+        LDX #$08
+        JSR MSG_AT
+        DC.B $0E," Character Generation ",$18,"~",0
+        JSR CLEAR_LINES
+        LDA #$6F
+        STA CLEAR_DST
+        LDA #$7E
+        STA CLEAR_DST+1
+        LDA #$4F
+        STA CLEAR_SRC
+        LDA #$90
+        STA CLEAR_SRC+1
+.L8B01
+CLEAR_SRC = *+1
+        LDA STALE_FFFF
+CLEAR_DST = *+1
+        STA STALE_FFFF
+        INC CLEAR_SRC
+        BNE .L8B0F
+        INC CLEAR_SRC+1
+.L8B0F
+        INC CLEAR_DST
+        BNE .L8B17
+        INC CLEAR_DST+1
+.L8B17
+        LDA CLEAR_SRC
+        CMP #$D7
+        BNE .L8B01
+        LDA CLEAR_SRC+1
+        CMP #$90
+        BNE .L8B01
+        JSR EDITOR_DRAW
+        LDA #$1E
+        STA POINT_POOL
+        LDX #$01
+        STX CURSOR_IDX
+        LDY #$0F
+        JSR MSG_AT
+        DC.B " Move cursor with up and down arrows~ (or return and slash keys), increase~ and decrease attributes with left~ and right arrows.  Press space bar~ when finished, or escape key to~ return to main menu.",0
+@ %def CHARGEN
+
+The editor is a point-buy: six attributes, a shared pool, a floor of~10 and a
+ceiling of~25 per stat. The cursor index selects a 16-bit attribute word at
+\texttt{PLR\_HITS} indexed by twice the cursor (so the words \texttt{PLR\_STR},
+\texttt{PLR\_AGI}, \texttt{PLR\_STA}, \texttt{PLR\_CHA}, \texttt{PLR\_WIS},
+\texttt{PLR\_INT}). Left and right spend and refund points; up and down move
+the cursor; space finishes only once the pool is empty.
+
+<<gen attr input>>=
+        ORG $8C00
+ATTR_INPUT
+        SUBROUTINE
+        ; The attribute-point editor input loop.
+        ;
+        ; Behavior:
+        ;   Redraw the six stats (EDITOR_DRAW), read a key, and act on it.  The
+        ;   cursor index CURSOR_IDX (1..6) selects a stat word at PLR_HITS,X
+        ;   with X = 2*CURSOR_IDX (so STR/AGI/STA/CHA/WIS/INT).  Left arrow
+        ;   ($08) lowers the highlighted stat (floor 10, refunding a point to
+        ;   POINT_POOL); right arrow ($15) raises it (ceiling 25, spending a
+        ;   point); up/down ($0B/$0D or '/'/return) move the cursor with
+        ;   wraparound; space finishes (only when POINT_POOL is empty, else a
+        ;   "Huh?" beep); escape ($1B) abandons chargen back to the menu.
+        ;   When done, fall into PICK_RACE.
+        ;
+        ; Clobbers: A, X, Y
+        JSR EDITOR_DRAW
+        LDA #$63
+        STA MON_CH
+        JSR KEY_WAIT
+        TAY
+        LDA CURSOR_IDX
+        ASL
+        TAX
+        CPY #$1B
+        BNE .L8C17
+        JMP TITLE_REDRAW
+.L8C17
+        CPY #$08
+        BNE .L8C2A
+        LDA PLR_HITS,X
+        CMP #$0A
+        BEQ ATTR_INPUT
+        DEC PLR_HITS,X
+        INC POINT_POOL
+        BNE ATTR_INPUT
+.L8C2A
+        CPY #$15
+        BNE .L8C42
+        LDA POINT_POOL
+        BEQ ATTR_INPUT
+        LDA PLR_HITS,X
+        CMP #$19
+        BCS ATTR_INPUT
+        INC PLR_HITS,X
+        DEC POINT_POOL
+        BPL ATTR_INPUT
+.L8C42
+        CPY #$2F
+        BEQ .L8C4A
+        CPY #$0A
+        BNE .L8C5B
+.L8C4A
+        INC CURSOR_IDX
+        LDA CURSOR_IDX
+        CMP #$07
+        BCC ATTR_INPUT
+        LDA #$01
+        STA CURSOR_IDX
+        BEQ ATTR_INPUT
+.L8C5B
+        CPY #$0D
+        BEQ .L8C63
+        CPY #$0B
+        BNE .L8C6F
+.L8C63
+        DEC CURSOR_IDX
+        BNE ATTR_INPUT
+        LDA #$06
+        STA CURSOR_IDX
+        BNE ATTR_INPUT
+.L8C6F
+        CPY #$20
+        BNE ATTR_INPUT
+        LDY POINT_POOL
+        BEQ PICK_RACE
+        JSR BEEP_HUH
+        JMP ATTR_INPUT
+@ %def ATTR_INPUT
+
+The questionnaire follows. Each of race, sex and class is a single-key menu
+that stores the choice, echoes the chosen name, and --- for race and class ---
+nudges the starting attributes. The race bonuses are the canonical
+\texttt{Ultima~I} ones: Human favours intelligence, Elf agility, Dwarf
+strength, and the Bobbit trades strength for a large wisdom bonus.
+
+<<gen pick race>>=
+        ORG $8C7E
+PICK_RACE
+        SUBROUTINE
+        ; Choose a race and apply its attribute bonuses.
+        ;
+        ; Behavior:
+        ;   Draw "a) Human / b) Elf / c) Dwarf / d) Bobbit", read a letter A..D,
+        ;   store the 1-based choice in PLR_RACE, and echo the name from
+        ;   STR_RACES.  Each race adjusts attributes: Human +5 INT, Elf +5 AGI,
+        ;   Dwarf +5 STR, Bobbit +10 WIS and -5 STR -- the classic Ultima I
+        ;   racial trade-offs.  Falls into PICK_SEX.
+        ;
+        ; Clobbers: A, X, Y
+        STY CURSOR_IDX
+        JSR EDITOR_DRAW
+        JSR CLEAR_LINES
+        LDY #$12
+        LDX #$0B
+        JSR MSG_AT
+        DC.B "a) Human|",$7F,$0B,"b) Elf|",$7F,$0B,"c) Dwarf|",$7F,$0B,"d) Bobbit",0
+        LDY #$10
+        LDX #$02
+        JSR MSG_AT
+        DC.B "Select thy race: ",0
+.L8CD0
+        JSR KEY_WAIT
+        CMP #$41
+        BCC .L8CD0
+        CMP #$45
+        BCS .L8CD0
+        SEC
+        SBC #$40
+        STA PLR_RACE
+        LDY #$0C
+        LDX #$0D
+        JSR MSG_AT
+        DC.B "Race  ",0
+        LDX PLR_RACE
+        JSR STR_NTH_CAP
+        DC.W STR_RACES
+        JSR CLEAR_LINES
+        LDA PLR_RACE
+        CMP #$01
+        BNE .L8D0C
+        LDA PLR_INT
+        CLC
+        ADC #$05
+        STA PLR_INT
+        BNE PICK_SEX
+.L8D0C
+        CMP #$02
+        BNE .L8D1B
+        LDA PLR_AGI
+        CLC
+        ADC #$05
+        STA PLR_AGI
+        BNE PICK_SEX
+.L8D1B
+        CMP #$03
+        BNE .L8D2A
+        LDA PLR_STR
+        CLC
+        ADC #$05
+        STA PLR_STR
+        BNE PICK_SEX
+.L8D2A
+        LDA PLR_WIS
+        CLC
+        ADC #$0A
+        STA PLR_WIS
+        LDA PLR_STR
+        SEC
+        SBC #$05
+        STA PLR_STR
+@ %def PICK_RACE
+
+Sex is cosmetic mechanically but threads through the prose elsewhere; its name
+strings live in this file (\texttt{STR\_SEX}) rather than the engine's tables.
+
+<<gen pick sex>>=
+        ORG $8D3C
+PICK_SEX
+        SUBROUTINE
+        ; Choose a sex.
+        ;
+        ; Behavior:
+        ;   Draw "a) Male / b) Female", read a letter, store the 0-based choice
+        ;   in PLR_SEX, and echo the name from the in-file STR_SEX table.
+        ;   Falls into PICK_CLASS.
+        ;
+        ; Clobbers: A, X, Y
+        JSR EDITOR_DRAW
+        LDY #$12
+        LDX #$0B
+        JSR MSG_AT
+        DC.B "a) Male|",$7F,$0B,"b) Female",0
+        LDY #$10
+        LDX #$02
+        JSR MSG_AT
+        DC.B "Select thy sex: ",0
+.L8D72
+        JSR KEY_WAIT
+        CMP #$41
+        BCC .L8D72
+        CMP #$43
+        BCS .L8D72
+        SEC
+        SBC #$41
+        STA PLR_SEX
+        LDY #$0D
+        LDX #$0E
+        JSR MSG_AT
+        DC.B "Sex  ",0
+        LDX PLR_SEX
+        JSR STR_NTH_CAP
+        DC.W STR_SEX
+@ %def PICK_SEX
+
+Class layers a second set of bonuses on top of race: the Fighter raises both
+strength and agility, the Cleric wisdom, the Wizard intelligence, and the
+Thief agility.
+
+<<gen pick class>>=
+        ORG $8D98
+PICK_CLASS
+        SUBROUTINE
+        ; Choose a class and apply its attribute bonuses.
+        ;
+        ; Behavior:
+        ;   Draw "a) Fighter / b) Cleric / c) Wizard / d) Thief", read a letter,
+        ;   store the 1-based choice in PLR_CLASS, and echo the name from
+        ;   STR_CLASSES.  Each class adds +10 to its signature attributes
+        ;   (Fighter->STR+AGI, Cleric->WIS, Wizard->INT, Thief->AGI).  Falls
+        ;   into PICK_NAME.
+        ;
+        ; Clobbers: A, X, Y
+        JSR CLEAR_LINES
+        LDY #$12
+        LDX #$0B
+        JSR MSG_AT
+        DC.B "a) Fighter|",$7F,$0B,"b) Cleric|",$7F,$0B,"c) Wizard|",$7F,$0B,"d) Thief",0
+        LDY #$10
+        LDX #$02
+        JSR MSG_AT
+        DC.B "Select thy class: ",0
+.L8DEA
+        JSR KEY_WAIT
+        CMP #$41
+        BCC .L8DEA
+        CMP #$45
+        BCS .L8DEA
+        SEC
+        SBC #$40
+        STA PLR_CLASS
+        LDY #$0E
+        LDX #$0C
+        JSR MSG_AT
+        DC.B "Class  ",0
+        LDX PLR_CLASS
+        JSR STR_NTH_CAP
+        DC.W STR_CLASSES
+        LDA PLR_CLASS
+        CMP #$01
+        BNE .L8E2D
+        LDA PLR_STR
+        CLC
+        ADC #$0A
+        STA PLR_STR
+        LDA PLR_AGI
+        CLC
+        ADC #$0A
+        STA PLR_AGI
+        BNE PICK_NAME
+.L8E2D
+        CMP #$02
+        BNE .L8E3C
+        LDA PLR_WIS
+        CLC
+        ADC #$0A
+        STA PLR_WIS
+        BNE PICK_NAME
+.L8E3C
+        CMP #$03
+        BNE .L8E4B
+        LDA PLR_INT
+        CLC
+        ADC #$0A
+        STA PLR_INT
+        BNE PICK_NAME
+.L8E4B
+        LDA PLR_AGI
+        CLC
+        ADC #$0A
+        STA PLR_AGI
+@ %def PICK_CLASS
+
+Name entry caps at thirteen letters, forcing the first upper-case and the rest
+lower-case, and seeds the saved space-combat position from the RNG so a fresh
+character starts somewhere definite if they ever launch into space. The
+finished character falls through to the save prompt.
+
+<<gen pick name>>=
+        ORG $8E54
+PICK_NAME
+        SUBROUTINE
+        ; Enter the character's name, then offer to save.
+        ;
+        ; Behavior:
+        ;   Seed the saved space position (PLR_SPACE_X/Y) from the RNG, prompt
+        ;   "Enter thy name:", and run NAME_KEYLOOP: accept up to 13 letters
+        ;   (first letter forced upper-case, the rest lower-case), backspace
+        ;   ($08/$7F) deletes, return ends.  The finished name lands in
+        ;   PLR_NAME; control falls into SAVE_PROMPT.
+        ;
+        ; Clobbers: A, X, Y
+        JSR EDITOR_DRAW
+        JSR RND
+        STA PLR_SPACE_X
+        JSR RND
+        STA PLR_SPACE_Y
+        LDY #$10
+        LDX #$02
+        JSR MSG_AT
+        DC.B "Enter thy name: ",0
+        JSR CLEAR_LINES
+        LDA #$00
+        STA NAME_LEN
+NAME_KEYLOOP
+        JSR KEY_WAIT
+        LDX NAME_LEN
+        CMP #$0D
+        BNE .L8EA3
+        TXA
+        BEQ NAME_KEYLOOP
+        DEC MON_CV
+        JSR CLEAR_LINES
+        LDA #$0B
+        STA MON_CH
+        LDA #$03
+        STA MON_CV
+        JSR PRINT_NAME
+        JMP SAVE_PROMPT
+.L8EA3
+        CMP #$08
+        BEQ .L8EAB
+        CMP #$7F
+        BNE .L8EBB
+.L8EAB
+        DEX
+        BMI NAME_KEYLOOP
+        STX NAME_LEN
+        LDA #$00
+        STA PLR_NAME,X
+        DEC MON_CH
+        JMP NAME_KEYLOOP
+.L8EBB
+        CPX #$00
+        BNE .L8ED3
+        CMP #$41
+        BCC NAME_KEYLOOP
+        CMP #$5B
+        BCS NAME_KEYLOOP
+.L8EC7
+        STA PLR_NAME,X
+        INC NAME_LEN
+        JSR CHAR_OUT
+        JMP NAME_KEYLOOP
+.L8ED3
+        CPX #$0D
+        BCS NAME_KEYLOOP
+        CMP #$20
+        BCC NAME_KEYLOOP
+        CMP #$41
+        BCC .L8EC7
+        CMP #$5B
+        BCS .L8EC7
+        LDY PLR_SEX,X
+        CPY #$20
+        BEQ .L8EC7
+        ORA #$20
+        BNE .L8EC7
+@ %def PICK_NAME NAME_KEYLOOP
+
+\subsection{Saving, and the path into the formatter}
+
+Saving writes the \texttt{\$01CA}-byte record to \texttt{/U1.PLAYER}. The
+interesting branch is the failure path: the library returns a ProDOS error,
+and \texttt{FMT\_OFFER} reads it. A write-protected disk or a wrong disk is
+reported and retried; ``file not found'' (no player disk yet) offers to format
+one. Accepting drops into the formatter; a successful format returns here to
+retry the save.
+
+<<gen save>>=
+        ORG $8EEE
+SAVE_PROMPT
+        SUBROUTINE
+        ; "Save this character?" and the BSAVE / format-offer paths.
+        ;
+        ; Behavior:
+        ;   SAVE_PROMPT asks "Save this character? (Y-N)".  N restarts chargen.
+        ;   Y -> DO_BSAVE writes the $01CA-byte PLR_SAVE record to PATH_PLAYER
+        ;   via the resident library's pointer-path BSAVE.  If the write fails,
+        ;   FMT_OFFER inspects the error: a write-protected or absent disk
+        ;   prints the matching message and, for "no player disk found", offers
+        ;   to format a fresh one (-> FORMAT_ENTRY); RETRY_SAVE re-attempts the
+        ;   BSAVE after a successful format.  A clean save returns to the title.
+        ;
+        ; Clobbers: A, X, Y
+        JSR PROMPT_LINE
+        DC.B "~ Save this character? (Y-N) ",0
+        JSR CLEAR_LINES
+        JSR KEY_WAIT
+        JSR FONT_DRAW
+        CMP #$59
+        BEQ SAVE_PLAYER
+        CMP #$4E
+        BNE SAVE_PROMPT
+        JMP CHARGEN
+SAVE_PLAYER
+        JSR MLIB_BSAVE_P
+        DC.W PLR_SAVE
+        DC.W $01CA
+        DC.W PATH_PLAYER
+        BCS FMT_OFFER
+        JMP TITLE_REDRAW
+FMT_OFFER
+        CMP #$04
+        BEQ .L8F39
+        CMP #$0A
+        BNE .L8F5F
+.L8F39
+        JSR PROMPT_LINE
+        DC.B "The disk is write protected.",0
+        JSR FMT_PRESS_SPACE
+        JMP SAVE_PROMPT
+.L8F5F
+        JSR PROMPT_LINE
+        DC.B "No player disk found.~ Format a new player disk? (Y-N) ",0
+.L8F9A
+        JSR KEY_WAIT
+        CMP #$59
+        BEQ RETRY_SAVE
+        CMP #$4E
+        BNE .L8F9A
+        JMP SAVE_PROMPT
+RETRY_SAVE
+        JSR FORMAT_ENTRY
+        JSR WINFULL_HOME
+        JMP SAVE_PLAYER
+@ %def SAVE_PROMPT SAVE_PLAYER FMT_OFFER RETRY_SAVE
+
+\texttt{EDITOR\_DRAW} renders the editor each keystroke: the six named stats
+with their values, the highlighted one in inverse video, and the running
+``points left to distribute''.
+
+<<gen editor draw>>=
+        ORG $8FB1
+EDITOR_DRAW
+        SUBROUTINE
+        ; Redraw the six attributes and the points-remaining line.
+        ;
+        ; Behavior:
+        ;   For each of the six stats print its STR_STATS name and 16-bit value
+        ;   (PRINT_STAT16), drawing the highlighted one (CURSOR_IDX) in inverse
+        ;   video, then print "Points left to distribute: NN" from POINT_POOL.
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$00
+        STA $8249
+        STA $7E4E
+        LDX #$05
+        STX MON_CH
+        LDY #$03
+        STY MON_CV
+        LDA CURSOR_IDX
+        BEQ .L8FEB
+        JSR MSG_PRINT
+        DC.B "Points left to distribute: ",0
+        LDA POINT_POOL
+        JSR PRINT_NUM8
+.L8FEB
+        DEC $21
+        JSR CLR_EOL
+        INC $21
+        JSR PUTCH_NL_COL1
+.L8FF5
+        INC $7E4E
+        INC MON_CV
+        LDX #$0A
+        STX MON_CH
+        LDA #$20
+        LDX $7E4E
+        CPX CURSOR_IDX
+        BNE .L900A
+        LDA #$0E
+.L900A
+        JSR CHAR_OUT
+        JSR STR_NTH_CAP
+        DC.W STR_STATS
+        LDA #$2E
+        STA $8249
+.L9017
+        JSR CHAR_OUT
+        LDX MON_CH
+        CPX #$1A
+        BCC .L9017
+        LDA $7E4E
+        ASL
+        TAX
+        LDA PLR_HITS,X
+        JSR PRINT_NUM8
+        LDA #$20
+        LDX $7E4E
+        CPX CURSOR_IDX
+        BNE .L9037
+        LDA #$18
+.L9037
+        JSR CHAR_OUT
+        CPX #$06
+        BCC .L8FF5
+        RTS
+@ %def EDITOR_DRAW
+
+The character generator's small data block holds the editor counters, the
+in-file ``male''/``female'' strings, the \texttt{\$01CA} signature template,
+and \texttt{PLR\_TEMPLATE} --- the default player record the new character is
+built on top of (default inventory, hit points, position).
+
+<<gen chargen data>>=
+        ORG $903F
+POINT_POOL
+        HEX 0000
+CURSOR_IDX
+        HEX 00
+NAME_LEN
+        HEX 00
+STR_SEX
+        HEX 6d616ce566656d61
+        HEX 6ce5
+SAVE_SIG
+        HEX ca01
+PLR_TEMPLATE
+        HEX 0000ffff27210000
+        HEX 0000000101000101
+        HEX 0000000001020000
+        HEX 0000000000000000
+        HEX 0000000001000000
+        HEX 0000000000000001
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000ffffffff0000
+        HEX 0000000000000000
+        HEX 0000000000000096
+        HEX 000a000a000a000a
+        HEX 000a000a00640001
+        HEX 0001000000000000
+        HEX 000000000095c800
+        HEX 0000e803e80300ff
+        HEX efbe000000000000
+@ %def POINT_POOL CURSOR_IDX NAME_LEN STR_SEX SAVE_SIG PLR_TEMPLATE
+
+\subsection{The disk formatter}
+
+Everything from here serves one goal: take a blank or foreign disk and turn it
+into an empty \texttt{/U1.PLAYER} ProDOS volume the game can save to. It is a
+self-contained subsystem; nothing in normal play reaches it.
+
+The front end picks a slot and drive, defaulting to the ProDOS last-used
+device. Digit keys edit the fields (slot 1--7, drive 1--2), return accepts,
+escape backs out, and \texttt{MLIB\_ONLINE} refuses a slot/drive with no
+disk in it.
+
+<<gen format entry>>=
+        ORG $90D7
+FORMAT_ENTRY
+        SUBROUTINE
+        ; Disk formatter front end: choose the slot and drive.
+        ;
+        ; Behavior:
+        ;   FORMAT_ENTRY derives a default slot/drive from the ProDOS last-used
+        ;   device number (PRODOS_DEVNUM).  FORMAT_RESTART draws "Slot: ( )" /
+        ;   "Drive: ( )" and runs SLOT_KEYLOOP / DRIVE_KEYLOOP: digits update
+        ;   the field (slot 1..7, drive 1..2), return accepts, escape aborts.
+        ;   MLIB_ONLINE rejects a slot/drive with no disk.  When both are set,
+        ;   control passes to VOL_CHECK.
+        ;
+        ; Clobbers: A, X, Y
+        LDA PRODOS_DEVNUM
+        TAX
+        AND #$80
+        ASL
+        ROL
+        ADC #$01
+        STA ZP_DRIVE
+        TXA
+        LSR
+        LSR
+        LSR
+        LSR
+        AND #$07
+        STA ZP_SLOT
+FORMAT_RESTART
+        JSR WINFULL_HOME
+        JSR PROMPT_LINE
+        DC.B "Enter the Slot & Drive numbers~ for the new player disk.",0
+        LDX #$09
+        LDY #$09
+        JSR MSG_AT
+        DC.B "Slot: ( )",0
+        LDX #$08
+        LDY #$0B
+        JSR MSG_AT
+        DC.B "Drive: ( )",0
+        LDA #$10
+        STA MON_CH
+        LDA #$09
+        STA MON_CV
+        LDA ZP_SLOT
+        JSR PRINT_DIGIT
+        LDA #$10
+        STA MON_CH
+        LDA #$0B
+        STA MON_CV
+        LDA ZP_DRIVE
+        JSR PRINT_DIGIT
+        LDA #$13
+        STA MON_CH
+        LDA #$09
+        STA MON_CV
+SLOT_KEYLOOP
+        JSR KEY_WAIT
+        CMP #$0D
+        BEQ .L9182
+        SEC
+        SBC #$30
+        BEQ .L9192
+        CMP #$08
+        BCS .L9192
+        STA ZP_SLOT
+.L9182
+        LDA #$13
+        STA MON_CH
+        LDA #$09
+        STA MON_CV
+        LDA ZP_SLOT
+        JSR PRINT_DIGIT
+        JMP .L9197
+.L9192
+        JSR MLIB_ONLINE
+        BEQ SLOT_KEYLOOP
+.L9197
+        LDA #$13
+        STA MON_CH
+        LDA #$0B
+        STA MON_CV
+DRIVE_KEYLOOP
+        JSR KEY_WAIT
+        CMP #$1B
+        BNE .L91A7
+        RTS
+.L91A7
+        CMP #$0D
+        BEQ .L91B6
+        SEC
+        SBC #$30
+        BEQ .L91C6
+        CMP #$03
+        BCS .L91C6
+        STA ZP_DRIVE
+.L91B6
+        LDA #$13
+        STA MON_CH
+        LDA #$0B
+        STA MON_CV
+        LDA ZP_DRIVE
+        JSR PRINT_DIGIT
+        JMP VOL_CHECK
+.L91C6
+        JSR MLIB_ONLINE
+        BEQ DRIVE_KEYLOOP
+@ %def FORMAT_ENTRY FORMAT_RESTART SLOT_KEYLOOP DRIVE_KEYLOOP
+
+With a target chosen, \texttt{VOL\_CHECK} confirms it is a Disk~II (other
+device types are rejected), asks ProDOS whether the disk is already a known
+volume so it can warn before overwriting, and requires an explicit ``Y'' to
+proceed. \texttt{DO\_FORMAT} then brackets the destructive work by saving and
+restoring the engine's zero-page scratch, calling first the low-level
+\texttt{RWTS\_FORMAT} to write the magnetic format and then
+\texttt{FORMAT\_VOLUME} to lay down the directory.
+
+<<gen vol check>>=
+        ORG $91CB
+VOL_CHECK
+        SUBROUTINE
+        ; Verify the target disk, confirm, and dispatch the format.
+        ;
+        ; Behavior:
+        ;   VOL_CHECK reads the device's boot block and tests for a Disk II
+        ;   ($Cn ROM signature); NO_DISKII rejects other devices.  TEST_ONLINE
+        ;   asks ProDOS whether the disk is already a known volume and, if so,
+        ;   shows its name; NON_PRODOS handles an unformatted disk.  CONFIRM_FMT
+        ;   prints "...? (Y-N)" and waits for Y.  DO_FORMAT saves the zero-page
+        ;   scratch, calls the low-level RWTS_FORMAT, then the volume-directory
+        ;   writer, restoring zero page around the call.
+        ;
+        ; Clobbers: A, X, Y
+        JSR CLEAR_FROM20
+        LDA #$00
+        STA ZP_BLK_PTR
+        LDA ZP_SLOT
+        ORA #$C0
+        STA ZP_BLK_PTR+1
+        LDY #$01
+        LDA (ZP_BLK_PTR),Y
+        CMP #$20
+        BNE NO_DISKII
+        LDY #$03
+        LDA (ZP_BLK_PTR),Y
+        BNE NO_DISKII
+        LDY #$05
+        LDA (ZP_BLK_PTR),Y
+        CMP #$03
+        BNE NO_DISKII
+        LDY #$FF
+        LDA (ZP_BLK_PTR),Y
+        BNE NO_DISKII
+        LDA ZP_SLOT
+        ASL
+        LDX ZP_DRIVE
+        CPX #$02
+        BNE .L9200
+        CLC
+        ADC #$10
+.L9200
+        TAX
+        LDA PRODOS_DEVTAB,X
+        CMP PRODOS_DEVTAB
+        BNE TEST_ONLINE
+        LDA $BF11,X
+        CMP $BF11
+        BNE TEST_ONLINE
+NO_DISKII
+        JSR PROMPT_LINE
+        DC.B "No Disk II connected.",0
+        JSR FMT_PRESS_SPACE
+        JMP FORMAT_RESTART
+TEST_ONLINE
+        LDX ZP_DRIVE
+        DEX
+        TXA
+        ASL
+        ASL
+        ASL
+        ORA ZP_SLOT
+        ASL
+        ASL
+        ASL
+        ASL
+        STA FMT_UNIT
+        JSR MLI
+        DC.B $80
+        DC.B $E3
+        DC.B $93
+        BEQ .L9252
+        CMP #$28
+        BNE .L924F
+        JMP NO_DISKII
+.L924F
+        JMP DO_FORMAT
+.L9252
+        JSR MLIB_ONLINE
+        JSR PROMPT_LINE
+        DC.B "Erase ",0
+        LDA PRODOS_BUF+4
+        AND #$0F
+        BNE .L927C
+NON_PRODOS
+        JSR MSG_PRINT
+        DC.B "Non-ProDOS disk",0
+        JMP CONFIRM_FMT
+.L927C
+        STA ZP_NAMLEN
+        LDX #$00
+        TXA
+.L9281
+        ORA PRODOS_BUF+5,X
+        INX
+        CPX ZP_NAMLEN
+        BCC .L9281
+        AND #$80
+        BNE NON_PRODOS
+        LDX #$00
+.L928F
+        LDA PRODOS_BUF+5,X
+        AND #$7F
+        CMP #$2E
+        BCC .L929B
+        JSR CHAR_OUT
+.L929B
+        INX
+        CPX ZP_NAMLEN
+        BCC .L928F
+CONFIRM_FMT
+        JSR MSG_PRINT
+        DC.B "? (Y-N) ",0
+.L92AC
+        JSR KEY_WAIT
+        CMP #$59
+        BEQ DO_FORMAT
+        CMP #$4E
+        BNE .L92AC
+        JMP FORMAT_RESTART
+DO_FORMAT
+        LDX #$0D
+.L92BC
+        LDA RW_T0,X
+        STA ZP_SAVE,X
+        DEX
+        BPL .L92BC
+        LDA FMT_UNIT
+        JSR RWTS_FORMAT
+        PHP
+        PHA
+        LDX #$0D
+.L92CE
+        LDA ZP_SAVE,X
+        STA RW_T0,X
+        DEX
+        BPL .L92CE
+        PLA
+        PLP
+        BCC WRITE_VOLDIR
+        CMP #$27
+        BNE .L92FB
+        JSR PROMPT_LINE
+        DC.B "Unable to format disk.",0
+        JMP .L9339
+.L92FB
+        CMP #$2B
+        BNE .L931E
+        JSR PROMPT_LINE
+        DC.B "Disk is write protected.",0
+        JMP .L9339
+.L931E
+        JSR PROMPT_LINE
+        DC.B "Disk drive speed error.",0
+.L9339
+        JSR FMT_PRESS_SPACE
+        JMP FORMAT_RESTART
+@ %def VOL_CHECK NO_DISKII TEST_ONLINE NON_PRODOS CONFIRM_FMT DO_FORMAT
+
+\texttt{WRITE\_VOLDIR} is the thin wrapper that calls the directory writer and,
+on any ProDOS error, prints the code in hex so a failure is at least
+diagnosable.
+
+<<gen write voldir>>=
+        ORG $933F
+WRITE_VOLDIR
+        SUBROUTINE
+        ; Call FORMAT_VOLUME and report any error.
+        ;
+        ; Behavior:
+        ;   Invoke FORMAT_VOLUME (the ProDOS directory writer) with the unit
+        ;   number; on success return, on failure clear the line and print
+        ;   "Format failed -- error NN." (the ProDOS error code in hex) before
+        ;   restarting the formatter.
+        ;
+        ; Clobbers: A, X, Y
+        LDA FMT_UNIT
+        LDX #$00
+        LDY #$BB
+        JSR FORMAT_VOLUME
+        PHA
+        LDA #$01
+        STA MON_CH
+        LDA #$0F
+        STA MON_CV
+        JSR CLEAR_LINES
+        PLA
+        BNE .L9359
+        RTS
+.L9359
+        PHA
+        JSR PROMPT_LINE
+        DC.B "Format failed.  MLI error #",0
+        PLA
+        JSR PRINT_HEX
+        LDA #$2E
+        JSR CHAR_OUT
+        JSR FMT_PRESS_SPACE
+        JMP FORMAT_RESTART
+@ %def WRITE_VOLDIR
+
+\subsection{Local text helpers}
+
+These few routines are \texttt{GEN}'s own window furniture: a bottom-line
+prompt printer that accepts inline text, a ``press space'' wait, and a couple
+of line-clearing helpers used between chargen steps.
+
+<<gen text helpers>>=
+        ORG $9388
+PROMPT_LINE
+        SUBROUTINE
+        ; Bottom-line prompt printer and text-window helpers.
+        ;
+        ; Behavior:
+        ;   PROMPT_LINE homes the cursor to the bottom prompt line (row $14)
+        ;   and falls into MSG_PRINT, so callers can pass inline text.
+        ;   PRESS_SPACE prints "Press Space to continue:" and waits.
+        ;   CLEAR_FROM20 / WINFULL_HOME / CLEAR_LINES blank ranges of text rows
+        ;   around the cursor (used between chargen steps).
+        ;
+        ; Clobbers: A, X, Y
+        LDX #$02
+        STX MON_CH
+        LDY #$14
+        STY MON_CV
+        JSR CLEAR_LINES
+        JMP MSG_PRINT
+FMT_PRESS_SPACE
+        LDX #$02
+        LDY #$15
+        JSR MSG_AT
+        DC.B "Press Space to continue: ",0
+        JSR MLIB_ONLINE
+        JSR KEY_WAIT
+CLEAR_FROM20
+        JSR CURSOR_COL1
+        LDA #$14
+        STA MON_CV
+        BNE CLEAR_LINES
+WINFULL_HOME
+        JSR WIN_FULL
+        JSR HOME_CURSOR
+CLEAR_LINES
+        JSR WIN_SAVE
+        DEC $21
+.L93D1
+        JSR CLR_EOL
+        JSR CURSOR_COL1
+        INC MON_CV
+        LDY MON_CV
+        INY
+        CPY $23
+        BCC .L93D1
+        JMP WIN_RESTORE
+@ %def PROMPT_LINE FMT_PRESS_SPACE CLEAR_FROM20 WINFULL_HOME CLEAR_LINES
+
+The \texttt{READ\_BLOCK} parameter block and a fourteen-byte scratch buffer
+(used to preserve zero page [[$D0]]--[[$DD]] across the RWTS call) sit here.
+
+<<gen rdblk data>>=
+        ORG $93E3
+RDBLK_PARAM
+        HEX 03
+FMT_UNIT
+        HEX 0000bb0200
+ZP_SAVE
+        HEX 0000000000000000
+        HEX 000000000000
+@ %def RDBLK_PARAM FMT_UNIT ZP_SAVE
+
+\texttt{BORDER\_DRAW} strokes the decorative double-ruled frame around the
+screen using the font's box glyphs.
+
+<<gen border>>=
+        ORG $93F7
+BORDER_DRAW
+        SUBROUTINE
+        ; Draw the decorative double-line screen border.
+        ;
+        ; Behavior:
+        ;   Stroke the top rule, the side rules down to row $16, and the bottom
+        ;   rule using the font's box-drawing glyphs, then HOME_CURSOR resets
+        ;   the text cursor to (1,1).
+        ;
+        ; Clobbers: A, X, Y
+        LDA #$10
+        JSR CHAR_OUT
+        LDX #$26
+        LDA #$04
+        JSR CHAR_REPEAT
+        LDA #$12
+        JSR FONT_DRAW
+.L9408
+        INC MON_CV
+        JSR CR
+        LDA #$0A
+        JSR FONT_DRAW
+        LDA #$27
+        STA MON_CH
+        LDA #$08
+        JSR FONT_DRAW
+        JSR KEY_POLL
+        LDA MON_CV
+        EOR #$16
+        BNE .L9408
+        STA MON_CH
+        INC MON_CV
+        LDA #$14
+        JSR CHAR_OUT
+        LDX #$26
+        LDA #$02
+        JSR CHAR_REPEAT
+        LDA #$16
+        JSR FONT_DRAW
+HOME_CURSOR
+        LDX #$01
+        STX MON_CH
+        STX MON_CV
+        RTS
+@ %def BORDER_DRAW HOME_CURSOR
+
+\subsection{The initial game-state image}
+
+\texttt{GAME\_IMAGE} is the 13-page block \texttt{LAUNCH\_GAME} copies to
+\texttt{GAME\_VARS} to start a new game: the packed world variables, the player
+position, and the \texttt{/U1.PLAYER} path components used to write the first
+save. It is opaque data to this overlay --- the engine and \texttt{MAKE.INDATA}
+give it meaning --- so it is preserved verbatim.
+
+<<gen image data>>=
+        ORG $9440
+GAME_IMAGE
+        HEX 0800e7025806b609
+        HEX f8f8301a217819d8
+        HEX 090a19301a316011
+        HEX 0d11480912096809
+        HEX 2a09282231581948
+        HEX 231a0958091a0d0a
+        HEX 09201a0b0a090b29
+        HEX a8190f0b2a095009
+        HEX 220920123b219031
+        HEX 3a09500922091822
+        HEX 130f1b317041220b
+        HEX 120950091211182a
+        HEX 0b090b124158511a
+        HEX 0b090a1b40192811
+        HEX 3a81186112230a09
+        HEX 88112a911861120b
+        HEX 121980191aa11059
+        HEX 2a2188c128310b3a
+        HEX 2980c928290b120b
+        HEX 1a4970c920292322
+        HEX 4968f929230a1341
+        HEX 201138f9310b0f1b
+        HEX 390e2021286918c1
+        HEX 1341202928612839
+        HEX 0b81133918312811
+        HEX 0a49303113191259
+        HEX 1379280922393021
+        HEX 2b090a0b22490b11
+        HEX 0b61200a09224920
+        HEX 0c231a230a615b0a
+        HEX 21203a510b100b18
+        HEX 221312090e1a390b
+        HEX 220b0a131a212042
+        HEX 4913306a31130f0b
+        HEX 1a0b1a2918523913
+        HEX 406a29134a21205a
+        HEX 29586239130a0b2a
+        HEX 29204a217812093a
+        HEX 4923222920322988
+        HEX 0a212269131a2928
+        HEX 2a0ea8b9131a19f8
+        HEX 10c1131a11a81b40
+        HEX c90b2a09a0130f13
+        HEX 38d10a111209a80b
+        HEX 090b40090ce15009
+        HEX 1211980e1122a158
+        HEX 2a0b121190120822
+        HEX 912812200a131213
+        HEX 12090b7012202a89
+        HEX 0e181a181b421311
+        HEX 50091a0842912220
+        HEX 0b0f0b12132a0b19
+        HEX 48111210112a8922
+        HEX 280b1a13120b1a0b
+        HEX 1948194a89221120
+        HEX 0b12131a0b121319
+        HEX 0a38312a81322118
+        HEX 13320b120b211228
+        HEX 411a795211200b12
+        HEX 2b121321120812c9
+        HEX 6a092012090b3a13
+        HEX 19121012c1121312
+        HEX 10221120091b121b
+        HEX 09120b21120812c9
+        HEX 0a0b0f090a181211
+        HEX 28090b1a13091309
+        HEX 132112101ac10b11
+        HEX 2819281b0a13191b
+        HEX 31120822b11b0970
+        HEX 0922611210110aa9
+        HEX 1308137011127122
+        HEX a90813100b0970a1
+        HEX 1aa120130970f979
+        HEX 080b1170491a9113
+        HEX 7190211309181a81
+        HEX 139970210b381271
+        HEX 13a168210a0b3812
+        HEX 511b090ba9681912
+        HEX 0b1118111a391b0f
+        HEX 1ba1401318291a09
+        HEX 1b090e2a390b3138
+        HEX 5938110b18312a0b
+        HEX 193219885130190b
+        HEX 18391a091b32a00e
+        HEX 510a20110e090b20
+        HEX 590b32886942190b
+        HEX 20816023715a0913
+        HEX 20716813110b7952
+        HEX 1320617023313341
+        HEX 3a132839900b0f29
+        HEX 130913203b212213
+        HEX 3011b80b11281b58
+        HEX 23110af8f85000f8
+        HEX f8f8f84022097022
+        HEX 402b781118191832
+        HEX 19484228120b0f12
+        HEX 130a110b48491022
+        HEX 0b1a2118293a280a
+        HEX 1b2a1b093849181a
+        HEX 1322494a20090a0b
+        HEX 1a0b12090b0a0b0a
+        HEX 093049180a091213
+        HEX 223952202a130a1b
+        HEX 2220110a4118211b
+        HEX 1a414a202213120b
+        HEX 1a0b1218111a3918
+        HEX 19130f091a413a09
+        HEX 0e2009130a0b1a0b
+        HEX 12130a2023123118
+        HEX 211b12592a092809
+        HEX 0a0b2a0b0a13300b
+        HEX 181a212021131269
+        HEX 22093022230a0b60
+        HEX 122128210b0a7912
+        HEX 1130094213500b12
+        HEX 2130a90a1130113a
+        HEX 0913480b0a2938b1
+        HEX 4013121b12090b20
+        HEX 0a201b2140a94823
+        HEX 08130a1320122009
+        HEX 13115099801b2812
+        HEX 180e090b0a115059
+        HEX 1829c0092a091211
+        HEX 50512029280b8819
+        HEX 3a0960492819281b
+        HEX 301230392a096049
+        HEX 28110b280b0f401a
+        HEX 2041227049201b28
+        HEX 1b40221041227051
+        HEX 200b380b58224912
+        HEX 78610c980a181a41
+        HEX 0a806113901a180a
+        HEX 49501120610b9809
+        HEX 2208124150112061
+        HEX 0ba0111209124148
+        HEX 090d09205913a809
+        HEX 12110a290b095011
+        HEX 30510b12a8091239
+        HEX 0b09301310113809
+        HEX 08291b1a58120938
+        HEX 411b280b0f097029
+        HEX 132a30090e081a09
+        HEX 38390b0f09280b11
+        HEX 4809282913321809
+        HEX 0c09101a09402913
+        HEX 0920130948211831
+        HEX 132218210a180a09
+        HEX 48290b09181b0940
+        HEX 2918290a131a2019
+        HEX 12080a081250111b
+        HEX 09180b1938391021
+        HEX 0a132a18190a100a
+        HEX 091a48091311200b
+        HEX 1938694209181122
+        HEX 091a481309301309
+        HEX 0b30790a112a2009
+        HEX 42480b0938191320
+        HEX 0b790a090e2a3032
+        HEX 98210b200b790a09
+        HEX 32302aa019131809
+        HEX 0b0f813238229819
+        HEX 13200a130a291b39
+        HEX 2a09401250213019
+        HEX 0b282a21120b411a
+        HEX 19784928190b2809
+        HEX 2a191213410a2960
+        HEX 6918190b30320912
+        HEX 23713891080e190b
+        HEX 3009520b0ff96913
+        HEX 30121b2a1bf9690b
+        HEX 30091209132a1bf9
+        HEX 610b3809120b1a09
+        HEX 0a130913f9590b40
+        HEX 09130a210b1933b1
+        HEX 10690b480b0a590b
+        HEX 0a1ba90b08690b48
+        HEX 0b610b0a0f0a1371
+        HEX 12191308510a1113
+        HEX 5051130a0b120b71
+        HEX 1a0913204112110b
+        HEX 60490b1a13691223
+        HEX 101308391a110b68
+        HEX 41131a1361120b0f
+        HEX 092309083922090b
+        HEX 68410b2a13512219
+        HEX 0b190819182a1168
+        HEX 190e10111b221b41
+        HEX 2a702a0918114811
+        HEX 181113320b12391a
+        HEX 8032100912096811
+        HEX 0b4a11100e112280
+        HEX 2a18220958190b1a
+        HEX 191a11180932782a
+        HEX 1809221140211231
+        HEX 1a0918426809220b
+        HEX 18090a0d1a093871
+        HEX 12201a0922095819
+        HEX 121318092a093089
+        HEX 181a111a1150110e
+        HEX 111328190a093869
+        HEX 301a08190a19480b
+        HEX 2113481140415012
+        HEX 18215833f8f83800
+        HEX f8f8203338415012
+        HEX 182158333013110a
+        HEX 09132869301a0819
+        HEX 0a19480b2113280b
+        HEX 2a090b2889181a11
+        HEX 1a1150110e111320
+        HEX 0b0a0d1a090b3071
+        HEX 12201a0922095819
+        HEX 1213180b22110b38
+        HEX 2112311a09184268
+        HEX 09220b180b1a090b
+        HEX 080b40190b1a191a
+        HEX 11180932782a180b
+        HEX 12091358110b4a11
+        HEX 100e1122802a182b
+        HEX 601113320b12391a
+        HEX 8032800e10111b22
+        HEX 1b412a702a098029
+        HEX 0b2a135122190b19
+        HEX 0819182a11882113
+        HEX 1a1361120b0f0923
+        HEX 09083922090b9811
+        HEX 0b1a136912231013
+        HEX 08391a110ba0130a
+        HEX 0b120b711a091320
+        HEX 4112110b400b600b
+        HEX 0a0f0a1371121913
+        HEX 08510a1113400b0a
+        HEX 580b0a1ba90b0869
+        HEX 0b4009130a200b18
+        HEX 33b110690b380912
+        HEX 0b1a080a130813f9
+        HEX 590b30091209132a
+        HEX 1bf9610b30121b2a
+        HEX 1bf9690b2809520b
+        HEX 0ff9691328320912
+        HEX 23f941080e190b28
+        HEX 092a191213410af1
+        HEX 18190b282a21120b
+        HEX 411ae918190b280a
+        HEX 130a291b392a4912
+        HEX 8918190b28090b0f
+        HEX 8132392281181913
+        HEX 280b790a0932312a
+        HEX 81201913200b790a
+        HEX 090e2a3132792021
+        HEX 0b28790a112a2942
+        HEX 490b212019133069
+        HEX 423122091a491321
+        HEX 1813090b38391021
+        HEX 0a132a310a100a09
+        HEX 1a511319180b1940
+        HEX 2918290a131a3912
+        HEX 080a0812611b0918
+        HEX 0b19482118311322
+        HEX 390a180a790b0918
+        HEX 1b09500928291332
+        HEX 210c09101a711309
+        HEX 2013097829132a20
+        HEX 190e081a790b0f09
+        HEX 280b11580908291b
+        HEX 1a5812811b280b0f
+        HEX 09102320510b1268
+        HEX 4912390b09301310
+        HEX 0b0d092359138829
+        HEX 12110a290b095013
+        HEX 0923610b90211209
+        HEX 1241502113610b98
+        HEX 0922081241588913
+        HEX 901a180a4960810c
+        HEX 980a181a410a6869
+        HEX 200b380b58224912
+        HEX 6859201b281b4022
+        HEX 5122684928110b28
+        HEX 0b0f401a61226849
+        HEX 281970123110292a
+        HEX 0958512029584920
+        HEX 113a095859182950
+        HEX 49302a0912115099
+        HEX 50311b2812180e09
+        HEX 0b0a1148a9482309
+        HEX 130a132012200913
+        HEX 1140b14013121b12
+        HEX 090b200a201b2130
+        HEX a90a1130113a0913
+        HEX 480b0a2928210b0a
+        HEX 7912113009421350
+        HEX 0b12212021131269
+        HEX 22093022230a0b60
+        HEX 122120211b12592a
+        HEX 0928090a0b2a0b0a
+        HEX 13300b181a212019
+        HEX 130f091a413a090e
+        HEX 2009130a0b1a0b12
+        HEX 130a202312311821
+        HEX 1b1a414a20221312
+        HEX 0b1a0b12200b1a39
+        HEX 180a091213223952
+        HEX 202a130a1b221813
+        HEX 090a41181a132249
+        HEX 4a20090a0b1a0b12
+        HEX 090b0a0b0a2b5918
+        HEX 220b1a2118293a28
+        HEX 0a1b2a2b79203219
+        HEX 484228120b0f1213
+        HEX 0a110b3859282209
+        HEX 7022402b70191819
+        HEX f8f8f8f82800f8f8
+        HEX 28190a09d8197821
+        HEX 1a30092a09680912
+        HEX 0948110d1160311a
+        HEX 28090a0d1a095809
+        HEX 1a23481958312228
+        HEX 09220950092a0b0f
+        HEX 19a8290b090a0b1a
+        HEX 1809220950093a31
+        HEX 90213b1218111209
+        HEX 5009120b22417031
+        HEX 1b0f13222819401b
+        HEX 0a090b1a51584112
+        HEX 0b090b2a80090a23
+        HEX 126118813a117819
+        HEX 120b12611812812a
+        HEX 1180212a59100912
+        HEX 891a1978293a0b31
+        HEX 281aa968491a0b12
+        HEX 0b292822a9604922
+        HEX 232920092a993811
+        HEX 2041130a23495269
+        HEX 5021200e391b0f0b
+        HEX 515a496829204113
+        HEX 714a091819783118
+        HEX 3913810b0a1122b0
+        HEX 7913591219131a09
+        HEX 12601940610b110b
+        HEX 49220b0a092b2260
+        HEX 091240210a5b610a
+        HEX 231a230c58111a38
+        HEX 211a130a0b220b39
+        HEX 1a0e09121322180b
+        HEX 100b093811223829
+        HEX 1a0b1a0b0f13316a
+        HEX 3013112811323821
+        HEX 4a13296a40132811
+        HEX 3a38292a0b0a1339
+        HEX 6278094238292223
+        HEX 493a091280193238
+        HEX 291a136922210a90
+        HEX 211248191a13b9a8
+        HEX 0e0a50111a133940
+        HEX 21f838092a0b2180
+        HEX 19501ba80912110a
+        HEX 884140130f13b019
+        HEX 80490c09400b090b
+        HEX f8502922110e9811
+        HEX 1209301298212208
+        HEX 129011120b2a201a
+        HEX 180e0968192a2012
+        HEX 700b09121312130a
+        HEX 282219681142081a
+        HEX 09501113421b2822
+        HEX 0970112a11101211
+        HEX 48190b2a13120b0f
+        HEX 0b20112270194a19
+        HEX 48190b1a0b12131a
+        HEX 0b18213250312a31
+        HEX 380a1913120b1a13
+        HEX 120b181152791a41
+        HEX 2812210b120b3213
+        HEX 18096ac912081221
+        HEX 13122b120b201122
+        HEX 10121312c1121012
+        HEX 19133a0b09122811
+        HEX 12180a090f0b0ac9
+        HEX 120812210b12091b
+        HEX 121b09281928110b
+        HEX c11a101221130913
+        HEX 09131a0b0968091b
+        HEX b1220812311b1913
+        HEX 0a1b681308136930
+        HEX 110a201261220970
+        HEX 090b101308496022
+        HEX 7112117009132049
+        HEX 581aa170110b0859
+        HEX 60b9905120131130
+        HEX 511a497071200913
+        HEX 2120411a18091321
+        HEX 7071181913212031
+        HEX 12380b2170712019
+        HEX 0b091b0918311238
+        HEX 0b0a212013406128
+        HEX 191b0f1b10291a11
+        HEX 18110b1219200b11
+        HEX 385938310b092011
+        HEX 2a0e091b091a2918
+        HEX 0b193051a032190b
+        HEX 2a31180b090e1120
+        HEX 0a510ea0321b091a
+        HEX 39180b1942619032
+        HEX 0b592013095a7123
+        HEX 6081281352790b11
+        HEX 13687130133a4133
+        HEX 3123706130132221
+        HEX 3b20130913290f0b
+        HEX 9039500a1123581b
+        HEX 28110bb8
+IMG_PREFIX
+        HEX 11f8
+IMG_PLAYER
+        HEX f820000955312e50
+        HEX 4c41594552202020
+        HEX 202020
+@ %def GAME_IMAGE IMG_PREFIX IMG_PLAYER
+
+\subsection{The ProDOS volume-directory writer}
+
+\texttt{FORMAT\_VOLUME} does in code what ProDOS \texttt{FILER}'s format command
+does: it writes a blank but valid volume directory and allocation bitmap onto a
+disk that \texttt{RWTS\_FORMAT} has already magnetically initialised. It
+patches its \texttt{WRITE\_BLOCK} paramblocks with the chosen unit, finds the
+device's block count from the ProDOS device list, and writes the four directory
+blocks and the bitmap through the MLI and the device driver.
+
+<<gen format volume>>=
+        ORG $A119
+FORMAT_VOLUME
+        SUBROUTINE
+        ; ProDOS volume-directory writer: set up the paramblocks.
+        ;
+        ; Behavior:
+        ;   Patch the WRITE_BLOCK paramblock unit fields (FV_WR1/2/3) from the
+        ;   unit number, scan the ProDOS device list (PRODOS_DEVLST) for the
+        ;   matching drive mask, look up its block count, and fall into
+        ;   FV_WRITE_DIR to lay down the four-block directory and the volume
+        ;   bitmap.  This reproduces what ProDOS FILER's "format" does: a
+        ;   blank but valid volume directory.
+        ;
+        ; Clobbers: A, X, Y
+        STA FV_WR1+1
+        STA FV_WR2+1
+        STA FV_WR3+1
+        AND #$F0
+        STA FV_DRVMASK
+        LDA ZP_A2L
+        STA FV_SAVED_A2
+        LDA ZP_A2H
+        STA FV_SAVED_A2+1
+        STX ZP_A2L
+        STY ZP_A2H
+        STX FV_WR3+2
+        STY FV_WR3+3
+        LDX PRODOS_DEVCNT
+.LA13E
+        LDA PRODOS_DEVLST,X
+        AND #$F0
+        CMP FV_DRVMASK
+        BEQ .LA150
+        DEX
+        BPL .LA13E
+        LDA #$28
+        SEC
+        BCS .LA17E
+.LA150
+        LDA PRODOS_DEVLST,X
+        AND #$0F
+        CMP #$0F
+        BNE .LA15E
+        LDA #$00
+        CLC
+        BCC .LA17E
+.LA15E
+        STA FV_DIRBLK
+        JSR MLI
+        STA ($8C,X)
+        LDA (RW_T0,X)
+        ORA $20,X
+        BRK
+        DC.B $BF
+        STA ($92,X)
+        LDA (RW_T0,X)
+        ORA GAME_IMAGE+992
+        LDA ($B0,X)
+        PHP
+        JSR FV_INIT_FIELDS
+        BCS .LA17E
+        JSR FV_FILL_BITMAP
+.LA17E
+        LDX FV_SAVED_A2
+        STX ZP_A2L
+        LDX FV_SAVED_A2+1
+        STX ZP_A2H
+        RTS
+@ %def FORMAT_VOLUME
+
+<<gen fv paramblocks>>=
+        ORG $A189
+FV_SAVED_A2
+        HEX 0000
+FV_DIRBLK
+        HEX 00
+FV_WR1
+        HEX 0300c5a30000
+FV_WR2
+        HEX 0300c5a50100
+@ %def FV_SAVED_A2 FV_DIRBLK FV_WR1 FV_WR2
+
+These helpers carry out the directory write: building and writing the key
+block (the volume header), resolving the device driver address for the unit,
+reading directory blocks back, and [[FV_FINISH]] allocating the bitmap
+and committing the last block.
+
+<<gen fv write dir>>=
+        ORG $A198
+FV_WRITE_DIR
+        SUBROUTINE
+        ; Write the volume-directory key block and helpers.
+        ;
+        ; Behavior:
+        ;   FV_WRITE_DIR builds and writes the directory key block (the volume
+        ;   header at block 2); FV_DEV_ADDR looks up the device driver address
+        ;   for the unit from the ProDOS device table; FV_READ_DIR reads a
+        ;   directory block into the buffer; FV_FINISH allocates the bitmap and
+        ;   writes the final block.  All go through the MLI / driver vector.
+        ;
+        ; Clobbers: A, X, Y
+        JSR MLI
+        DC.B $82
+        BRK
+        BRK
+        JSR FV_ZERO_BLK
+        LDY #$02
+        LDA #$03
+        STA (ZP_A2L),Y
+        LDY #$04
+        LDA IMG_PLAYER+3
+        ORA #$F0
+        STA (ZP_A2L),Y
+        LDX #$00
+.LA1B2
+        INY
+        LDA IMG_PLAYER+4,X
+        AND #$7F
+        STA (ZP_A2L),Y
+        INX
+        CPX IMG_PLAYER+3
+FV_DEV_ADDR
+        BNE .LA1B2
+        LDX #$00
+        LDY #$1C
+.LA1C4
+        LDA PRODOS_DATE,X
+        STA (ZP_A2L),Y
+        INX
+        INY
+        CPX #$04
+        BNE .LA1C4
+        LDA $BFFF
+        STA (ZP_A2L),Y
+FV_READ_DIR
+        INY
+        LDA $BFFE
+        STA (ZP_A2L),Y
+        INY
+        LDA #$C3
+        STA (ZP_A2L),Y
+        INY
+        LDA #$27
+        STA (ZP_A2L),Y
+        INY
+        LDA #$0D
+        STA (ZP_A2L),Y
+        LDY #$27
+        LDA #$06
+        STA (ZP_A2L),Y
+FV_FINISH
+        JSR FV_ALLOC_BITMAP
+        BCS .LA20A
+        LDY #$29
+        STA (ZP_A2L),Y
+        STA FV_BMPTR
+        INY
+        TXA
+        STA (ZP_A2L),Y
+        STA FV_BMPTR+1
+        LDA #$01
+        STA FV_WRCNT
+        JSR FV_WRITE_BLOCK
+.LA20A
+        RTS
+@ %def FV_WRITE_DIR FV_DEV_ADDR FV_READ_DIR FV_FINISH
+
+<<gen fv bitmap ptr>>=
+        ORG $A20B
+FV_BMPTR
+        HEX 0000
+@ %def FV_BMPTR
+
+The bitmap helpers mark the boot, directory and bitmap blocks as used and
+everything else free, and \texttt{FV\_DISPATCH} is the indirect jump through
+the device-driver vector that actually moves blocks to and from the disk.
+
+<<gen fv bitmap>>=
+        ORG $A20D
+FV_ALLOC_BITMAP
+        SUBROUTINE
+        ; Build and write the volume bitmap; the driver dispatch.
+        ;
+        ; Behavior:
+        ;   FV_ALLOC_BITMAP marks the boot, directory and bitmap blocks as used
+        ;   and the rest free; FV_BITMAP_IO reads/writes a bitmap block;
+        ;   FV_DISPATCH jumps through the device-driver vector (FV_VECTOR) and
+        ;   FV_DEVENTRY returns a device-table entry for the selected unit.
+        ;
+        ; Clobbers: A, X, Y
+        LDA FV_DIRBLK
+        CMP #$00
+        BNE .LA21A
+        LDA #$18
+        LDX #$01
+        BNE .LA247
+.LA21A
+        LDA FV_DRVMASK
+        LSR
+        LSR
+        LSR
+        STA FV_TRACK
+        JSR FV_DEVENTRY
+        STY ZP_A2H
+        LDA #$FC
+        STA ZP_A2L
+        LDY #$00
+        LDA (ZP_A2L),Y
+        PHA
+        INY
+        LDA (ZP_A2L),Y
+        TAX
+        BNE .LA246
+        PLA
+        BNE .LA247
+        JSR FV_BITMAP_IO
+        BCS .LA248
+        TXA
+        PHA
+        TYA
+        TAX
+        PLA
+        BCC .LA248
+.LA246
+        PLA
+.LA247
+        CLC
+.LA248
+        LDY FV_WR3+2
+        STY ZP_A2L
+        LDY FV_WR3+3
+        STY ZP_A2H
+        RTS
+FV_BITMAP_IO
+        LDA #$00
+        STA $42
+        STA $46
+        STA $47
+        LDA FV_TRACK
+        JSR FV_DEVENTRY
+        STA FV_VECTOR
+        STY FV_VECTOR+1
+        LDA FV_WR1+1
+        STA $43
+        STA $CFFF
+        JSR FV_DISPATCH
+        RTS
+FV_DISPATCH
+        JMP (FV_VECTOR)
+        HEX 00
+FV_DEVENTRY
+        TAY
+        LDA PRODOS_DEVTAB,Y
+        PHA
+        LDA $BF11,Y
+        TAY
+        PLA
+        RTS
+@ %def FV_ALLOC_BITMAP FV_BITMAP_IO FV_DISPATCH FV_DEVENTRY
+
+<<gen fv vectors>>=
+        ORG $A282
+FV_DRVMASK
+        HEX 00
+FV_TRACK
+        HEX 00
+FV_VECTOR
+        HEX 0000
+@ %def FV_DRVMASK FV_TRACK FV_VECTOR
+
+\texttt{FV\_WRITE\_BLOCK} is the MLI \texttt{WRITE\_BLOCK} call, used for every
+block the directory writer commits.
+
+<<gen fv write block>>=
+        ORG $A286
+FV_WRITE_BLOCK
+        SUBROUTINE
+        ; MLI WRITE_BLOCK wrapper.
+        ;
+        ; Behavior:
+        ;   Issue a ProDOS MLI WRITE_BLOCK ($81) for the prepared paramblock,
+        ;   incrementing the write counter (FV_WRCNT).
+        ;
+        ; Clobbers: A, X, Y
+        INC FV_WRCNT
+        JSR MLI
+        STA ($90,X)
+        LDX #$60
+@ %def FV_WRITE_BLOCK
+
+<<gen fv wr3>>=
+        ORG $A290
+FV_WR3
+        HEX 03000000
+FV_WRCNT
+        HEX 0000
+@ %def FV_WR3 FV_WRCNT
+
+\texttt{FV\_INIT\_FIELDS} fills the standard ProDOS directory-header fields ---
+storage type and name length, access bits, the \texttt{\$27}-byte entry length
+and thirteen entries per block, the creation date from the ProDOS global page,
+and the version bytes --- and the entry/block-threading helpers complete the
+chain.
+
+<<gen fv init dir>>=
+        ORG $A296
+FV_INIT_FIELDS
+        SUBROUTINE
+        ; Initialise the directory-header fields.
+        ;
+        ; Behavior:
+        ;   FV_INIT_FIELDS fills in the standard ProDOS volume-directory header
+        ;   (storage type/name length, access bits, entry length $27, entries
+        ;   per block $0D, the creation date from PRODOS_DATE, ProDOS version);
+        ;   FV_SET_ENTRY writes one field, FV_NEXT_BLOCK threads the forward/
+        ;   backward block links.
+        ;
+        ; Clobbers: A, X, Y
+        JSR FV_ZERO_BLK
+        LDA #$02
+        LDX #$04
+        JSR FV_SET_ENTRY
+        BCS .LA2BB
+        LDA #$03
+        LDX #$05
+        JSR FV_SET_ENTRY
+        BCS .LA2BB
+        LDA #$04
+        LDX #$00
+FV_SET_ENTRY
+        LDY #$00
+        STA (ZP_A2L),Y
+        LDY #$02
+        TXA
+        STA (ZP_A2L),Y
+        JSR FV_WRITE_BLOCK
+.LA2BB
+        RTS
+FV_NEXT_BLOCK
+        LDA FV_BMPTR
+        AND #$07
+        STA FV_REMAIN
+        LDA FV_BMPTR
+        AND #$F8
+        CLC
+        LDX #$03
+.LA2CC
+        ROR FV_BMPTR+1
+        ROR
+        DEX
+        BNE .LA2CC
+        STA FV_BMPTR
+        RTS
+@ %def FV_INIT_FIELDS FV_SET_ENTRY FV_NEXT_BLOCK
+
+<<gen fv remain>>=
+        ORG $A2D7
+FV_REMAIN
+        HEX 00
+@ %def FV_REMAIN
+
+The remaining bitmap-fill primitives build the allocation map a byte and a
+partial byte at a time.
+
+<<gen fv fill>>=
+        ORG $A2D8
+FV_FILL_BITMAP
+        SUBROUTINE
+        ; Bitmap-fill primitives and the embedded boot-loader image.
+        ;
+        ; Behavior:
+        ;   FV_FILL_BITMAP and its helpers (FV_SET_BITS / FV_FILL_FF /
+        ;   FV_PARTIAL / FV_ZERO_BLK / FV_FF_BLK / FV_FILL_PAGE / FV_MASK) build
+        ;   the allocation bitmap a byte and a partial byte at a time.  The tail
+        ;   of this region is the ProDOS boot-loader image that FORMAT_VOLUME
+        ;   stamps onto block 0 of the new disk; in this overlay's address space
+        ;   it is inert data (it executes only after the disk boots), so the
+        ;   labels here name the directory-writer primitives, not the image.
+        ;
+        ; Clobbers: A, X, Y
+        JSR FV_NEXT_BLOCK
+        LDA FV_REMAIN
+        BEQ .LA2E8
+        INC FV_BMPTR
+        BNE .LA2E8
+        INC FV_BMPTR+1
+.LA2E8
+        LDA FV_BMPTR+1
+        CLC
+        ROR
+        BCS .LA2F5
+        LDX FV_BMPTR
+        BEQ .LA2F5
+        SEC
+.LA2F5
+        ADC #$06
+        PHA
+        LDA FV_REMAIN
+        BEQ .LA30A
+        DEC FV_BMPTR
+        LDA FV_BMPTR
+        CMP #$FF
+        BNE .LA30A
+        DEC FV_BMPTR+1
+.LA30A
+        JSR FV_ZERO_BLK
+        LDA FV_BMPTR+1
+        CMP #$02
+        BCC .LA32A
+        SBC #$02
+        STA FV_BMPTR+1
+        JSR FV_FF_BLK
+        PLA
+        JSR FV_SET_BITS
+        JSR FV_WRITE_BLOCK
+        BCS .LA377
+        LDA #$00
+        PHA
+        BEQ .LA30A
+.LA32A
+        JSR FV_ZERO_BLK
+        LDA FV_BMPTR+1
+        BEQ .LA339
+        LDA #$FF
+        JSR FV_FILL_PAGE
+        INC ZP_A2H
+.LA339
+        LDY FV_BMPTR
+        BEQ .LA341
+        JSR FV_FILL_FF
+.LA341
+        LDY FV_BMPTR
+        INY
+        JSR FV_PARTIAL
+        LDA FV_BMPTR+1
+        BEQ .LA34F
+        DEC ZP_A2H
+.LA34F
+        PLA
+        JSR FV_SET_BITS
+        JSR FV_WRITE_BLOCK
+        RTS
+FV_SET_BITS
+        LDY #$00
+.LA359
+        TAX
+        BEQ .LA376
+        CPX #$08
+        BCC .LA36B
+        LDA #$00
+        STA (ZP_A2L),Y
+        INY
+        TXA
+        SEC
+        SBC #$08
+        BPL .LA359
+.LA36B
+        LDA #$7F
+.LA36D
+        DEX
+        BEQ .LA374
+        CLC
+        ROR
+        BCS .LA36D
+.LA374
+        STA (ZP_A2L),Y
+.LA376
+        RTS
+.LA377
+        TAX
+        PLA
+        TXA
+        SEC
+        RTS
+FV_FILL_FF
+        LDA #$FF
+.LA37E
+        DEY
+        STA (ZP_A2L),Y
+        BNE .LA37E
+        RTS
+FV_PARTIAL
+        LDA FV_REMAIN
+        BEQ .LA38F
+        JSR FV_MASK
+        DEY
+        STA (ZP_A2L),Y
+.LA38F
+        RTS
+FV_ZERO_BLK
+        LDA #$00
+        BEQ .LA396
+FV_FF_BLK
+        LDA #$FF
+.LA396
+        JSR FV_FILL_PAGE
+        INC ZP_A2H
+        JSR FV_FILL_PAGE
+        DEC ZP_A2H
+        RTS
+FV_FILL_PAGE
+        LDY #$00
+.LA3A3
+        STA (ZP_A2L),Y
+        INY
+        BNE .LA3A3
+        RTS
+FV_MASK
+        SEC
+        LDA #$08
+        SBC FV_REMAIN
+        BEQ .LA3BE
+        TAX
+        CPX #$08
+        BEQ .LA3C1
+        LDA #$FF
+.LA3B8
+        ASL
+        DEX
+        BNE .LA3B8
+        BEQ .LA3C0
+.LA3BE
+        LDA #$FF
+.LA3C0
+        RTS
+.LA3C1
+        LDA #$00
+        BEQ .LA3C0
+@ %def FV_FILL_BITMAP FV_SET_BITS FV_FILL_FF FV_PARTIAL FV_ZERO_BLK FV_FF_BLK
+@ %def FV_FILL_PAGE FV_MASK
+
+\texttt{BOOT\_IMAGE} is the ProDOS boot-loader the formatter stamps onto
+block~0 of the new disk so the player save volume is itself bootable. In this
+overlay's address space it is pure data --- nothing here calls into it; it runs
+only after that disk boots --- so it is preserved verbatim as a block. (Its
+strings ``PRODOS''/``SOS''/``UNABLE TO LOAD'' are visible in the bytes.)
+
+<<gen boot image>>=
+        ORG $A3C5
+BOOT_IMAGE
+        HEX 0138b0034c32a186
+        HEX 43c903088a29704a
+        HEX 4a4a4a09c08549a0
+        HEX ff844828c8b148d0
+        HEX 3ab00ea9038d0008
+        HEX e63da54948a95b48
+        HEX 6085408548a063b1
+        HEX 48999409c8c0ebd0
+        HEX f6a206bc1d09bd24
+        HEX 0999f209bd2b099d
+        HEX 7f0aca10eea90985
+        HEX 49a986a000c9f9b0
+        HEX 2f85488460844a84
+        HEX 4c844e8447c88442
+        HEX c88446a90c856185
+        HEX 4b201209b068e661
+        HEX e661e646a546c906
+        HEX 90efad000c0d010c
+        HEX d06da904d002a54a
+        HEX 186d230ca8900de6
+        HEX 4ba54b4ab006c90a
+        HEX f055a004844aad02
+        HEX 09290fa8b14ad902
+        HEX 09d0db8810f629f0
+        HEX c920d03ba010b14a
+        HEX c9ffd033c8b14a85
+        HEX 46c8b14a8547a900
+        HEX 854aa01e844b8461
+        HEX c8844d201209b017
+        HEX e661e661a44ee64e
+        HEX b14a8546b14c8547
+        HEX 114ad0e74c00204c
+        HEX 3f092650524f444f
+        HEX 5320202020202020
+        HEX 2020a5608544a561
+        HEX 85456c4800081e24
+        HEX 3f454776f4d7d1b6
+        HEX 4bb4aca62b18604c
+        HEX bc09a99f48a9ff48
+        HEX a901a2004c79f420
+        HEX 58fca01cb9500999
+        HEX ae058810f74c4d09
+        HEX aaaaaaa0d5cec1c2
+        HEX ccc5a0d4cfa0cccf
+        HEX c1c4a0d0d2cfc4cf
+        HEX d3a0aaaaaaa55329
+        HEX 032a052baabd80c0
+        HEX a92ca211cad0fde9
+        HEX 01d0f7a62b60a546
+        HEX 2907c9042903080a
+        HEX 282a853da5474aa5
+        HEX 466a4a4a85410a85
+        HEX 51a5458527a62bbd
+        HEX 89c020bc09e627e6
+        HEX 3de63db00320bc09
+        HEX bc88c060a5400a85
+        HEX 53a9008554a55385
+        HEX 5038e551f014b004
+        HEX e6539002c6533820
+        HEX 6d09a55018206f09
+        HEX d0e3a07f84520828
+        HEX 38c652f0ce180888
+        HEX f0f5bd8cc010fb00
+        HEX 0000000000000000
+        HEX 4c6ea0534f532042
+        HEX 4f4f542020312e31
+        HEX 200a534f532e4b45
+        HEX 524e454c20202020
+        HEX 20534f53204b524e
+        HEX 4c492f4f20455252
+        HEX 4f52080046494c45
+        HEX 2027534f532e4b45
+        HEX 524e454c27204e4f
+        HEX 5420464f554e4425
+        HEX 00494e56414c4944
+        HEX 204b45524e454c20
+        HEX 46494c453a00000c
+        HEX 001e0e1e04a478d8
+        HEX a9778ddfffa2fb9a
+        HEX 2c10c0a9408dcaff
+        HEX a9078defffa200ce
+        HEX efff8e0020ad0020
+        HEX d0f5a90185e0a900
+        HEX 85e1a9008585a9a2
+        HEX 858620bea1e6e0a9
+        HEX 0085e6e686e686e6
+        HEX e620bea1a002b185
+        HEX 85e0c8b18585e1d0
+        HEX eaa5e0d0e6ad6ca0
+        HEX 85e2ad6da085e318
+        HEX a5e3690285e538a5
+        HEX e2ed23a485e4a5e5
+        HEX e90085e5a000b1e2
+        HEX 290fcd11a0d021a8
+        HEX b1e2d911a0d01988
+        HEX d0f6a000b1e229f0
+        HEX c920f03ec9f0f008
+        HEX ae64a0a0134cd4a1
+        HEX 18a5e26d23a485e2
+        HEX a5e3690085e3a5e4
+        HEX c5e2a5e5e5e3b0bc
+        HEX 18a5e46d23a485e2
+        HEX a5e5690085e3c6e6
+        HEX d095ae4fa0a01b4c
+        HEX d4a1a011b1e285e0
+        HEX c8b1e285e1ad66a0
+        HEX 8585ad67a0858620
+        HEX bea1ad68a08585ad
+        HEX 69a08586ad000c85
+        HEX e0ad000d85e120be
+        HEX a1a207bd001edd21
+        HEX a0f008ae64a0a013
+        HEX 4cd4a1ca10eda900
+        HEX 85e7e6e7e686e686
+        HEX a6e7bd000c85e0bd
+        HEX 000d85e1a5e0d004
+        HEX a5e1f00620bea14c
+        HEX 8aa118ad6aa06d08
+        HEX 1e85e8ad6ba06d09
+        HEX 1e85e96ce800a901
+        HEX 8587a5e0a6e12079
+        HEX f4b00160ae32a0a0
+        HEX 094cd4a184e738a9
+        HEX 28e5e74a1865e7a8
+        HEX bd29a099a705ca88
+        HEX c6e7d0f4ad40c04c
+        HEX efa1
+@ %def BOOT_IMAGE
+
+\subsection{The low-level Disk II formatter}
+
+Below the directory writer sits a complete RWTS, independent of ProDOS, that
+talks to the drive through the slot soft switches. This data block is its
+scratch space and the ProDOS volume-name parameter block.
+
+<<gen rwts bss>>=
+        ORG $A7B7
+RW_BSS
+        HEX 0000000000000000
+        HEX 0000000000000000
+PRO_PARAM
+        HEX 0300f650524f0000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 00
+@ %def RW_BSS PRO_PARAM
+
+\texttt{RWTS\_FORMAT} writes the magnetic format itself. It steps the arm track
+by track (35 tracks, using the \texttt{SEEK\_DELAY} tables to pace the stepper)
+and writes sixteen sectors per track. Each sector is a self-synchronising
+address field --- the \texttt{D5~AA~96} prologue followed by the volume, track,
+sector and checksum in 4-and-4 encoding --- and a 6-and-2 GCR data field, and
+each is verified by reading it straight back. This is the same job a copy
+program's nibble writer or the \texttt{INIT} command does; reproducing it here
+let the game ship a save-disk formatter without depending on a system disk.
+
+<<gen rwts format>>=
+        ORG $A800
+RWTS_FORMAT
+        SUBROUTINE
+        ; Low-level Disk II formatter: lay down 35 tracks of nibbles.
+        ;
+        ; Behavior:
+        ;   RWTS_FORMAT drives the drive directly through the slot soft
+        ;   switches.  RW_FORMAT_DISK steps the arm track by track (RW_SEEK with
+        ;   the SEEK_DELAY_A/B settle tables), and RW_FMT_TRACK writes 16
+        ;   sectors per track: each sector is a self-synchronising address field
+        ;   (the D5 AA 96 prologue, volume/track/sector/checksum in 4-and-4
+        ;   encoding) and a 6-and-2 GCR data field (RW_WRITE_SECTOR), verified
+        ;   by reading it back (RW_READ_ADDR / RW_FIND_ADDR / RW_READ_DATA).
+        ;   This is a complete hand-rolled RWTS, independent of ProDOS, that
+        ;   physically initialises a blank disk.
+        ;
+        ; Clobbers: A, X, Y
+        PHP
+        SEI
+        JSR RW_FORMAT_DISK
+        PLP
+        CMP #$00
+        BNE .LA80C
+        CLC
+        RTS
+.LA80C
+        CMP #$02
+        BNE .LA815
+        LDA #$2B
+        JMP .LA821
+.LA815
+        CMP #$01
+        BNE .LA81E
+        LDA #$27
+        JMP .LA821
+.LA81E
+        CLC
+        ADC #$30
+.LA821
+        SEC
+        RTS
+RW_SEEK_PHASE
+        ASL
+        ASL RW_HALFTRK
+        STA RW_SWIDX
+        TXA
+        LSR
+        LSR
+        LSR
+        LSR
+        TAY
+        LDA RW_SWIDX
+        JSR RW_SEEK
+        LSR RW_HALFTRK
+        RTS
+RW_FORMAT_DISK
+        TAX
+        AND #$70
+        STA RW_DRVSEL
+        TXA
+        LDX RW_DRVSEL
+        ROL
+        LDA #$00
+        ROL
+        BNE .LA850
+        LDA $C08A,X
+        JMP .LA853
+.LA850
+        LDA $C08B,X
+.LA853
+        LDA $C089,X
+        LDA #$D7
+        STA RW_TA
+        LDA #$50
+        STA RW_HALFTRK
+        LDA #$00
+        JSR RW_SEEK_PHASE
+.LA864
+        LDA RW_TA
+        BEQ RW_FMT_TRACK
+        JSR RW_WRITE_DELAY
+        JMP .LA864
+RW_FMT_TRACK
+        LDA #$01
+        STA RW_T3
+        LDA #$AA
+        STA RW_T0
+        LDA FMT_GEOM+1
+        CLC
+        ADC #$02
+        STA RW_COUNT
+        LDA #$00
+        STA RW_SECTOR
+.LA882
+        LDA RW_SECTOR
+        LDX RW_DRVSEL
+        JSR RW_SEEK_PHASE
+        LDX RW_DRVSEL
+        LDA $C08D,X
+        LDA $C08E,X
+        TAY
+        LDA $C08E,X
+        LDA $C08C,X
+        TYA
+        BPL .LA8A2
+        LDA #$02
+        JMP RW_FMT_DONE
+.LA8A2
+        JSR RW_VERIFY_TRACK
+        BCC .LA8B5
+        LDA #$01
+        LDY RW_COUNT
+        CPY FMT_GEOM
+        BCS .LA8B2
+        LDA #$04
+.LA8B2
+        JMP RW_FMT_DONE
+.LA8B5
+        LDY RW_COUNT
+        CPY FMT_GEOM
+        BCS .LA8C1
+        LDA #$04
+        JMP RW_FMT_DONE
+.LA8C1
+        CPY FMT_GEOM+1
+        BCC .LA8CB
+        LDA #$03
+        JMP RW_FMT_DONE
+.LA8CB
+        LDA FMT_GEOM+3
+        STA RW_RETRY
+.LA8D1
+        DEC RW_RETRY
+        BNE .LA8DB
+        LDA #$01
+        JMP RW_FMT_DONE
+.LA8DB
+        LDX RW_DRVSEL
+        JSR RW_FIND_ADDR
+        BCS .LA8D1
+        LDA RW_ERR
+        BNE .LA8D1
+        LDX RW_DRVSEL
+        JSR RW_READ_ADDR
+        BCS .LA8D1
+        INC RW_SECTOR
+        LDA RW_SECTOR
+        CMP #$23
+        BCC .LA882
+        LDA #$00
+RW_FMT_DONE
+        PHA
+        LDX RW_DRVSEL
+        LDA $C088,X
+        LDA #$00
+        JSR RW_SEEK_PHASE
+        PLA
+        RTS
+RW_READ_ADDR
+        LDY #$20
+.LA909
+        DEY
+        BEQ .LA968
+.LA90C
+        LDA $C08C,X
+        BPL .LA90C
+.LA911
+        EOR #$D5
+        BNE .LA909
+        NOP
+.LA916
+        LDA $C08C,X
+        BPL .LA916
+        CMP #$AA
+        BNE .LA911
+        LDY #$56
+.LA921
+        LDA $C08C,X
+        BPL .LA921
+        CMP #$AD
+        BNE .LA911
+        LDA #$00
+.LA92C
+        DEY
+        STY RW_NIB
+.LA92F
+        LDA $C08C,X
+        BPL .LA92F
+        CMP #$96
+        BNE .LA968
+        LDY RW_NIB
+        BNE .LA92C
+.LA93C
+        STY RW_NIB
+.LA93E
+        LDA $C08C,X
+        BPL .LA93E
+        CMP #$96
+        BNE .LA968
+        LDY RW_NIB
+        INY
+        BNE .LA93C
+.LA94C
+        LDA $C08C,X
+        BPL .LA94C
+        CMP #$96
+        BNE .LA968
+.LA955
+        LDA $C08C,X
+        BPL .LA955
+        CMP #$DE
+        BNE .LA968
+        NOP
+.LA95F
+        LDA $C08C,X
+        BPL .LA95F
+        CMP #$AA
+        BEQ .LA9C4
+.LA968
+        SEC
+        RTS
+RW_FIND_ADDR
+        LDY #$FC
+        STY RW_TC
+.LA96E
+        INY
+        BNE .LA975
+        INC RW_TC
+        BEQ .LA968
+.LA975
+        LDA $C08C,X
+        BPL .LA975
+.LA97A
+        CMP #$D5
+        BNE .LA96E
+        NOP
+.LA97F
+        LDA $C08C,X
+        BPL .LA97F
+        CMP #$AA
+        BNE .LA97A
+        LDY #$03
+.LA98A
+        LDA $C08C,X
+        BPL .LA98A
+        CMP #$96
+        BNE .LA97A
+        LDA #$00
+.LA995
+        STA RW_TB
+.LA997
+        LDA $C08C,X
+        BPL .LA997
+        ROL
+        STA RW_TD
+.LA99F
+        LDA $C08C,X
+        BPL .LA99F
+        AND RW_TD
+        STA $00D7,Y
+        EOR RW_TB
+        DEY
+        BPL .LA995
+        TAY
+        BNE .LA968
+.LA9B1
+        LDA $C08C,X
+        BPL .LA9B1
+        CMP #$DE
+        BNE .LA968
+        NOP
+.LA9BB
+        LDA $C08C,X
+        BPL .LA9BB
+        CMP #$AA
+        BNE .LA968
+.LA9C4
+        CLC
+        RTS
+RW_SEEK
+        STX RW_SWIDX+1
+        STA RW_SWIDX
+        CMP RW_HALFTRK
+        BEQ .LAA2D
+        LDA #$00
+        STA RW_SEEKDLT
+.LA9D6
+        LDA RW_HALFTRK
+        STA RW_SEEKDLT+1
+        SEC
+        SBC RW_SWIDX
+        BEQ .LAA19
+        BCS .LA9EB
+        EOR #$FF
+        INC RW_HALFTRK
+        BCC .LA9F0
+.LA9EB
+        ADC #$FE
+        DEC RW_HALFTRK
+.LA9F0
+        CMP RW_SEEKDLT
+        BCC .LA9F8
+        LDA RW_SEEKDLT
+.LA9F8
+        CMP #$0C
+        BCS .LA9FD
+        TAY
+.LA9FD
+        SEC
+        JSR RW_PHASE_ON
+        LDA SEEK_DELAY_A,Y
+        JSR RW_WRITE_DELAY
+        LDA RW_SEEKDLT+1
+        CLC
+        JSR RW_PHASE_OFF
+        LDA SEEK_DELAY_B,Y
+        JSR RW_WRITE_DELAY
+        INC RW_SEEKDLT
+        BNE .LA9D6
+.LAA19
+        JSR RW_WRITE_DELAY
+        CLC
+RW_PHASE_ON
+        LDA RW_HALFTRK
+RW_PHASE_OFF
+        AND #$03
+        ROL
+        ORA RW_SWIDX+1
+        TAX
+        LDA $C080,X
+        LDX RW_SWIDX+1
+.LAA2D
+        RTS
+RW_WRITE_SECTOR
+        JSR RW_RTS
+        LDA $C08D,X
+        LDA $C08E,X
+        LDA #$FF
+        STA $C08F,X
+        CMP $C08C,X
+        PHA
+        PLA
+        NOP
+        LDY #$04
+.LAA44
+        PHA
+        PLA
+        JSR .LAAA5
+        DEY
+        BNE .LAA44
+        LDA #$D5
+        JSR RW_WRITE_NIB
+        LDA #$AA
+        JSR RW_WRITE_NIB
+        LDA #$AD
+        JSR RW_WRITE_NIB
+        LDY #$56
+        NOP
+        NOP
+        NOP
+        BNE .LAA65
+.LAA62
+        JSR RW_RTS
+.LAA65
+        NOP
+        NOP
+        LDA #$96
+        STA $C08D,X
+        CMP $C08C,X
+        DEY
+        BNE .LAA62
+        BIT $00
+        NOP
+.LAA75
+        JSR RW_RTS
+        LDA #$96
+        STA $C08D,X
+        CMP $C08C,X
+        LDA #$96
+        NOP
+        INY
+        BNE .LAA75
+        JSR RW_WRITE_NIB
+        LDA #$DE
+        JSR RW_WRITE_NIB
+        LDA #$AA
+        JSR RW_WRITE_NIB
+        LDA #$EB
+        JSR RW_WRITE_NIB
+        LDA #$FF
+        JSR RW_WRITE_NIB
+        LDA $C08E,X
+        LDA $C08C,X
+        RTS
+RW_WRITE_NIB
+        NOP
+.LAAA5
+        PHA
+        PLA
+        STA $C08D,X
+        CMP $C08C,X
+        RTS
+RW_READ_DATA
+        SEC
+        LDA $C08D,X
+        LDA $C08E,X
+        BMI .LAB15
+        LDA #$FF
+        STA $C08F,X
+        CMP $C08C,X
+        PHA
+        PLA
+.LAAC1
+        JSR RW_WR_NIB1
+        JSR RW_WR_NIB1
+        STA $C08D,X
+        CMP $C08C,X
+        NOP
+        DEY
+        BNE .LAAC1
+        LDA #$D5
+        JSR .LAB2D
+        LDA #$AA
+        JSR .LAB2D
+        LDA #$96
+        JSR .LAB2D
+        LDA RW_T3
+        JSR .LAB1C
+        LDA RW_SECTOR
+        JSR .LAB1C
+        LDA RW_T2
+        JSR .LAB1C
+        LDA RW_T3
+        EOR RW_SECTOR
+        EOR RW_T2
+        PHA
+        LSR
+        ORA RW_T0
+        STA $C08D,X
+        LDA $C08C,X
+        PLA
+        ORA #$AA
+        JSR RW_WR_NIB2
+        LDA #$DE
+        JSR .LAB2D
+        LDA #$AA
+        JSR .LAB2D
+        LDA #$EB
+        JSR .LAB2D
+        CLC
+.LAB15
+        LDA $C08E,X
+        LDA $C08C,X
+RW_WR_NIB1
+        RTS
+.LAB1C
+        PHA
+        LSR
+        ORA RW_T0
+        STA $C08D,X
+        CMP $C08C,X
+        PLA
+        NOP
+        NOP
+        NOP
+        ORA #$AA
+RW_WR_NIB2
+        NOP
+.LAB2D
+        NOP
+        PHA
+        PLA
+        STA $C08D,X
+        CMP $C08C,X
+        RTS
+@ %def RWTS_FORMAT RW_SEEK_PHASE RW_FORMAT_DISK RW_FMT_TRACK RW_FMT_DONE RW_READ_ADDR
+@ %def RW_FIND_ADDR RW_SEEK RW_PHASE_ON RW_PHASE_OFF RW_WRITE_SECTOR RW_WRITE_NIB
+@ %def RW_READ_DATA RW_WR_NIB1 RW_WR_NIB2
+
+<<gen rwts pad>>=
+        ORG $AB37
+        HEX 000000
+@
+
+\texttt{RW\_WRITE\_DELAY} writes one nibble and burns the exact cycles a
+4-microsecond bit cell needs, so the bitstream lands at the right density ---
+the timing is the format.
+
+<<gen rwts delay>>=
+        ORG $AB3A
+RW_WRITE_DELAY
+        SUBROUTINE
+        ; Timed nibble write (motor pacing).
+        ;
+        ; Behavior:
+        ;   Write the nibble in A to the drive's data latch and burn the exact
+        ;   number of cycles a 4us nibble cell requires, so the bitstream is
+        ;   laid down at the correct density.
+        ;
+        ; Clobbers: A
+        LDX #$11
+.LAB3C
+        DEX
+        BNE .LAB3C
+        INC RW_T9
+        BNE .LAB45
+        INC RW_TA
+.LAB45
+        SEC
+        SBC #$01
+        BNE RW_WRITE_DELAY
+        RTS
+@ %def RW_WRITE_DELAY
+
+The two seek-delay tables give the stepper settle time as a function of how far
+the arm must travel, longer for the first phase and tapering as it nears the
+target track.
+
+<<gen seek tables>>=
+        ORG $AB4B
+SEEK_DELAY_A
+        HEX 01302824201e1d1c
+        HEX 1c1c1c1c
+SEEK_DELAY_B
+        HEX 702c26221f1e1d1c
+        HEX 1c1c1c1c
+@ %def SEEK_DELAY_A SEEK_DELAY_B
+
+\texttt{RW\_VERIFY\_TRACK} reads back every sector of a freshly written track
+to confirm the address fields took, and \texttt{RW\_LONG\_DELAY} provides the
+motor and seek settle pauses. A verify miss fails the format.
+
+<<gen rwts verify>>=
+        ORG $AB63
+RW_VERIFY_TRACK
+        SUBROUTINE
+        ; Verify a freshly written track and the long settle delays.
+        ;
+        ; Behavior:
+        ;   RW_VERIFY_TRACK reads back all 16 sectors of the current track and
+        ;   confirms each address field is present and correct; a miss fails the
+        ;   format.  RW_LONG_DELAY provides the motor-on/seek settle pauses.
+        ;
+        ; Clobbers: A, X, Y
+        LDA FMT_GEOM+2
+        STA RW_T6
+RW_VERIFY_LOOP
+        LDY #$80
+        LDA #$00
+        STA RW_T2
+        JMP .LAB73
+.LAB71
+        LDY RW_COUNT
+.LAB73
+        LDX RW_DRVSEL
+        JSR RW_READ_DATA
+        BCC .LAB7E
+        JMP RW_RTS
+.LAB7E
+        LDX RW_DRVSEL
+        JSR RW_WRITE_SECTOR
+        INC RW_T2
+        LDA RW_T2
+        CMP #$10
+        BCC .LAB71
+        LDY #$0F
+        STY RW_T2
+        LDA FMT_GEOM+3
+        STA RW_RETRY
+.LAB96
+        STA RW_SECMAP,Y
+        DEY
+        BPL .LAB96
+        LDA RW_COUNT
+        SEC
+        SBC #$05
+        TAY
+.LABA2
+        JSR RW_RTS
+        JSR RW_RTS
+        PHA
+        PLA
+        NOP
+        NOP
+        DEY
+        BNE .LABA2
+        LDX RW_DRVSEL
+        JSR RW_FIND_ADDR
+        BCS .LABF3
+        LDA RW_ERR
+        BEQ .LABCE
+        DEC RW_COUNT
+        LDA RW_COUNT
+        CMP FMT_GEOM
+        BCS .LABF3
+        SEC
+        RTS
+.LABC6
+        LDX RW_DRVSEL
+        JSR RW_FIND_ADDR
+        BCS .LABE8
+.LABCE
+        LDX RW_DRVSEL
+        JSR RW_READ_ADDR
+        BCS .LABE8
+        LDY RW_ERR
+        LDA RW_SECMAP,Y
+        BMI .LABE8
+        LDA #$FF
+        STA RW_SECMAP,Y
+        DEC RW_T2
+        BPL .LABC6
+        CLC
+        RTS
+.LABE8
+        DEC RW_RETRY
+        BNE .LABC6
+        DEC RW_T6
+        BNE .LABF3
+        SEC
+        RTS
+.LABF3
+        LDA FMT_GEOM+3
+        ASL
+        STA RW_RETRY
+.LABFA
+        LDX RW_DRVSEL
+        JSR RW_FIND_ADDR
+        BCS .LAC08
+        LDA RW_ERR
+        CMP #$0F
+        BEQ RW_LONG_DELAY
+.LAC08
+        DEC RW_RETRY
+        BNE .LABFA
+        SEC
+RW_RTS
+        RTS
+RW_LONG_DELAY
+        LDX #$D6
+.LAC11
+        JSR RW_RTS
+        JSR RW_RTS
+        BIT $00
+        DEX
+        BNE .LAC11
+        JMP RW_VERIFY_LOOP
+@ %def RW_VERIFY_TRACK RW_VERIFY_LOOP RW_RTS RW_LONG_DELAY
+
+<<gen rwts tail>>=
+        ORG $AC1F
+FMT_GEOM
+        HEX 0e1b0310
+RW_DRVSEL
+        HEX 00
+RW_HALFTRK
+        HEX 00
+RW_RETRY
+        HEX 00
+RW_SECMAP
+        HEX 0000000000000000
+        HEX 0000000000000000
+RW_SWIDX
+        HEX 0000
+RW_SEEKDLT
+        HEX 0000
+@ %def FMT_GEOM RW_DRVSEL RW_HALFTRK RW_RETRY RW_SECMAP RW_SWIDX
+@ %def RW_SEEKDLT
 
 \section{TM}
 
