@@ -14473,23 +14473,380 @@ DNG_ENTRY
 
 \section{DNG: the first-person view}
 
-[[DNG_DRAW]] redraws the whole screen for the current position and
-facing: the status line (level number and compass direction), then
-the wireframe corridor, walking the cells ahead of the player to
-the first wall and drawing wall edges, doors, ladders, chests,
-coffins, fields and monster shapes at each depth with the
-[[LINE_AGAIN]] primitives and the perspective tables at
-[[DNG_GEOM]]. It is decomposed together with those tables and the
-shape-drawing code in the next round; the call interface is fixed
-(no arguments, draws to the back page, flips).
+[[DNG_DRAW]] is the whole reason a dungeon \emph{looks} like a
+dungeon. It redraws the screen for the current position and
+facing: a status line (level number and compass direction), then
+the wireframe corridor itself --- the receding tunnel of walls,
+doors and openings the player sees down the passage.
 
-<<dng view stub>>=
+The corridor is drawn by \emph{ray marching}. Starting at the
+player's own cell, [[DNG_DRAW]] steps one cell at a time in the
+facing direction, and at each step --- a \emph{depth slice},
+counted in [[VIEW_DEPTH]] --- it inspects three cells: the one
+straight ahead ([[VIEW_CELL]]) and the two beside it
+([[VIEW_L]] and [[VIEW_R]], the left and right walls of the
+passage at that depth). It draws whatever those three cells call
+for, then marches one cell deeper, until it hits something solid
+(a wall, a closed-off door, or a blocking monster), at which
+point [[VIEW_BLOCKED]] stops the walk and the page is flipped.
+
+Everything is drawn in true perspective. The screen
+coordinates for each depth slice come from a pool of pre-computed
+tables, [[DNG_GEOM]], indexed by [[VIEW_DEPTH]]: as the depth
+grows the box edges converge toward the screen centre
+([[$7F]],[[$7F]]) at the vanishing point, so a corridor four cells
+long telescopes correctly. The dozen line-drawing primitives
+that follow ([[DRAW_BOX]] through [[DRAW_LADDER_DN]]) each read
+the slice's edge coordinates out of that pool and connect them
+with [[LINE_AGAIN]]; the perspective is entirely in the tables,
+not the code.
+
+The status line first: clear the viewport, print ``Level $N$'',
+and translate the facing vector [[DNG_DY]]/[[DNG_DX]] into a
+compass word. (The control bytes [[$18]] and [[$06]] in the text
+are layout codes consumed by [[MSG_AT]].)
+
+<<dng view>>=
         ORG $8982
 DNG_DRAW
-        ; STUB -- not yet disassembled (the view renderer:
-        ; status line + wireframe corridor walk)
-<<dng view stub hex>>
-@ %def DNG_DRAW
+        SUBROUTINE
+        ; Redraw the first-person view for the current cell/facing.
+        ;
+        ; Behavior:
+        ;   Print the "Level N" status line and a compass word, then
+        ;   ray-march down the passage: at each depth slice inspect
+        ;   the cell ahead and the two beside it, draw the wireframe
+        ;   walls/doors/openings/features/monsters in perspective,
+        ;   and stop at the first solid cell. Flips to the visible
+        ;   page on exit.
+        ;
+        ; Modifies:
+        ;   VIEW_DEPTH, VIEW_BLOCKED, VIEW_CELL, VIEW_L/R(_PREV),
+        ;   WORK_X/Y, MON_SLOT, the line-draw workspace $06-$09
+        ; Clobbers: A, X, Y
+        JSR VIEW_CLEAR                  ; blank the viewport
+        JSR WIN_SAVE
+        JSR WIN_FULL
+        LDY #$00                        ; status line: "Level N"
+        LDX #$0E
+        JSR MSG_AT
+        DC.B $0E," Level ",$00
+        LDX #$00
+        STX NUM_PAD                     ; no leading zero
+        LDA DNG_LEVEL
+        JSR PRINT_NUM8
+        LDA #$20                        ; space
+        JSR CHAR_OUT
+        LDA #$18                        ; layout: move to compass col
+        JSR CHAR_OUT
+        LDA #$04
+        JSR CHAR_OUT
+        LDY #$13                        ; --- compass word ---
+        LDX #$0F
+        LDA DNG_DY
+        BEQ .ew                         ; facing along X -> East/West
+        BMI .north
+        JSR MSG_AT                      ; dy>0 -> South
+        DC.B $0E," South ",$18,$00
+        JMP .compass_done
+.north  JSR MSG_AT
+        DC.B $0E," North ",$18,$00
+        JMP .compass_done
+.ew     LDA DNG_DX
+        BPL .east
+        JSR MSG_AT                      ; dx<0 -> West
+        DC.B $0E," West ",$18,$06,$00
+        JMP .compass_done
+.east   JSR MSG_AT                      ; dx>0 -> East
+        DC.B $0E," East ",$18,$06,$00
+.compass_done
+        JSR WIN_RESTORE
+        ; --- ray-march setup ---
+        LDA #$00
+        STA VIEW_DEPTH                  ; start at the player's cell
+        STA VIEW_BLOCKED
+        LDX DNG_X                       ; is the player standing on a
+        LDY DNG_Y                       ;   door/secret/field?
+        JSR CELL_READ
+        CMP #$03
+        BEQ .on_door
+        CMP #$01
+        BEQ .on_door
+        CMP #$04
+        BNE .march
+.on_door
+        ; Standing in a doorway with a wall immediately ahead: draw
+        ; just the closing "X" of the doorframe and stop.
+        JSR AHEAD_XY
+        JSR CELL_READ
+        CMP #$01
+        BNE .march
+        STA VIEW_BLOCKED
+        LDA #$00                        ; the two diagonals of the
+        STA $06                         ;   blocked doorway
+        LDA #$FF
+        STA $08
+        LDA #$7F
+        STA $07
+        STA $09
+        JSR LINE_AGAIN
+        LDA #$00
+        STA $08
+        STA $07
+        STA $09
+        JSR LINE_AGAIN
+        JMP .check_blocked
+.march
+        ; --- the depth-slice loop ---
+        ; Carry the previous slice's side features forward (the box
+        ; primitive joins this slice's walls to the last one), set
+        ; the wall colour, then walk WORK_X/Y out to this depth.
+DNG_MARCH
+        LDA VIEW_L
+        STA VIEW_L_PREV
+        LDA VIEW_R
+        STA VIEW_R_PREV
+        LDA #$07                        ; white
+        JSR COLOR_SET
+        LDA DNG_X                       ; WORK_X = DNG_X + depth*dx
+        LDX VIEW_DEPTH
+.stepx  BEQ .gotx
+        CLC
+        ADC DNG_DX
+        DEX
+        JMP .stepx
+.gotx   STA WORK_X
+        LDA DNG_Y                       ; WORK_Y = DNG_Y + depth*dy
+        LDX VIEW_DEPTH
+.stepy  BEQ .goty
+        CLC
+        ADC DNG_DY
+        DEX
+        JMP .stepy
+.goty   STA WORK_Y
+        TAY
+        LDX WORK_X
+        JSR CELL_READ                   ; cell ahead: high nibble is
+        PHA                             ;   the monster slot, low
+        LSR                             ;   nibble the feature
+        LSR
+        LSR
+        LSR
+        STA MON_SLOT
+        PLA
+        AND #$0F
+        STA VIEW_CELL
+        ; The two side cells: rotate the facing vector +/-90 degrees.
+        ; Left = (dx+dy, dy-dx) from WORK; Right = (dx-dy, dy+dx).
+        LDA WORK_X
+        CLC
+        ADC DNG_DY                      ; left cell
+        TAX
+        LDA WORK_Y
+        SEC
+        SBC DNG_DX
+        TAY
+        JSR CELL_FEAT
+        STA VIEW_L
+        LDA WORK_X
+        SEC
+        SBC DNG_DY                      ; right cell
+        TAX
+        LDA WORK_Y
+        CLC
+        ADC DNG_DX
+        TAY
+        JSR CELL_FEAT
+        STA VIEW_R
+        ; --- draw the cell ahead ---
+        LDA VIEW_CELL                   ; door/secret/field -> front
+        CMP #$01                        ;   face
+        BEQ .ahead_face
+        CMP #$03
+        BEQ .ahead_face
+        CMP #$04
+        BNE .ahead_open
+.ahead_face
+        JSR DRAW_AHEAD_WALL
+.ahead_open
+        LDA VIEW_CELL                   ; wall/secret stops the walk
+        CMP #$01
+        BEQ .blocked
+        CMP #$03
+        BNE .not_solid
+        LDA VIEW_DEPTH                  ; ...but a secret door at the
+        BEQ .open_ahead                 ;   player's own cell does not
+.blocked
+        LDA #$01
+        STA VIEW_BLOCKED
+        JMP .after_ahead2
+.not_solid
+        LDA VIEW_CELL
+        CMP #$04                        ; a door: draw the opening
+        BNE .ahead_extras               ;   through it
+.open_ahead
+        JSR DRAW_AHEAD_OPEN
+        LDA VIEW_DEPTH
+        BNE .blocked
+        JMP .after_ahead2
+.ahead_extras
+        LDA VIEW_CELL                   ; coffin marker
+        CMP #$06
+        BNE .chk_field
+        JSR DRAW_COFFIN
+        JSR WIN_TEXT
+        LDX #$00
+        LDY #$17
+        JSR MSG_AT
+        DC.B $7E,"Coffin",$00
+.chk_field
+        LDA VIEW_CELL                   ; force field
+        CMP #$0C
+        BNE .after_ahead
+        JSR DRAW_FIELD
+.after_ahead
+        ; --- draw the side walls ---
+        LDA VIEW_L                      ; left wall (wall/secret/door)
+        CMP #$01
+        BEQ .lwall
+        CMP #$03
+        BEQ .lwall
+        CMP #$04
+        BNE .rwall
+.lwall  JSR DRAW_WALL_L
+.rwall  LDA VIEW_R                      ; right wall
+        CMP #$01
+        BEQ .rw
+        CMP #$03
+        BEQ .rw
+        CMP #$04
+        BNE .ldoor
+.rw     JSR DRAW_WALL_R
+.ldoor  LDA VIEW_L                      ; left door frame
+        CMP #$04
+        BNE .rdoor
+        LDA VIEW_DEPTH
+        BEQ .ldoor0
+        JSR DRAW_DOOR_L
+        JMP .rdoor
+.ldoor0 JSR DRAW_DOOR_L
+.rdoor  LDA VIEW_R                      ; right door frame
+        CMP #$04
+        BNE .lopen
+        LDA VIEW_DEPTH
+        BEQ .rdoor0
+        JSR DRAW_DOOR_R
+        JMP .lopen
+.rdoor0 JSR DRAW_DOOR_R
+.lopen  LDA VIEW_L                      ; left side-passage opening
+        CMP #$01                        ;   (anything not wall-like)
+        BEQ .ropen
+        CMP #$03
+        BEQ .ropen
+        CMP #$04
+        BEQ .ropen
+        JSR DRAW_OPEN_L
+.ropen  LDA VIEW_R
+        CMP #$01
+        BEQ .feats
+        CMP #$03
+        BEQ .feats
+        CMP #$04
+        BEQ .feats
+        JSR DRAW_OPEN_R
+.feats  ; --- ladders, then the chest/monster in the cell ahead ---
+        LDA VIEW_CELL                   ; ladder down (7) or revealed
+        CMP #$07                        ;   trapdoor (9)
+        BEQ .ladder_dn
+        CMP #$09
+        BNE .ladder_up
+.ladder_dn
+        JSR DRAW_LADDER_DN
+.ladder_up
+        LDA VIEW_CELL                   ; ladder up (8)
+        CMP #$08
+        BNE .ladder_shaft
+        JSR DRAW_LADDER_UP
+.ladder_shaft
+        LDA VIEW_CELL                   ; the shaft uprights for both
+        CMP #$07
+        BEQ .shaft
+        CMP #$08
+        BNE .chest
+.shaft  JSR DRAW_LADDER_SHAFT
+.chest  LDA VIEW_CELL                   ; a chest, but only if no live
+        CMP #$05                        ;   monster occupies the cell
+        BNE .after_ahead2
+        LDA MON_SLOT
+        BEQ .chest_yes
+        CLC
+        ADC MON_BASE                    ; slot $1E/$29 = chest/coffin
+        CMP #$1E                        ;   placeholders, not monsters
+        BEQ .chest_yes
+        CMP #$29
+        BEQ .chest_yes
+        JMP .after_ahead2
+.chest_yes
+        JSR WIN_TEXT
+        LDX #$00
+        LDY #$17
+        JSR MSG_AT
+        DC.B $7E,"Chest",$00
+        LDA #$0B                        ; chest shape, drawn one slice
+        LDX VIEW_DEPTH                  ;   nearer so it sits in front
+        INC VIEW_DEPTH
+        JSR SHAPE_DRAW
+        DEC VIEW_DEPTH
+.after_ahead2
+        ; --- the monster occupying the cell ahead ---
+        LDA MON_SLOT
+        BEQ .check_blocked
+        CLC
+        ADC MON_BASE                    ; resolve to a STR_MONSTERS id
+        PHA
+        JSR WIN_TEXT                    ; name it on the message line
+        LDX #$00
+        LDY #$17
+        JSR MSG_AT
+        DC.B $7E,$00
+        PLA
+        PHA
+        TAX
+        CMP #$29                        ; $29 = coffin placeholder
+        BEQ .name_done
+        CMP #$20                        ; $20 = chest placeholder
+        BNE .name_mon
+        JSR MSG_PRINT
+        DC.B "Chest",$00
+        JMP .name_done
+.name_mon
+        JSR STR_NTH_CAP
+        DC.W STR_MONSTERS
+.name_done
+        PLA
+        CMP #$29                        ; placeholders draw no shape
+        BEQ .check_blocked
+        SEC
+        SBC #$15                        ; monster id -> shape index
+        LDX VIEW_DEPTH
+        DEX
+        JSR SHAPE_DRAW
+        LDA MON_SLOT                    ; a real monster ahead blocks
+        CLC                             ;   the view (sentinels $1E/
+        ADC MON_BASE                    ;   $20 do not)
+        CMP #$1E
+        BEQ .check_blocked
+        CMP #$20
+        BEQ .check_blocked
+        LDA #$01
+        STA VIEW_BLOCKED
+.check_blocked
+        LDA VIEW_BLOCKED
+        BEQ .deeper
+.flip   JMP PAGE_FLIP
+.deeper INC VIEW_DEPTH                  ; march one cell further
+        JMP DNG_MARCH
+@ %def DNG_DRAW DNG_MARCH
 
 \section{DNG: the level generator}
 
@@ -16996,21 +17353,799 @@ MON_DIST
         RTS
 @ %def MON_DIST
 
-\section{DNG: the renderer (pending)}
+\section{DNG: the perspective tables}
 
-From here to [[SEED_RND]] live the perspective tables and the
-wireframe drawing primitives --- the wall, door, ladder, field,
-chest and coffin painters that [[DNG_DRAW]] sequences. They are
-the next round's subject, together with the monster shape art at
-[[MON_SHAPES]].
+[[DNG_GEOM]] is the pool of pre-computed screen coordinates the
+wireframe primitives read, indexed by [[VIEW_DEPTH]]. It is a
+tight pack of ten-entry columns (one entry per depth, $1$--$10$),
+each giving one edge coordinate of the corridor box at that
+depth. The values converge: an X column runs
+[[$00]]\,[[$40]]\,[[$60]]\,[[$70]]\,$\ldots$ toward [[$7F]] (the
+screen centre), a Y column similarly, so the box edges close on
+the vanishing point as the corridor recedes.
 
-<<dng renderer stub>>=
+The columns are packed without gaps and the code reaches them by
+adding a fixed byte offset to [[DNG_GEOM]] before indexing by
+[[VIEW_DEPTH]]. The geometric roles that the box primitive
+([[DRAW_COFFIN]]) makes explicit, by offset:
+
+\begin{center}
+\small
+\begin{tabular}{ll}
+offset & role \\
+\hline
+\texttt{+\$00} & near/inner left X ramp (and \texttt{+\$01} its
+                  depth$+1$ neighbour) \\
+\texttt{+\$0B} & inner right X ramp \\
+\texttt{+\$16} & top edge Y (ceiling line) \\
+\texttt{+\$21} & bottom edge Y (floor line) \\
+\texttt{+\$22} & far floor Y (\texttt{BOX\_YF} source) \\
+\texttt{+\$54} & near top Y (\texttt{BOX\_YN} source) \\
+\texttt{+\$9A} & far-left X (\texttt{BOX\_XFL}) \\
+\texttt{+\$A4} & near-left X (\texttt{BOX\_XNL}) \\
+\texttt{+\$AE} & far-right X (\texttt{BOX\_XFR}) \\
+\texttt{+\$B8} & near-right X (\texttt{BOX\_XNR}) \\
+\end{tabular}
+\end{center}
+
+The other offsets the primitives use (\texttt{+\$36},
+\texttt{+\$40}, \texttt{+\$4A}, \texttt{+\$5E}, \texttt{+\$68},
+\texttt{+\$72}, \texttt{+\$7C}, \texttt{+\$86}, \texttt{+\$90})
+are intermediate ramps for the ceiling/floor diagonals and the
+side-opening and ladder geometry. Rather than split one
+hand-packed pool into two dozen aliased labels, the table stays
+a single blob and the primitives address it by offset.
+
+<<dng perspective tables>>=
         ORG $9E42
 DNG_GEOM
-        ; STUB -- not yet disassembled (perspective tables and
-        ; the wireframe drawing primitives)
-<<dng renderer stub hex>>
+        HEX 00406070787C7E7F
+        HEX 7F7F7FFFBF9F8F87
+        HEX 8381808080800020
+        HEX 30383C3E3F3F3F3F
+        HEX 3F7F5F4F47434140
+        HEX 4040404010486472
+        HEX 797C7F7F7F7F3058
+        HEX 6C767B7C7F7F7F7F
+        HEX EFB79B8D86838080
+        HEX 8080CFA793898483
+        HEX 80808080775B4D46
+        HEX 4240404040406753
+        HEX 4944424040404040
+        HEX 2A353B3D3E3F3F3F
+        HEX 3F3F385C6E7A7D7E
+        HEX 7F7F7F7FC7A39185
+        HEX 8281808080801008
+        HEX 0402010000000000
+        HEX 6F574B4542404040
+        HEX 40404C6673797C7E
+        HEX 7F7F7F7F586C767A
+        HEX 7D7E7F7F7F7FB098
+        HEX 8C86838281808080
+        HEX A8948A8582818080
+        HEX 8080
 @ %def DNG_GEOM
+
+\section{DNG: the wireframe primitives}
+
+Each primitive draws one feature of one depth slice. They all
+share an idiom: load [[VIEW_DEPTH]] into [[X]], read box-edge
+coordinates from [[DNG_GEOM]] indexed by [[X]] into the line
+workspace ([[$06]]/[[$07]] start point, [[$08]]/[[$09]] end
+point), and call [[LINE_AGAIN]] (which draws from the start point
+to the end point and leaves the end point as the next start).
+The colour is set by the caller; only [[DRAW_FIELD]] changes it
+(to red) and restores it.
+
+[[DRAW_COFFIN]] is the workhorse: it draws a full perspective
+box --- the floating cube used for a coffin or a closed chamber.
+It reads all four near/far corners and three interpolated mid-Y
+values ([[BOX_YA]]/[[BOX_YB]]/[[BOX_YC]]) and strokes the twelve
+visible edges. (A monster standing in the cell suppresses it ---
+the [[$1E]]/[[$29]] sentinels are the chest/coffin placeholders,
+which \emph{do} get the box.)
+
+<<dng primitive box>>=
+        ORG $9F04
+DRAW_COFFIN
+        SUBROUTINE
+        ; Draw a perspective box at VIEW_DEPTH (coffin / chamber).
+        ;
+        ; Behavior:
+        ;   Suppress if a live monster occupies the cell. Otherwise
+        ;   compute the eight box corners and three mid-Y rungs from
+        ;   DNG_GEOM and stroke the twelve edges with LINE_AGAIN.
+        ; Clobbers: A, X, Y
+        LDA MON_SLOT                    ; skip if a real monster is
+        BEQ .draw                       ;   here (not a chest/coffin
+        CLC                             ;   sentinel)
+        ADC MON_BASE
+        CMP #$1E
+        BEQ .draw
+        CMP #$29
+        BEQ .draw
+        RTS
+.draw   LDX VIEW_DEPTH
+        LDA DNG_GEOM+$54,X              ; BOX_YN = near top Y
+        STA BOX_YN
+        LDA DNG_GEOM+$22,X              ; BOX_YF = far floor Y
+        STA BOX_YF
+        CLC
+        ADC DNG_GEOM+$54,X
+        LSR                             ; BOX_YB = (YF+YN)/2
+        STA BOX_YB
+        CLC
+        ADC DNG_GEOM+$54,X
+        LSR                             ; BOX_YC = (YB+YN)/2
+        STA BOX_YC
+        LDA BOX_YB
+        CLC
+        ADC DNG_GEOM+$22,X
+        LSR                             ; BOX_YA = (YB+YF)/2
+        STA BOX_YA
+        LDA DNG_GEOM+$9A,X              ; the four near/far X corners
+        STA BOX_XFL
+        LDA DNG_GEOM+$AE,X
+        STA BOX_XFR
+        LDA DNG_GEOM+$A4,X
+        STA BOX_XNL
+        LDA DNG_GEOM+$B8,X
+        STA BOX_XNR
+        LDA BOX_XFL                     ; start at far-left, BOX_YA
+        STA $06
+        LDA BOX_YA
+        STA $07
+        LDA BOX_XNL
+        STA $08
+        LDA BOX_YF
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XFR
+        STA $08
+        LDA BOX_YA
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XFR
+        STA $08
+        LDA BOX_YC
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XNR
+        STA $08
+        LDA BOX_YN
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XNL
+        STA $08
+        LDA BOX_YN
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XFL
+        STA $08
+        LDA BOX_YC
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XFL
+        STA $08
+        LDA BOX_YA
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XNL
+        STA $08
+        LDA BOX_YB
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XNR
+        STA $08
+        LDA BOX_YB
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XNR
+        STA $08
+        LDA BOX_YN
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XNL                     ; close the near face
+        STA $06
+        STA $08
+        LDA BOX_YN
+        STA $07
+        LDA BOX_YB
+        STA $09
+        JSR LINE_AGAIN
+        LDA BOX_XNR
+        STA $06
+        LDA BOX_YB
+        STA $07
+        LDA BOX_XFR
+        STA $08
+        LDA BOX_YA
+        STA $09
+        JMP LINE_AGAIN
+@ %def DRAW_COFFIN
+
+[[DRAW_LADDER_SHAFT]] draws the vertical shaft frame for a ladder
+cell (codes 7 and 8); [[DRAW_LADDER_DN]] and [[DRAW_LADDER_UP]]
+add the rungs, the up-ladder mirroring the down-ladder through
+the horizon at [[$7F]].
+
+<<dng primitive ladder shaft>>=
+        ORG $A00F
+DRAW_LADDER_SHAFT
+        SUBROUTINE
+        ; Draw the vertical shaft of a ladder cell at VIEW_DEPTH.
+        ;
+        ; Behavior:
+        ;   Skip if a monster occupies the cell. A side-on view (dy=0)
+        ;   draws one centred upright; a head-on view draws both
+        ;   uprights and four cross-rungs from the perspective tables.
+        ; Clobbers: A, X, Y
+        LDA MON_SLOT                    ; skip if a monster is here
+        BEQ .draw
+        CLC
+        ADC MON_BASE
+        CMP #$1E
+        BEQ .draw
+        CMP #$20
+        BEQ .draw
+        CMP #$29
+        BEQ .draw
+        RTS
+.draw   LDA DNG_DY
+        BNE .deep                       ; facing along Y: full shaft
+        LDX VIEW_DEPTH                  ; facing along X: a single
+        LDA DNG_GEOM+$54,X              ;   centred vertical stroke
+        STA $07
+        LDA #$7F
+        STA $06
+        STA $08
+        SEC
+        SBC $07
+        STA $09
+        JMP LINE_AGAIN
+.deep   LDX VIEW_DEPTH
+        LDA DNG_GEOM+$54,X
+        STA $07
+        LDA #$7F
+        SEC
+        SBC $07
+        STA $09
+        PHA
+        LDA DNG_GEOM+$38,X
+        STA $06
+        STA $08
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        PLA
+        STA $09
+        LDA DNG_GEOM+$54,X
+        STA $07
+        LDA DNG_GEOM+$4C,X
+        STA $06
+        STA $08
+        JSR LINE_AGAIN
+        LDA #$04                        ; four rungs
+        STA ACC
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$86,X
+        LSR
+        LSR
+        STA ACC_HI
+        LDA DNG_GEOM+$16,X
+        CLC
+        ADC ACC_HI
+        STA $07
+        STA $09
+.rung   LDX VIEW_DEPTH
+        LDA DNG_GEOM+$38,X
+        STA $06
+        LDA DNG_GEOM+$4C,X
+        STA $08
+        LDA DNG_GEOM+$86,X
+        LSR
+        CLC
+        ADC DNG_GEOM+$86,X
+        ADC $07
+        STA $07
+        STA $09
+        JSR LINE_AGAIN
+        DEC ACC
+        BNE .rung
+        RTS
+@ %def DRAW_LADDER_SHAFT
+
+<<dng primitive field>>=
+        ORG $A0AE
+DRAW_FIELD
+        SUBROUTINE
+        ; Draw a red force field (three horizontal bars) at depth.
+        ;
+        ; Behavior:
+        ;   Switch the pen to red, stroke three evenly-spaced
+        ;   horizontal bars across the cell-ahead opening, restore
+        ;   white.
+        ; Clobbers: A, X, Y
+        LDA #$03                        ; three bars
+        STA ACC
+        LDA #$05                        ; red
+        JSR COLOR_SET
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$86,X
+        LSR
+        LSR
+        STA ACC_HI
+        LDA DNG_GEOM+$68,X
+        SEC
+        SBC ACC_HI
+        STA $07
+        STA $09
+.bar    LDX VIEW_DEPTH
+        LDA DNG_GEOM+$2C,X
+        STA $06
+        LDA DNG_GEOM+$40,X
+        STA $08
+        LDA $07
+        CLC
+        ADC DNG_GEOM+$86,X
+        STA $07
+        STA $09
+        JSR LINE_AGAIN
+        DEC ACC
+        BNE .bar
+        LDA #$07                        ; restore white
+        JMP COLOR_SET
+@ %def DRAW_FIELD
+
+<<dng primitive ladder down>>=
+        ORG $A0F2
+DRAW_LADDER_DN
+        ; Draw the rails of a downward ladder at VIEW_DEPTH.
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$72,X
+        STA $06
+        LDA DNG_GEOM+$54,X
+        STA $07
+        LDA DNG_GEOM+$37,X
+        STA $08
+        LDA DNG_GEOM+$5E,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$4B,X
+        STA $08
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$7C,X
+        STA $08
+        LDA DNG_GEOM+$54,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$72,X
+        STA $08
+        JMP LINE_AGAIN
+@ %def DRAW_LADDER_DN
+
+<<dng primitive ladder up>>=
+        ORG $A132
+DRAW_LADDER_UP
+        ; Draw the rails of an upward ladder (down-ladder mirrored
+        ; through the horizon at $7F).
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$72,X
+        STA $06
+        LDA #$7F
+        SEC
+        SBC DNG_GEOM+$54,X
+        STA $07
+        LDA DNG_GEOM+$37,X
+        STA $08
+        LDA #$7F
+        SEC
+        SBC DNG_GEOM+$5E,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$4B,X
+        STA $08
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$7C,X
+        STA $08
+        LDA #$7F
+        SEC
+        SBC DNG_GEOM+$54,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$72,X
+        STA $08
+        JMP LINE_AGAIN
+@ %def DRAW_LADDER_UP
+
+[[DRAW_OPEN_L]] and [[DRAW_OPEN_R]] paint the floor/ceiling
+edges of a \emph{side passage} --- the dark opening where a
+corridor branches off left or right. Each peeks one cell further
+([[AHEAD_FEAT]]) to decide whether to close the far edge.
+
+<<dng primitive open left>>=
+        ORG $A17B
+DRAW_OPEN_L
+        SUBROUTINE
+        ; Draw the left side-passage opening at VIEW_DEPTH.
+        ;
+        ; Behavior:
+        ;   Stroke the floor and ceiling edges of a branch opening on
+        ;   the left; close the far edge only if the cell one step
+        ;   deeper (AHEAD_FEAT) is solid.
+        ; Clobbers: A, X, Y
+        LDX VIEW_DEPTH
+        BEQ .near
+        LDA DNG_GEOM,X
+        STA $06
+        STA $08
+        LDA DNG_GEOM+$16,X
+        STA $07
+        LDA DNG_GEOM+$21,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+.near   LDA DNG_GEOM+$17,X
+        STA $07
+        STA $09
+        LDA DNG_GEOM,X
+        STA $06
+        LDA DNG_GEOM+$01,X
+        STA $08
+        JSR LINE_AGAIN
+        JSR AHEAD_FEAT
+        CMP #$01
+        BEQ .skip
+        CMP #$03
+        BEQ .skip
+        CMP #$04
+        BEQ .skip
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$22,X
+        STA $09
+        JSR LINE_AGAIN
+.skip   LDX VIEW_DEPTH
+        LDA DNG_GEOM+$22,X
+        STA $07
+        STA $09
+        LDA DNG_GEOM,X
+        STA $08
+        JMP LINE_AGAIN
+@ %def DRAW_OPEN_L
+
+<<dng primitive open right>>=
+        ORG $A1D7
+DRAW_OPEN_R
+        SUBROUTINE
+        ; Draw the right side-passage opening at VIEW_DEPTH.
+        ;
+        ; Behavior:
+        ;   Mirror of DRAW_OPEN_L for a branch opening on the right.
+        ; Clobbers: A, X, Y
+        LDX VIEW_DEPTH
+        BEQ .near
+        LDA DNG_GEOM+$0B,X
+        STA $06
+        STA $08
+        LDA DNG_GEOM+$16,X
+        STA $07
+        LDA DNG_GEOM+$21,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+.near   LDA DNG_GEOM+$17,X
+        STA $07
+        STA $09
+        LDA DNG_GEOM+$0B,X
+        STA $06
+        LDA DNG_GEOM+$0C,X
+        STA $08
+        JSR LINE_AGAIN
+        JSR AHEAD_FEAT
+        CMP #$01
+        BEQ .skip
+        CMP #$03
+        BEQ .skip
+        CMP #$04
+        BEQ .skip
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$22,X
+        STA $09
+        JSR LINE_AGAIN
+.skip   LDX VIEW_DEPTH
+        LDA DNG_GEOM+$22,X
+        STA $07
+        STA $09
+        LDA DNG_GEOM+$0B,X
+        STA $08
+        JMP LINE_AGAIN
+@ %def DRAW_OPEN_R
+
+[[AHEAD_FEAT]] is the look-ahead helper [[DRAW_OPEN_L]]/[[_R]]
+use: the feature of the cell one step deeper than the slice
+being drawn, so the opening's far edge is closed only when the
+passage really ends there.
+
+<<dng primitive ahead feat>>=
+        ORG $A233
+AHEAD_FEAT
+        ; A := feature nibble of the cell one step ahead of WORK.
+        LDA WORK_X
+        CLC
+        ADC DNG_DX
+        TAX
+        LDA WORK_Y
+        CLC
+        ADC DNG_DY
+        TAY
+        JSR CELL_READ
+        AND #$0F
+        RTS
+@ %def AHEAD_FEAT
+
+[[DRAW_WALL_L]] and [[DRAW_WALL_R]] paint a solid side wall ---
+the two diagonals (ceiling and floor) of a wall panel beside the
+passage.
+
+<<dng primitive wall left>>=
+        ORG $A249
+DRAW_WALL_L
+        SUBROUTINE
+        ; Draw the left wall panel at VIEW_DEPTH.
+        ;
+        ; Behavior:
+        ;   Stroke the ceiling and floor diagonals of a solid wall
+        ;   panel on the left side of the passage.
+        ; Clobbers: A, X, Y
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM,X
+        STA $06
+        LDA DNG_GEOM+$01,X
+        STA $08
+        LDA DNG_GEOM+$16,X
+        STA $07
+        LDA DNG_GEOM+$17,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM,X
+        STA $08
+        LDA DNG_GEOM+$21,X
+        STA $09
+        LDA DNG_GEOM+$22,X
+        STA $07
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        RTS
+@ %def DRAW_WALL_L
+
+<<dng primitive wall right>>=
+        ORG $A27C
+DRAW_WALL_R
+        SUBROUTINE
+        ; Draw the right wall panel at VIEW_DEPTH.
+        ;
+        ; Behavior:
+        ;   Mirror of DRAW_WALL_L for the right side of the passage.
+        ; Clobbers: A, X, Y
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$0B,X
+        STA $06
+        LDA DNG_GEOM+$0C,X
+        STA $08
+        LDA DNG_GEOM+$16,X
+        STA $07
+        LDA DNG_GEOM+$17,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$0B,X
+        STA $08
+        LDA DNG_GEOM+$21,X
+        STA $09
+        LDA DNG_GEOM+$22,X
+        STA $07
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        RTS
+@ %def DRAW_WALL_R
+
+[[DRAW_AHEAD_WALL]] draws the face straight ahead --- the end of
+the corridor, or the visible face of a door/secret/field cell ---
+and joins it to the previous slice's side walls so the tunnel
+reads as continuous.
+
+<<dng primitive ahead wall>>=
+        ORG $A2AF
+DRAW_AHEAD_WALL
+        SUBROUTINE
+        ; Draw the cell-ahead face and connect it to the last slice.
+        ;
+        ; Behavior:
+        ;   Stroke the rectangular face that closes the corridor
+        ;   straight ahead, then add ceiling/floor connectors back to
+        ;   whichever side walls the previous slice drew, so the
+        ;   tunnel reads as one continuous surface.
+        ; Clobbers: A, X, Y
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM,X
+        STA $06
+        LDA DNG_GEOM+$16,X
+        STA $07
+        STA $09
+        LDA DNG_GEOM+$0B,X
+        STA $08
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$0C,X
+        STA $08
+        LDA DNG_GEOM+$21,X
+        STA $07
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM,X
+        STA $06
+        LDA DNG_GEOM+$01,X
+        STA $08
+        JSR LINE_AGAIN
+        LDA VIEW_CELL                   ; a door at depth 0 needs no
+        CMP #$04                        ;   ceiling diagonal
+        BNE .ceil
+        LDX VIEW_DEPTH
+        BEQ .left_prev
+.ceil   LDX VIEW_DEPTH
+        LDA DNG_GEOM+$0C,X
+        STA $08
+        JSR LINE_AGAIN
+.left_prev
+        LDA VIEW_L_PREV                 ; join to the previous left
+        CMP #$01                        ;   wall if it was solid
+        BEQ .join_l
+        CMP #$03
+        BEQ .join_l
+        CMP #$04
+        BNE .right_prev
+.join_l LDX VIEW_DEPTH
+        LDA DNG_GEOM+$16,X
+        STA $09
+        LDA DNG_GEOM,X
+        STA $06
+        STA $08
+        JSR LINE_AGAIN
+.right_prev
+        LDA VIEW_R_PREV                 ; ...and the previous right
+        CMP #$01
+        BEQ .join_r
+        CMP #$03
+        BEQ .join_r
+        CMP #$04
+        BNE .done
+.join_r LDX VIEW_DEPTH
+        LDA DNG_GEOM+$0B,X
+        STA $06
+        STA $08
+        LDA DNG_GEOM+$16,X
+        STA $07
+        LDA DNG_GEOM+$21,X
+        STA $09
+        JSR LINE_AGAIN
+.done   RTS
+@ %def DRAW_AHEAD_WALL
+
+[[DRAW_AHEAD_OPEN]] draws the opening through a doorway in the
+cell straight ahead: the doorframe rectangle the player will walk
+through.
+
+<<dng primitive ahead open>>=
+        ORG $A347
+DRAW_AHEAD_OPEN
+        SUBROUTINE
+        ; Draw the doorway opening in the cell straight ahead.
+        ;
+        ; Behavior:
+        ;   Skip if a monster blocks it. Otherwise stroke the inner
+        ;   rectangle of the doorframe the player will walk through.
+        ; Clobbers: A, X, Y
+        LDX VIEW_DEPTH
+        LDA MON_SLOT                    ; skip if a monster blocks it
+        BEQ .draw
+        CLC
+        ADC MON_BASE
+        CMP #$1E
+        BEQ .draw
+        CMP #$20
+        BEQ .draw
+        CMP #$29
+        BEQ .draw
+        RTS
+.draw   LDA DNG_GEOM+$01,X
+        STA $06
+        STA $08
+        LDA DNG_GEOM+$21,X
+        STA $07
+        LDA DNG_GEOM+$17,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$0C,X
+        STA $08
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$21,X
+        STA $09
+        JMP LINE_AGAIN
+@ %def DRAW_AHEAD_OPEN
+
+[[DRAW_DOOR_L]] and [[DRAW_DOOR_R]] add the frame of a door seen
+edge-on in the left or right wall.
+
+<<dng primitive door left>>=
+        ORG $A38A
+DRAW_DOOR_L
+        ; Draw the left-wall door frame at VIEW_DEPTH.
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$2C,X
+        STA $06
+        STA $08
+        LDA DNG_GEOM+$54,X
+        STA $07
+        LDA DNG_GEOM+$17,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$36,X
+        STA $08
+        LDA DNG_GEOM+$68,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$5E,X
+        STA $09
+        JMP LINE_AGAIN
+@ %def DRAW_DOOR_L
+
+<<dng primitive door right>>=
+        ORG $A3BC
+DRAW_DOOR_R
+        ; Draw the right-wall door frame at VIEW_DEPTH.
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$40,X
+        STA $06
+        STA $08
+        LDA DNG_GEOM+$54,X
+        STA $07
+        LDA DNG_GEOM+$17,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$4A,X
+        STA $08
+        LDA DNG_GEOM+$68,X
+        STA $09
+        JSR LINE_AGAIN
+        LDX VIEW_DEPTH
+        LDA DNG_GEOM+$5E,X
+        STA $09
+        JMP LINE_AGAIN
+@ %def DRAW_DOOR_R
+
+[[GLYPH_AT]] is a one-line trampoline: stash the column in the
+cursor and draw glyph [[A]]. The shape engine uses it to stamp
+the small fixed glyphs.
+
+<<dng primitive glyph at>>=
+        ORG $A3EE
+GLYPH_AT
+        ; Draw glyph A at column X.
+        STX $24
+        JMP FONT_DRAW
+@ %def GLYPH_AT
 
 The generator's own helpers sit just past the renderer. Note
 what [[EDGE_PICK]] does to its table: [[EDGE_FEATURE]] holds
@@ -17087,13 +18222,135 @@ AHEAD_XY
         RTS
 @ %def SEED_RND EDGE_PICK CELL_WRITE NEGATE AHEAD_XY
 
-<<dng shape draw stub>>=
+\section{DNG: the shape engine}
+
+[[SHAPE_DRAW]] is a small scaled vector-stroke interpreter. It
+draws the monsters, the chest and the ladder-cell glyph as
+line figures that shrink with distance --- the same telescoping
+the corridor uses, but applied to a free-form outline rather
+than a box.
+
+A shape is a list of signed $(\Delta x, \Delta y)$ steps. The
+engine keeps a pen at [[WORK_X]]/[[WORK_Y]] and, for each step,
+scales the delta down by [[SHAPE_SCALE]] halvings (so a shape at
+depth $4$ is an eighth the size it is at depth $1$) and draws a
+line to the new pen position --- unless the step's flag byte says
+``move'', in which case it lifts the pen and just repositions. A
+$(0,0)$ step ends the shape.
+
+The shape \emph{pointers} live at the head of [[MON_SHAPES]] as a
+table of words; [[SHAPE_DRAW]] indexes it by shape number, biases
+the pointer (the stroke data is stored relative), and writes it
+into its own fetch instruction --- classic self-modifying code,
+which is why the disk image carries a stale [[$FFFF]] operand at
+[[SHAPE_FETCH]]. A few shape indexes ([[$12]], [[$16]], [[$1C]])
+get their starting Y nudged to a feature-specific baseline so the
+chest sits on the floor and the tall monsters touch the ceiling.
+
+<<dng shape draw>>=
         ORG $A449
 SHAPE_DRAW
-        ; STUB -- not yet disassembled (scaled vector-shape
-        ; renderer for monsters, chests and ladder cells)
-<<dng shape draw stub hex>>
-@ %def SHAPE_DRAW
+        SUBROUTINE
+        ; Draw vector shape A at scale X (the view depth).
+        ;
+        ; Inputs:
+        ;   A  -- shape index into MON_SHAPES
+        ;   X  -- number of halvings (0 = full size, nearest)
+        ;
+        ; Behavior:
+        ;   Self-modify SHAPE_FETCH to point at the shape's stroke
+        ;   list, set the pen baseline, then walk (dx,dy) steps:
+        ;   scale each by SHAPE_SCALE and draw (or move) to the new
+        ;   pen position until a (0,0) terminator.
+        ; Clobbers: A, X, Y
+        STX SHAPE_SCALE
+        ASL                             ; word index into the pointer
+        TAY                             ;   table
+        LDA MON_SHAPES,Y
+        CLC
+        ADC #$92                        ; bias the stored pointer and
+        STA SHAPE_PTR                   ;   patch SHAPE_FETCH's operand
+        LDA MON_SHAPES+1,Y
+        ADC #$A6
+        STA SHAPE_PTR+1
+        LDX VIEW_DEPTH
+        DEX
+        LDA DNG_GEOM+$90,X              ; default pen-Y baseline
+        CPY #$12                        ; chest: sit on the floor
+        BNE .chk16
+        LDA DNG_GEOM+$22,X
+.chk16  CPY #$16
+        BNE .chk1C
+        LDA DNG_GEOM+$54,X
+.chk1C  CPY #$1C
+        BNE .pen
+        LDA DNG_GEOM+$5E,X
+.pen    STA .penY                       ; store into the move below
+.step   JSR SHAPE_FETCH                 ; dx
+        STA ACC
+        JSR SHAPE_SCALE_BYTE
+        CLC
+        ADC #$80                        ; pen-X origin = screen centre
+        STA $08
+        JSR SHAPE_FETCH                 ; dy
+        TAX
+        ORA ACC                         ; (0,0) terminates
+        BNE .draw
+        RTS
+.draw   TXA
+        JSR SHAPE_SCALE_BYTE
+        CLC
+.penY = *+1
+        ADC #$5F                        ; pen-Y origin (patched above)
+        STA $09
+        LDA WORK_X
+        STA $06
+        LDA WORK_Y
+        STA $07
+        JSR SHAPE_FETCH                 ; flag: 0 = move (lift pen)
+        CMP #$00
+        BNE .line
+        LDA $08
+        STA $06
+        LDA $09
+        STA $07
+.line   LDA $08                         ; advance the pen
+        STA WORK_X
+        LDA $09
+        STA WORK_Y
+        JSR LINE_AGAIN
+        JMP .step
+SHAPE_FETCH
+        ; Read one shape byte and advance the self-modified pointer.
+SHAPE_PTR = *+1
+        LDA STALE_FFFF                  ; operand patched per shape
+        INC SHAPE_PTR
+        BNE .nohi
+        INC SHAPE_PTR+1
+.nohi   RTS
+SHAPE_SCALE_BYTE
+        SUBROUTINE
+        ; Scale one signed shape coordinate down by the view depth.
+        ;
+        ; Behavior:
+        ;   A := A arithmetic-shifted right SHAPE_SCALE times (sign
+        ;   preserving via the captured carry), so coordinate deltas
+        ;   shrink geometrically with depth.
+        CLC
+        CMP #$80                        ; capture the sign into carry
+        BCC .pos
+        SEC
+.pos    PHP
+        LDX SHAPE_SCALE
+        BEQ .done
+.halve  PLP
+        PHP
+        ROR                             ; carry = sign keeps it signed
+        DEX
+        BNE .halve
+.done   PLP
+        RTS
+@ %def SHAPE_DRAW SHAPE_FETCH SHAPE_PTR SHAPE_SCALE_BYTE
 
 \section{DNG: state}
 
@@ -17275,649 +18532,385 @@ DNG_TEMPLATE ; 11x11, row-major
         HEX 01 01 01 01 01 01 01 01 01 01 01
 @ %def DNG_TEMPLATE
 
-<<dng shapes blob>>=
+The monster, chest and ladder-cell figures, as line drawings.
+Each of the 25 shapes (rendered in
+\verb|images/dng_monster_shapes.png|) is a polyline: a list of
+\((x,y,\text{flag})\) triples where \((x,y)\) is a vertex
+relative to the screen-centre origin and the flag chooses move
+(pen up) versus draw. [[SHAPE_DRAW]] scales every vertex down by
+the view depth so the figure shrinks into the distance.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\textwidth]{images/dng_monster_shapes.png}
+\caption{The 25 [[DNG]] vector shapes at full scale. Humanoid
+monsters, beasts, the treasure chest (11), a sack (21) and the
+gazer/eye (17); the sparse tiles are the chest/coffin and
+ladder-cell glyphs and the unused sentinel slots.}
+\end{figure}
+
+<<dng shapes>>=
         ORG $A692
 MON_SHAPES
-        ; STUB -- not yet disassembled: the 25 dungeon-monster
-        ; vector shapes (offset index + line lists), drawn by
-        ; SHAPE_DRAW
-<<dng shapes blob hex>>
-@ %def MON_SHAPES
+        ; 25 word offsets from MON_SHAPES to each shape stroke
+        ; list (see images/dng_monster_shapes.png for the figures)
+        DC.W $0032                  ; shape 0
+        DC.W $00C8                  ; shape 1
+        DC.W $014F                  ; shape 2
+        DC.W $0194                  ; shape 3
+        DC.W $01DC                  ; shape 4
+        DC.W $0224                  ; shape 5
+        DC.W $02B7                  ; shape 6
+        DC.W $0332                  ; shape 7
+        DC.W $03AD                  ; shape 8
+        DC.W $0419                  ; shape 9
+        DC.W $042B                  ; shape 10
+        DC.W $0497                  ; shape 11
+        DC.W $04BE                  ; shape 12
+        DC.W $0542                  ; shape 13
+        DC.W $05C0                  ; shape 14
+        DC.W $05F9                  ; shape 15
+        DC.W $066E                  ; shape 16
+        DC.W $06AA                  ; shape 17
+        DC.W $0773                  ; shape 18
+        DC.W $07D6                  ; shape 19
+        DC.W $0845                  ; shape 20
+        DC.W $084B                  ; shape 21
+        DC.W $08AB                  ; shape 22
+        DC.W $0923                  ; shape 23
+        DC.W $099B                  ; shape 24
+SHAPE_STROKES ; (dx,dy,flag) triples; (0,0,*) ends a shape
+        HEX E7FD0019FD010AE6
+        HEX 010AE2010FDC0123
+        HEX E20123D8010FD501
+        HEX 05CE010AC8010AC4
+        HEX 0105C101FBC101F6
+        HEX C401F6C801FBCE01
+        HEX F1D501DDD801DDE2
+        HEX 01F1DC01F6E201F6
+        HEX E601E7FD01F1FD00
+        HEX EC0001F60001F6FD
+        HEX 010FFD001400010A
+        HEX 00010AFD01F6E200
+        HEX 0AE201F6E6000AE6
+        HEX 01F6D200FBD50105
+        HEX D5010AD20100DC00
+        HEX 00D501FCCB0004CB
+        HEX 0100C80005C40105
+        HEX C801FBC801FBC401
+        HEX 00C801000000E200
+        HEX 00EC0001ECF001F6
+        HEX E8010AE80114F001
+        HEX 1400011E000100EC
+        HEX 0000C401FDE00003
+        HEX E001FAD80006D801
+        HEX F7D00009D001ECD8
+        HEX 00F6C8010AC80114
+        HEX D801E2D000E2D801
+        HEX D8D001E2D001F6E0
+        HEX 0114DC0014CC010F
+        HEX D80019D801FBC400
+        HEX 05C4010ABC010AB8
+        HEX 0105B401FBB401F6
+        HEX B801F6BC01FBC401
+        HEX FBB40000B801FBBC
+        HEX 0005BC00FBC00005
+        HEX C00100000000C900
+        HEX 00F9010A00011E00
+        HEX 011ECC010AC10100
+        HEX C901F6C101E2CC01
+        HEX E20001F6000100F9
+        HEX 010AC1000AB50100
+        HEX AE01F6B501F6C101
+        HEX F6B50000C4010AB5
+        HEX 0100B201F6B50100
+        HEX 0000FBD800ECF601
+        HEX F600010A000114F6
+        HEX 0105D80100E200F6
+        HEX CE0100D3010ACE01
+        HEX 00E20105D30002D8
+        HEX 01FBD300FED801FC
+        HEX EC00FCE701F8EC00
+        HEX F8E70108EC0008E7
+        HEX 0104EC0004E70100
+        HEX 000003D20012CA01
+        HEX 24CA012DCE0124C2
+        HEX 0112BE0103C40106
+        HEX C00106BA0103BC01
+        HEX FEBC01FABA01FAC0
+        HEX 01FDC401EEBE01DC
+        HEX C201D3CE01DCCA01
+        HEX EECA01FDD20103D2
+        HEX 01FEBF0002BF0000
+        HEX 0000ECE20014EC01
+        HEX 28E20114CE0100C4
+        HEX 01D8BA01C4C401D8
+        HEX D801ECE201ECE701
+        HEX CEEC01E2E701E2DD
+        HEX 01CEDD01C4E201CE
+        HEX D80100D80100E201
+        HEX ECE201ECCE01D8CE
+        HEX 01D8D801ECCE0000
+        HEX D80114EC0032F601
+        HEX 0001011BE90041EC
+        HEX 0164000122E50041
+        HEX E20164F10128E200
+        HEX 41D30164E201C4C4
+        HEX 00A6D3019CE701CA
+        HEX C100BAB0019CC401
+        HEX D1BD00CEAB01B09C
+        HEX 01D8BA00ECAB01C4
+        HEX 9C01000000ECF100
+        HEX ECEC01E2E201E200
+        HEX 011E00011EF101E2
+        HEX F10114F1000AEC01
+        HEX 0ADD01F6DD01F6EC
+        HEX 0100F101ECFB001E
+        HEX FB011EF601E2F601
+        HEX F6EC000AEC010AE7
+        HEX 01F6E701F6E2010A
+        HEX E2010ADD01F6DD01
+        HEX 0AD600F6D601ECE2
+        HEX 0100D60114E2010A
+        HEX D601F1DD00F1D601
+        HEX F6CE010ACE010ED6
+        HEX 010FDD01F1D60000
+        HEX CE010DD601000000
+        HEX EC00001400010AF9
+        HEX 010AF10114EA0114
+        HEX F1011EEA011ED301
+        HEX 14CC01ECCC01EC00
+        HEX 00F6F901F6F101EC
+        HEX EA01ECF101E2EA01
+        HEX E2D301ECCC010ACC
+        HEX 0014BD010AB501F6
+        HEX B501ECBD01F6CC01
+        HEX 14BD00ECBD01E2F1
+        HEX 000AD30114D30100
+        HEX E20100DB01F6DB01
+        HEX 0ACC010AD30100C4
+        HEX 000ABD010AC401F6
+        HEX C401F6BD0100C401
+        HEX 00000000E7000500
+        HEX 011900010FFB0107
+        HEX E7010FD30119E701
+        HEX 1EE70119CE0105C9
+        HEX 010FC4010FBF0105
+        HEX BA0100E700FB0001
+        HEX E70001F1FB01F9E7
+        HEX 01F1D301E7E701E2
+        HEX E701E7CE01FBC901
+        HEX F1C401F1BF01FBBA
+        HEX 0105BA00FBBA010A
+        HEX BF0000BC01F6BF01
+        HEX 00C2010ABF01F6C4
+        HEX 000AC401000000C0
+        HEX 00003F00013FC101
+        HEX C0C101C000010000
+        HEX 0000E70014000128
+        HEX 00011EFB010FDD01
+        HEX 14D3011ED8011EE2
+        HEX 0128E20128D3010F
+        HEX C4011EC4011EB601
+        HEX 0AB6010AC101F6C1
+        HEX 0100E700EC0001D8
+        HEX 0001E2FB01F1DD01
+        HEX ECD101D8D601C7CA
+        HEX 01CEC401D8CB01F1
+        HEX C401E2C401E2B601
+        HEX F6B601F6C10117C0
+        HEX 0012BB00E9C000EE
+        HEX BB00000000EC0000
+        HEX ECEC0114EC011400
+        HEX 01EC0001ECEC00F6
+        HEX E2011EE2011EF601
+        HEX 14000114EC001EE2
+        HEX 0100000005D3000C
+        HEX DD0105EC0105F101
+        HEX 11000119000114FB
+        HEX 010FEC010FE20105
+        HEX D300FBD301F4DD01
+        HEX FBEC01FBF101EF00
+        HEX 01E70001ECFB01F1
+        HEX EC01F1E2010FE200
+        HEX 19D30119C40114C9
+        HEX 0114D3010FD30105
+        HEX CE010FC90105C401
+        HEX FBC401ECC901ECCB
+        HEX 01FBCE01ECD801EC
+        HEX EC01F1E701ECCA00
+        HEX FBCA0102C700FBF1
+        HEX 000EFB0114FB0023
+        HEX F601190001000000
+        HEX 00E7000FEC010FFB
+        HEX 0119000123000119
+        HEX FB0119E7010FDD01
+        HEX 0FD80123C90123BA
+        HEX 0119C4010FC90105
+        HEX C40100E700F1EC01
+        HEX F1FB01E70001DD00
+        HEX 01E7FB01E7E701F1
+        HEX DD01F1D801DDC901
+        HEX DDBA01E7C401F1C9
+        HEX 01FBC4010ABD0005
+        HEX C40105C701FBC701
+        HEX FBC401F6BD01F1B5
+        HEX 01FBBA0105BA010F
+        HEX B5010ABD01FCBE00
+        HEX 04BE00000000EC9C
+        HEX 00ECA601F6B0010A
+        HEX B00114A601149C01
+        HEX ECA600DDB501DDCE
+        HEX 01F6B000ECC401F6
+        HEX D8010AB00014C401
+        HEX 0AE20114A60023BA
+        HEX 0128CE01000000EC
+        HEX 0000F6F101F6C401
+        HEX 00BA0105BA010ABF
+        HEX 010AEC01140001F6
+        HEX E200ECF101E2EC01
+        HEX E7E701F6D300E7DD
+        HEX 01E2D301E7C901F6
+        HEX C900ECC401E7BA01
+        HEX F1B0010AC40014BF
+        HEX 010FB50105B0010A
+        HEX CE0014D3011ECE01
+        HEX 1EBF010ADD0014E7
+        HEX 0119E7011EDD0100
+        HEX C400FBC90100CE01
+        HEX 05C90100C40100C9
+        HEX 00000000EC0000F1
+        HEX 0001F6FB01F1F601
+        HEX FBEC0114E7010AF1
+        HEX 010FF6010AFB010F
+        HEX 0001140001F6F100
+        HEX 0AF101F6FB000AFB
+        HEX 01FBF40005F400FB
+        HEX F80005F801000000
+        HEX 05E2000CDB010CD1
+        HEX 0105C901FBC90105
+        HEX E200FBE201F4DB01
+        HEX F4D101FBC90100CE
+        HEX 0005D60100DD01FB
+        HEX D60100CE0100D300
+        HEX 00D8010CDB0011DD
+        HEX 0114DB0114D80119
+        HEX D80119DD0114DD01
+        HEX 14D801F4DB00EFD8
+        HEX 01ECDB01ECD801E7
+        HEX D801E7DD01ECDD01
+        HEX ECD801F4D100EFD1
+        HEX 01ECCC01ECCC01EC
+        HEX CE01E7CE01E7C901
+        HEX ECC901ECCE010CD1
+        HEX 000FCC0114CC0114
+        HEX CE0119CE0119C901
+        HEX 14C90114CE0105C9
+        HEX 0007C2010AC2010A
+        HEX C4010FC4010FBF01
+        HEX 0ABF010AC401FBC9
+        HEX 00F9C401F6C201F6
+        HEX C401F1C401F1BF01
+        HEX F6BF01F6C4010000
+        HEX 00D80000E2E201EC
+        HEX BA0100B0010AB001
+        HEX 14BA010FC4010FCE
+        HEX 0114E20114E2011E
+        HEX 000100BA000AB501
+        HEX 0FBA010AC40105C4
+        HEX 0100BF0100BA01E7
+        HEX CE00F6DD01F6C400
+        HEX F6CE01FBD80105D8
+        HEX 000FE2010ACE000F
+        HEX D80100E20000F601
+        HEX FB000105BB000ABB
+        HEX 000000000AB5000F
+        HEX B90114C10114C901
+        HEX 0FCC0105DF01FBDF
+        HEX 010AB500F6B501F1
+        HEX B901ECC101ECC901
+        HEX F1CC01FBDF01F1C1
+        HEX 00F6BD01FBBD0100
+        HEX C1010FC1000ABD01
+        HEX 05BD0100C1010FC1
+        HEX 000AC40105C40100
+        HEX C101F1C100F6C401
+        HEX FBC40100C101FBD3
+        HEX 0005D301FBC90005
+        HEX C90100CC01FBC901
+        HEX 0000000101000000
+        HEX 0008BC000CBC0108
+        HEX C80114CC01200001
+        HEX E00001ECCC01F8C8
+        HEX 01F4BC01F8BC01F0
+        HEX E800F4D001FCC801
+        HEX F8B80100B40108B8
+        HEX 0104C8010CD00110
+        HEX E801FEC600FEC801
+        HEX F8D801F8EC0102C6
+        HEX 0002C80108D80108
+        HEX EC0100C40000F001
+        HEX 03BA00FDBA000000
+        HEX 00F6F6000AF60114
+        HEX EC011EF6011E0001
+        HEX 28000128EC011EE2
+        HEX 011ED8012DD30137
+        HEX BA012DBF0123BA01
+        HEX 28C4011ECE0119BA
+        HEX 010AB00100C401F6
+        HEX B001E7BA01F6F600
+        HEX ECEC01E2F601E200
+        HEX 01D80001D8EC01E2
+        HEX E201E2D801D3D301
+        HEX C9BA01D3BF01DDBA
+        HEX 01D8C401E2CE01E7
+        HEX BA01ECC9000AC901
+        HEX 14C9000AC9010000
+        HEX 0000DD000FE7010F
+        HEX 00012D000123FB01
+        HEX 23E70119D80123DD
+        HEX 012DC4010FBA0105
+        HEX C40100BA0100DD00
+        HEX F1E701F10001D300
+        HEX 01DDFB01DDE701E7
+        HEX D801DDDD01D3C401
+        HEX F1BA01FBC40100BA
+        HEX 010FBA0011B5010A
+        HEX B3010FAB0105B001
+        HEX F1BA00EFB501F6B3
+        HEX 01F1AB01FBB00105
+        HEX B00109B50005B801
+        HEX F7B500FBB8010000
+        HEX 0000E20001010114
+        HEX 00010AF6010AD801
+        HEX 14E20114C4010ABA
+        HEX 010AAB0100A60101
+        HEX 0100EC0001F6F601
+        HEX F6D801ECE201ECC4
+        HEX 01F6BA01F6AB0100
+        HEX A6010ABA0014B001
+        HEX 28B00146EC0128EC
+        HEX 0114D801F6BA00EC
+        HEX B001D8B001BAEC01
+        HEX D8EC01ECD80105B0
+        HEX 00FBB00005B800FB
+        HEX B801000000
+@ %def MON_SHAPES SHAPE_STROKES
 
 
-<<dng view stub hex>>=
-        HEX 20 aa 15 20 b4 83 20 9e
-        HEX 15 a0 00 a2 0e 20 15 81
-        HEX 0e 20 4c 65 76 65 6c 20
-        HEX 00 a2 00 8e 49 82 ad 06
-        HEX a5 20 0d 82 a9 20 20 62
-        HEX 80 a9 18 20 62 80 a9 04
-        HEX 20 62 80 a0 13 a2 0f ad
-        HEX ed a4 f0 22 30 10 20 15
-        HEX 81 0e 20 53 6f 75 74 68
-        HEX 20 18 00 4c 02 8a 20 15
-        HEX 81 0e 20 4e 6f 72 74 68
-        HEX 20 18 00 4c 02 8a ad ec
-        HEX a4 10 10 20 15 81 0e 20
-        HEX 57 65 73 74 20 18 06 00
-        HEX 4c 02 8a 20 15 81 0e 20
-        HEX 45 61 73 74 20 18 06 00
-        HEX 20 a9 83 a9 00 8d f7 a4
-        HEX 8d 2b a5 ae e8 a4 ac e9
-        HEX a4 20 32 9d c9 03 f0 08
-        HEX c9 01 f0 04 c9 04 d0 2c
-        HEX 20 38 a4 20 32 9d c9 01
-        HEX d0 22 8d 2b a5 a9 00 85
-        HEX 06 a9 ff 85 08 a9 7f 85
-        HEX 07 85 09 20 dd 15 a9 00
-        HEX 85 08 85 07 85 09 20 dd
-        HEX 15 4c 4f 8c ad 27 a5 8d
-        HEX 29 a5 ad 28 a5 8d 2a a5
-        HEX a9 07 20 d4 15 ad e8 a4
-        HEX ae f7 a4 f0 08 18 6d ec
-        HEX a4 ca 4c 65 8a 8d ee a4
-        HEX ad e9 a4 ae f7 a4 f0 08
-        HEX 18 6d ed a4 ca 4c 78 8a
-        HEX 8d ef a4 a8 ae ee a4 20
-        HEX 32 9d 48 4a 4a 4a 4a 8d
-        HEX fe a4 68 29 0f 8d 26 a5
-        HEX ad ee a4 18 6d ed a4 aa
-        HEX ad ef a4 38 ed ec a4 a8
-        HEX 20 43 9d 8d 27 a5 ad ee
-        HEX a4 38 ed ed a4 aa ad ef
-        HEX a4 18 6d ec a4 a8 20 43
-        HEX 9d 8d 28 a5 ad 26 a5 c9
-        HEX 01 f0 08 c9 03 f0 04 c9
-        HEX 04 d0 03 20 af a2 ad 26
-        HEX a5 c9 01 f0 09 c9 03 d0
-        HEX 0d ad f7 a4 f0 0f a9 01
-        HEX 8d 2b a5 4c fa 8b ad 26
-        HEX a5 c9 04 d0 0b 20 47 a3
-        HEX ad f7 a4 d0 e9 4c fa 8b
-        HEX ad 26 a5 c9 06 d0 15 20
-        HEX 04 9f 20 a4 15 a2 00 a0
-        HEX 17 20 15 81 7e 43 6f 66
-        HEX 66 69 6e 00 ad 26 a5 c9
-        HEX 0c d0 03 20 ae a0 ad 27
-        HEX a5 c9 01 f0 08 c9 03 f0
-        HEX 04 c9 04 d0 03 20 49 a2
-        HEX ad 28 a5 c9 01 f0 08 c9
-        HEX 03 f0 04 c9 04 d0 03 20
-        HEX 7c a2 ad 27 a5 c9 04 d0
-        HEX 0e ad f7 a4 f0 06 20 8a
-        HEX a3 4c 61 8b 20 8a a3 ad
-        HEX 28 a5 c9 04 d0 0e ad f7
-        HEX a4 f0 06 20 bc a3 4c 76
-        HEX 8b 20 bc a3 ad 27 a5 c9
-        HEX 01 f0 0b c9 03 f0 07 c9
-        HEX 04 f0 03 20 7b a1 ad 28
-        HEX a5 c9 01 f0 0b c9 03 f0
-        HEX 07 c9 04 f0 03 20 d7 a1
-        HEX ad 26 a5 c9 07 f0 04 c9
-        HEX 09 d0 03 20 f2 a0 ad 26
-        HEX a5 c9 08 d0 03 20 32 a1
-        HEX ad 26 a5 c9 07 f0 04 c9
-        HEX 08 d0 03 20 0f a0 ad 26
-        HEX a5 c9 05 d0 33 ad fe a4
-        HEX f0 0f 18 6d 07 a5 c9 1e
-        HEX f0 07 c9 29 f0 03 4c fa
-        HEX 8b 20 a4 15 a2 00 a0 17
-        HEX 20 15 81 7e 43 68 65 73
-        HEX 74 00 a9 0b ae f7 a4 ee
-        HEX f7 a4 20 49 a4 ce f7 a4
-        HEX ad fe a4 f0 50 18 6d 07
-        HEX a5 48 20 a4 15 a2 00 a0
-        HEX 17 20 15 81 7e 00 68 48
-        HEX aa c9 29 f0 15 c9 20 d0
-        HEX 0c 20 19 81 43 68 65 73
-        HEX 74 00 4c 2c 8c 20 b1 80
-        HEX d6 76 68 c9 29 f0 1e 38
-        HEX e9 15 ae f7 a4 ca 20 49
-        HEX a4 ad fe a4 18 6d 07 a5
-        HEX c9 1e f0 09 c9 20 f0 05
-        HEX a9 01 8d 2b a5 ad 2b a5
-        HEX f0 03 4c ad 15 ee f7 a4
-        HEX 4c 4e 8a
 @
 
-<<dng renderer stub hex>>=
-        HEX 00 40 60 70 78 7c 7e 7f
-        HEX 7f 7f 7f ff bf 9f 8f 87
-        HEX 83 81 80 80 80 80 00 20
-        HEX 30 38 3c 3e 3f 3f 3f 3f
-        HEX 3f 7f 5f 4f 47 43 41 40
-        HEX 40 40 40 40 10 48 64 72
-        HEX 79 7c 7f 7f 7f 7f 30 58
-        HEX 6c 76 7b 7c 7f 7f 7f 7f
-        HEX ef b7 9b 8d 86 83 80 80
-        HEX 80 80 cf a7 93 89 84 83
-        HEX 80 80 80 80 77 5b 4d 46
-        HEX 42 40 40 40 40 40 67 53
-        HEX 49 44 42 40 40 40 40 40
-        HEX 2a 35 3b 3d 3e 3f 3f 3f
-        HEX 3f 3f 38 5c 6e 7a 7d 7e
-        HEX 7f 7f 7f 7f c7 a3 91 85
-        HEX 82 81 80 80 80 80 10 08
-        HEX 04 02 01 00 00 00 00 00
-        HEX 6f 57 4b 45 42 40 40 40
-        HEX 40 40 4c 66 73 79 7c 7e
-        HEX 7f 7f 7f 7f 58 6c 76 7a
-        HEX 7d 7e 7f 7f 7f 7f b0 98
-        HEX 8c 86 83 82 81 80 80 80
-        HEX a8 94 8a 85 82 81 80 80
-        HEX 80 80 ad fe a4 f0 0d 18
-        HEX 6d 07 a5 c9 1e f0 05 c9
-        HEX 29 f0 01 60 ae f7 a4 bd
-        HEX 96 9e 8d 36 a5 bd 64 9e
-        HEX 8d 37 a5 18 7d 96 9e 4a
-        HEX 8d 34 a5 18 7d 96 9e 4a
-        HEX 8d 35 a5 ad 34 a5 18 7d
-        HEX 64 9e 4a 8d 33 a5 bd dc
-        HEX 9e 8d 2f a5 bd f0 9e 8d
-        HEX 32 a5 bd e6 9e 8d 30 a5
-        HEX bd fa 9e 8d 31 a5 ad 2f
-        HEX a5 85 06 ad 33 a5 85 07
-        HEX ad 30 a5 85 08 ad 37 a5
-        HEX 85 09 20 dd 15 ad 32 a5
-        HEX 85 08 ad 33 a5 85 09 20
-        HEX dd 15 ad 32 a5 85 08 ad
-        HEX 35 a5 85 09 20 dd 15 ad
-        HEX 31 a5 85 08 ad 36 a5 85
-        HEX 09 20 dd 15 ad 30 a5 85
-        HEX 08 ad 36 a5 85 09 20 dd
-        HEX 15 ad 2f a5 85 08 ad 35
-        HEX a5 85 09 20 dd 15 ad 2f
-        HEX a5 85 08 ad 33 a5 85 09
-        HEX 20 dd 15 ad 30 a5 85 08
-        HEX ad 34 a5 85 09 20 dd 15
-        HEX ad 31 a5 85 08 ad 34 a5
-        HEX 85 09 20 dd 15 ad 31 a5
-        HEX 85 08 ad 36 a5 85 09 20
-        HEX dd 15 ad 30 a5 85 06 85
-        HEX 08 ad 36 a5 85 07 ad 34
-        HEX a5 85 09 20 dd 15 ad 31
-        HEX a5 85 06 ad 34 a5 85 07
-        HEX ad 32 a5 85 08 ad 33 a5
-        HEX 85 09 4c dd 15 ad fe a4
-        HEX f0 11 18 6d 07 a5 c9 1e
-        HEX f0 09 c9 20 f0 05 c9 29
-        HEX f0 01 60 ad ed a4 d0 16
-        HEX ae f7 a4 bd 96 9e 85 07
-        HEX a9 7f 85 06 85 08 38 e5
-        HEX 07 85 09 4c dd 15 ae f7
-        HEX a4 bd 96 9e 85 07 a9 7f
-        HEX 38 e5 07 85 09 48 bd 7a
-        HEX 9e 85 06 85 08 20 dd 15
-        HEX ae f7 a4 68 85 09 bd 96
-        HEX 9e 85 07 bd 8e 9e 85 06
-        HEX 85 08 20 dd 15 a9 04 8d
-        HEX f2 a4 ae f7 a4 bd c8 9e
-        HEX 4a 4a 8d f3 a4 bd 58 9e
-        HEX 18 6d f3 a4 85 07 85 09
-        HEX ae f7 a4 bd 7a 9e 85 06
-        HEX bd 8e 9e 85 08 bd c8 9e
-        HEX 4a 18 7d c8 9e 65 07 85
-        HEX 07 85 09 20 dd 15 ce f2
-        HEX a4 d0 dd 60 a9 03 8d f2
-        HEX a4 a9 05 20 d4 15 ae f7
-        HEX a4 bd c8 9e 4a 4a 8d f3
-        HEX a4 bd aa 9e 38 ed f3 a4
-        HEX 85 07 85 09 ae f7 a4 bd
-        HEX 6e 9e 85 06 bd 82 9e 85
-        HEX 08 a5 07 18 7d c8 9e 85
-        HEX 07 85 09 20 dd 15 ce f2
-        HEX a4 d0 e1 a9 07 4c d4 15
-        HEX ae f7 a4 bd b4 9e 85 06
-        HEX bd 96 9e 85 07 bd 79 9e
-        HEX 85 08 bd a0 9e 85 09 20
-        HEX dd 15 ae f7 a4 bd 8d 9e
-        HEX 85 08 20 dd 15 ae f7 a4
-        HEX bd be 9e 85 08 bd 96 9e
-        HEX 85 09 20 dd 15 ae f7 a4
-        HEX bd b4 9e 85 08 4c dd 15
-        HEX ae f7 a4 bd b4 9e 85 06
-        HEX a9 7f 38 fd 96 9e 85 07
-        HEX bd 79 9e 85 08 a9 7f 38
-        HEX fd a0 9e 85 09 20 dd 15
-        HEX ae f7 a4 bd 8d 9e 85 08
-        HEX 20 dd 15 ae f7 a4 bd be
-        HEX 9e 85 08 a9 7f 38 fd 96
-        HEX 9e 85 09 20 dd 15 ae f7
-        HEX a4 bd b4 9e 85 08 4c dd
-        HEX 15 ae f7 a4 f0 17 bd 42
-        HEX 9e 85 06 85 08 bd 58 9e
-        HEX 85 07 bd 63 9e 85 09 20
-        HEX dd 15 ae f7 a4 bd 59 9e
-        HEX 85 07 85 09 bd 42 9e 85
-        HEX 06 bd 43 9e 85 08 20 dd
-        HEX 15 20 33 a2 c9 01 f0 13
-        HEX c9 03 f0 0f c9 04 f0 0b
-        HEX ae f7 a4 bd 64 9e 85 09
-        HEX 20 dd 15 ae f7 a4 bd 64
-        HEX 9e 85 07 85 09 bd 42 9e
-        HEX 85 08 4c dd 15 ae f7 a4
-        HEX f0 17 bd 4d 9e 85 06 85
-        HEX 08 bd 58 9e 85 07 bd 63
-        HEX 9e 85 09 20 dd 15 ae f7
-        HEX a4 bd 59 9e 85 07 85 09
-        HEX bd 4d 9e 85 06 bd 4e 9e
-        HEX 85 08 20 dd 15 20 33 a2
-        HEX c9 01 f0 13 c9 03 f0 0f
-        HEX c9 04 f0 0b ae f7 a4 bd
-        HEX 64 9e 85 09 20 dd 15 ae
-        HEX f7 a4 bd 64 9e 85 07 85
-        HEX 09 bd 4d 9e 85 08 4c dd
-        HEX 15 ad ee a4 18 6d ec a4
-        HEX aa ad ef a4 18 6d ed a4
-        HEX a8 20 32 9d 29 0f 60 ae
-        HEX f7 a4 bd 42 9e 85 06 bd
-        HEX 43 9e 85 08 bd 58 9e 85
-        HEX 07 bd 59 9e 85 09 20 dd
-        HEX 15 ae f7 a4 bd 42 9e 85
-        HEX 08 bd 63 9e 85 09 bd 64
-        HEX 9e 85 07 20 dd 15 ae f7
-        HEX a4 60 ae f7 a4 bd 4d 9e
-        HEX 85 06 bd 4e 9e 85 08 bd
-        HEX 58 9e 85 07 bd 59 9e 85
-        HEX 09 20 dd 15 ae f7 a4 bd
-        HEX 4d 9e 85 08 bd 63 9e 85
-        HEX 09 bd 64 9e 85 07 20 dd
-        HEX 15 ae f7 a4 60 ae f7 a4
-        HEX bd 42 9e 85 06 bd 58 9e
-        HEX 85 07 85 09 bd 4d 9e 85
-        HEX 08 20 dd 15 ae f7 a4 bd
-        HEX 4e 9e 85 08 bd 63 9e 85
-        HEX 07 85 09 20 dd 15 ae f7
-        HEX a4 bd 42 9e 85 06 bd 43
-        HEX 9e 85 08 20 dd 15 ad 26
-        HEX a5 c9 04 d0 05 ae f7 a4
-        HEX f0 0b ae f7 a4 bd 4e 9e
-        HEX 85 08 20 dd 15 ad 29 a5
-        HEX c9 01 f0 08 c9 03 f0 04
-        HEX c9 04 d0 12 ae f7 a4 bd
-        HEX 58 9e 85 09 bd 42 9e 85
-        HEX 06 85 08 20 dd 15 ad 2a
-        HEX a5 c9 01 f0 08 c9 03 f0
-        HEX 04 c9 04 d0 17 ae f7 a4
-        HEX bd 4d 9e 85 06 85 08 bd
-        HEX 58 9e 85 07 bd 63 9e 85
-        HEX 09 20 dd 15 60 ae f7 a4
-        HEX ad fe a4 f0 11 18 6d 07
-        HEX a5 c9 1e f0 09 c9 20 f0
-        HEX 05 c9 29 f0 01 60 bd 43
-        HEX 9e 85 06 85 08 bd 63 9e
-        HEX 85 07 bd 59 9e 85 09 20
-        HEX dd 15 ae f7 a4 bd 4e 9e
-        HEX 85 08 20 dd 15 ae f7 a4
-        HEX bd 63 9e 85 09 4c dd 15
-        HEX ae f7 a4 bd 6e 9e 85 06
-        HEX 85 08 bd 96 9e 85 07 bd
-        HEX 59 9e 85 09 20 dd 15 ae
-        HEX f7 a4 bd 78 9e 85 08 bd
-        HEX aa 9e 85 09 20 dd 15 ae
-        HEX f7 a4 bd a0 9e 85 09 4c
-        HEX dd 15 ae f7 a4 bd 82 9e
-        HEX 85 06 85 08 bd 96 9e 85
-        HEX 07 bd 59 9e 85 09 20 dd
-        HEX 15 ae f7 a4 bd 8c 9e 85
-        HEX 08 bd aa 9e 85 09 20 dd
-        HEX 15 ae f7 a4 bd a0 9e 85
-        HEX 09 4c dd 15 86 24 4c b0
-        HEX 15
 @
 
-<<dng shape draw stub hex>>=
-        HEX 8e f5 a4 0a a8 b9 92 a6
-        HEX 18 69 92 8d c9 a4 b9 93
-        HEX a6 69 a6 8d ca a4 ae f7
-        HEX a4 ca bd d2 9e c0 12 d0
-        HEX 03 bd 64 9e c0 16 d0 03
-        HEX bd 96 9e c0 1c d0 03 bd
-        HEX a0 9e 8d 9c a4 20 c8 a4
-        HEX 8d f2 a4 20 d4 a4 18 69
-        HEX 80 85 08 20 c8 a4 aa 0d
-        HEX f2 a4 d0 01 60 8a 20 d4
-        HEX a4 18 69 5f 85 09 ad ee
-        HEX a4 85 06 ad ef a4 85 07
-        HEX 20 c8 a4 c9 00 d0 08 a5
-        HEX 08 85 06 a5 09 85 07 a5
-        HEX 08 8d ee a4 a5 09 8d ef
-        HEX a4 20 dd 15 4c 7e a4 ad
-        HEX ff ff ee c9 a4 d0 03 ee
-        HEX ca a4 60 18 c9 80 90 01
-        HEX 38 08 ae f5 a4 f0 06 28
-        HEX 08 6a ca d0 fa 28 60
 @
 
-<<dng shapes blob hex>>=
-        HEX 32 00 c8 00 4f 01 94 01
-        HEX dc 01 24 02 b7 02 32 03
-        HEX ad 03 19 04 2b 04 97 04
-        HEX be 04 42 05 c0 05 f9 05
-        HEX 6e 06 aa 06 73 07 d6 07
-        HEX 45 08 4b 08 ab 08 23 09
-        HEX 9b 09 e7 fd 00 19 fd 01
-        HEX 0a e6 01 0a e2 01 0f dc
-        HEX 01 23 e2 01 23 d8 01 0f
-        HEX d5 01 05 ce 01 0a c8 01
-        HEX 0a c4 01 05 c1 01 fb c1
-        HEX 01 f6 c4 01 f6 c8 01 fb
-        HEX ce 01 f1 d5 01 dd d8 01
-        HEX dd e2 01 f1 dc 01 f6 e2
-        HEX 01 f6 e6 01 e7 fd 01 f1
-        HEX fd 00 ec 00 01 f6 00 01
-        HEX f6 fd 01 0f fd 00 14 00
-        HEX 01 0a 00 01 0a fd 01 f6
-        HEX e2 00 0a e2 01 f6 e6 00
-        HEX 0a e6 01 f6 d2 00 fb d5
-        HEX 01 05 d5 01 0a d2 01 00
-        HEX dc 00 00 d5 01 fc cb 00
-        HEX 04 cb 01 00 c8 00 05 c4
-        HEX 01 05 c8 01 fb c8 01 fb
-        HEX c4 01 00 c8 01 00 00 00
-        HEX e2 00 00 ec 00 01 ec f0
-        HEX 01 f6 e8 01 0a e8 01 14
-        HEX f0 01 14 00 01 1e 00 01
-        HEX 00 ec 00 00 c4 01 fd e0
-        HEX 00 03 e0 01 fa d8 00 06
-        HEX d8 01 f7 d0 00 09 d0 01
-        HEX ec d8 00 f6 c8 01 0a c8
-        HEX 01 14 d8 01 e2 d0 00 e2
-        HEX d8 01 d8 d0 01 e2 d0 01
-        HEX f6 e0 01 14 dc 00 14 cc
-        HEX 01 0f d8 00 19 d8 01 fb
-        HEX c4 00 05 c4 01 0a bc 01
-        HEX 0a b8 01 05 b4 01 fb b4
-        HEX 01 f6 b8 01 f6 bc 01 fb
-        HEX c4 01 fb b4 00 00 b8 01
-        HEX fb bc 00 05 bc 00 fb c0
-        HEX 00 05 c0 01 00 00 00 00
-        HEX c9 00 00 f9 01 0a 00 01
-        HEX 1e 00 01 1e cc 01 0a c1
-        HEX 01 00 c9 01 f6 c1 01 e2
-        HEX cc 01 e2 00 01 f6 00 01
-        HEX 00 f9 01 0a c1 00 0a b5
-        HEX 01 00 ae 01 f6 b5 01 f6
-        HEX c1 01 f6 b5 00 00 c4 01
-        HEX 0a b5 01 00 b2 01 f6 b5
-        HEX 01 00 00 00 fb d8 00 ec
-        HEX f6 01 f6 00 01 0a 00 01
-        HEX 14 f6 01 05 d8 01 00 e2
-        HEX 00 f6 ce 01 00 d3 01 0a
-        HEX ce 01 00 e2 01 05 d3 00
-        HEX 02 d8 01 fb d3 00 fe d8
-        HEX 01 fc ec 00 fc e7 01 f8
-        HEX ec 00 f8 e7 01 08 ec 00
-        HEX 08 e7 01 04 ec 00 04 e7
-        HEX 01 00 00 00 03 d2 00 12
-        HEX ca 01 24 ca 01 2d ce 01
-        HEX 24 c2 01 12 be 01 03 c4
-        HEX 01 06 c0 01 06 ba 01 03
-        HEX bc 01 fe bc 01 fa ba 01
-        HEX fa c0 01 fd c4 01 ee be
-        HEX 01 dc c2 01 d3 ce 01 dc
-        HEX ca 01 ee ca 01 fd d2 01
-        HEX 03 d2 01 fe bf 00 02 bf
-        HEX 00 00 00 00 ec e2 00 14
-        HEX ec 01 28 e2 01 14 ce 01
-        HEX 00 c4 01 d8 ba 01 c4 c4
-        HEX 01 d8 d8 01 ec e2 01 ec
-        HEX e7 01 ce ec 01 e2 e7 01
-        HEX e2 dd 01 ce dd 01 c4 e2
-        HEX 01 ce d8 01 00 d8 01 00
-        HEX e2 01 ec e2 01 ec ce 01
-        HEX d8 ce 01 d8 d8 01 ec ce
-        HEX 00 00 d8 01 14 ec 00 32
-        HEX f6 01 00 01 01 1b e9 00
-        HEX 41 ec 01 64 00 01 22 e5
-        HEX 00 41 e2 01 64 f1 01 28
-        HEX e2 00 41 d3 01 64 e2 01
-        HEX c4 c4 00 a6 d3 01 9c e7
-        HEX 01 ca c1 00 ba b0 01 9c
-        HEX c4 01 d1 bd 00 ce ab 01
-        HEX b0 9c 01 d8 ba 00 ec ab
-        HEX 01 c4 9c 01 00 00 00 ec
-        HEX f1 00 ec ec 01 e2 e2 01
-        HEX e2 00 01 1e 00 01 1e f1
-        HEX 01 e2 f1 01 14 f1 00 0a
-        HEX ec 01 0a dd 01 f6 dd 01
-        HEX f6 ec 01 00 f1 01 ec fb
-        HEX 00 1e fb 01 1e f6 01 e2
-        HEX f6 01 f6 ec 00 0a ec 01
-        HEX 0a e7 01 f6 e7 01 f6 e2
-        HEX 01 0a e2 01 0a dd 01 f6
-        HEX dd 01 0a d6 00 f6 d6 01
-        HEX ec e2 01 00 d6 01 14 e2
-        HEX 01 0a d6 01 f1 dd 00 f1
-        HEX d6 01 f6 ce 01 0a ce 01
-        HEX 0e d6 01 0f dd 01 f1 d6
-        HEX 00 00 ce 01 0d d6 01 00
-        HEX 00 00 ec 00 00 14 00 01
-        HEX 0a f9 01 0a f1 01 14 ea
-        HEX 01 14 f1 01 1e ea 01 1e
-        HEX d3 01 14 cc 01 ec cc 01
-        HEX ec 00 00 f6 f9 01 f6 f1
-        HEX 01 ec ea 01 ec f1 01 e2
-        HEX ea 01 e2 d3 01 ec cc 01
-        HEX 0a cc 00 14 bd 01 0a b5
-        HEX 01 f6 b5 01 ec bd 01 f6
-        HEX cc 01 14 bd 00 ec bd 01
-        HEX e2 f1 00 0a d3 01 14 d3
-        HEX 01 00 e2 01 00 db 01 f6
-        HEX db 01 0a cc 01 0a d3 01
-        HEX 00 c4 00 0a bd 01 0a c4
-        HEX 01 f6 c4 01 f6 bd 01 00
-        HEX c4 01 00 00 00 00 e7 00
-        HEX 05 00 01 19 00 01 0f fb
-        HEX 01 07 e7 01 0f d3 01 19
-        HEX e7 01 1e e7 01 19 ce 01
-        HEX 05 c9 01 0f c4 01 0f bf
-        HEX 01 05 ba 01 00 e7 00 fb
-        HEX 00 01 e7 00 01 f1 fb 01
-        HEX f9 e7 01 f1 d3 01 e7 e7
-        HEX 01 e2 e7 01 e7 ce 01 fb
-        HEX c9 01 f1 c4 01 f1 bf 01
-        HEX fb ba 01 05 ba 00 fb ba
-        HEX 01 0a bf 00 00 bc 01 f6
-        HEX bf 01 00 c2 01 0a bf 01
-        HEX f6 c4 00 0a c4 01 00 00
-        HEX 00 c0 00 00 3f 00 01 3f
-        HEX c1 01 c0 c1 01 c0 00 01
-        HEX 00 00 00 00 e7 00 14 00
-        HEX 01 28 00 01 1e fb 01 0f
-        HEX dd 01 14 d3 01 1e d8 01
-        HEX 1e e2 01 28 e2 01 28 d3
-        HEX 01 0f c4 01 1e c4 01 1e
-        HEX b6 01 0a b6 01 0a c1 01
-        HEX f6 c1 01 00 e7 00 ec 00
-        HEX 01 d8 00 01 e2 fb 01 f1
-        HEX dd 01 ec d1 01 d8 d6 01
-        HEX c7 ca 01 ce c4 01 d8 cb
-        HEX 01 f1 c4 01 e2 c4 01 e2
-        HEX b6 01 f6 b6 01 f6 c1 01
-        HEX 17 c0 00 12 bb 00 e9 c0
-        HEX 00 ee bb 00 00 00 00 ec
-        HEX 00 00 ec ec 01 14 ec 01
-        HEX 14 00 01 ec 00 01 ec ec
-        HEX 00 f6 e2 01 1e e2 01 1e
-        HEX f6 01 14 00 01 14 ec 00
-        HEX 1e e2 01 00 00 00 05 d3
-        HEX 00 0c dd 01 05 ec 01 05
-        HEX f1 01 11 00 01 19 00 01
-        HEX 14 fb 01 0f ec 01 0f e2
-        HEX 01 05 d3 00 fb d3 01 f4
-        HEX dd 01 fb ec 01 fb f1 01
-        HEX ef 00 01 e7 00 01 ec fb
-        HEX 01 f1 ec 01 f1 e2 01 0f
-        HEX e2 00 19 d3 01 19 c4 01
-        HEX 14 c9 01 14 d3 01 0f d3
-        HEX 01 05 ce 01 0f c9 01 05
-        HEX c4 01 fb c4 01 ec c9 01
-        HEX ec cb 01 fb ce 01 ec d8
-        HEX 01 ec ec 01 f1 e7 01 ec
-        HEX ca 00 fb ca 01 02 c7 00
-        HEX fb f1 00 0e fb 01 14 fb
-        HEX 00 23 f6 01 19 00 01 00
-        HEX 00 00 00 e7 00 0f ec 01
-        HEX 0f fb 01 19 00 01 23 00
-        HEX 01 19 fb 01 19 e7 01 0f
-        HEX dd 01 0f d8 01 23 c9 01
-        HEX 23 ba 01 19 c4 01 0f c9
-        HEX 01 05 c4 01 00 e7 00 f1
-        HEX ec 01 f1 fb 01 e7 00 01
-        HEX dd 00 01 e7 fb 01 e7 e7
-        HEX 01 f1 dd 01 f1 d8 01 dd
-        HEX c9 01 dd ba 01 e7 c4 01
-        HEX f1 c9 01 fb c4 01 0a bd
-        HEX 00 05 c4 01 05 c7 01 fb
-        HEX c7 01 fb c4 01 f6 bd 01
-        HEX f1 b5 01 fb ba 01 05 ba
-        HEX 01 0f b5 01 0a bd 01 fc
-        HEX be 00 04 be 00 00 00 00
-        HEX ec 9c 00 ec a6 01 f6 b0
-        HEX 01 0a b0 01 14 a6 01 14
-        HEX 9c 01 ec a6 00 dd b5 01
-        HEX dd ce 01 f6 b0 00 ec c4
-        HEX 01 f6 d8 01 0a b0 00 14
-        HEX c4 01 0a e2 01 14 a6 00
-        HEX 23 ba 01 28 ce 01 00 00
-        HEX 00 ec 00 00 f6 f1 01 f6
-        HEX c4 01 00 ba 01 05 ba 01
-        HEX 0a bf 01 0a ec 01 14 00
-        HEX 01 f6 e2 00 ec f1 01 e2
-        HEX ec 01 e7 e7 01 f6 d3 00
-        HEX e7 dd 01 e2 d3 01 e7 c9
-        HEX 01 f6 c9 00 ec c4 01 e7
-        HEX ba 01 f1 b0 01 0a c4 00
-        HEX 14 bf 01 0f b5 01 05 b0
-        HEX 01 0a ce 00 14 d3 01 1e
-        HEX ce 01 1e bf 01 0a dd 00
-        HEX 14 e7 01 19 e7 01 1e dd
-        HEX 01 00 c4 00 fb c9 01 00
-        HEX ce 01 05 c9 01 00 c4 01
-        HEX 00 c9 00 00 00 00 ec 00
-        HEX 00 f1 00 01 f6 fb 01 f1
-        HEX f6 01 fb ec 01 14 e7 01
-        HEX 0a f1 01 0f f6 01 0a fb
-        HEX 01 0f 00 01 14 00 01 f6
-        HEX f1 00 0a f1 01 f6 fb 00
-        HEX 0a fb 01 fb f4 00 05 f4
-        HEX 00 fb f8 00 05 f8 01 00
-        HEX 00 00 05 e2 00 0c db 01
-        HEX 0c d1 01 05 c9 01 fb c9
-        HEX 01 05 e2 00 fb e2 01 f4
-        HEX db 01 f4 d1 01 fb c9 01
-        HEX 00 ce 00 05 d6 01 00 dd
-        HEX 01 fb d6 01 00 ce 01 00
-        HEX d3 00 00 d8 01 0c db 00
-        HEX 11 dd 01 14 db 01 14 d8
-        HEX 01 19 d8 01 19 dd 01 14
-        HEX dd 01 14 d8 01 f4 db 00
-        HEX ef d8 01 ec db 01 ec d8
-        HEX 01 e7 d8 01 e7 dd 01 ec
-        HEX dd 01 ec d8 01 f4 d1 00
-        HEX ef d1 01 ec cc 01 ec cc
-        HEX 01 ec ce 01 e7 ce 01 e7
-        HEX c9 01 ec c9 01 ec ce 01
-        HEX 0c d1 00 0f cc 01 14 cc
-        HEX 01 14 ce 01 19 ce 01 19
-        HEX c9 01 14 c9 01 14 ce 01
-        HEX 05 c9 00 07 c2 01 0a c2
-        HEX 01 0a c4 01 0f c4 01 0f
-        HEX bf 01 0a bf 01 0a c4 01
-        HEX fb c9 00 f9 c4 01 f6 c2
-        HEX 01 f6 c4 01 f1 c4 01 f1
-        HEX bf 01 f6 bf 01 f6 c4 01
-        HEX 00 00 00 d8 00 00 e2 e2
-        HEX 01 ec ba 01 00 b0 01 0a
-        HEX b0 01 14 ba 01 0f c4 01
-        HEX 0f ce 01 14 e2 01 14 e2
-        HEX 01 1e 00 01 00 ba 00 0a
-        HEX b5 01 0f ba 01 0a c4 01
-        HEX 05 c4 01 00 bf 01 00 ba
-        HEX 01 e7 ce 00 f6 dd 01 f6
-        HEX c4 00 f6 ce 01 fb d8 01
-        HEX 05 d8 00 0f e2 01 0a ce
-        HEX 00 0f d8 01 00 e2 00 00
-        HEX f6 01 fb 00 01 05 bb 00
-        HEX 0a bb 00 00 00 00 0a b5
-        HEX 00 0f b9 01 14 c1 01 14
-        HEX c9 01 0f cc 01 05 df 01
-        HEX fb df 01 0a b5 00 f6 b5
-        HEX 01 f1 b9 01 ec c1 01 ec
-        HEX c9 01 f1 cc 01 fb df 01
-        HEX f1 c1 00 f6 bd 01 fb bd
-        HEX 01 00 c1 01 0f c1 00 0a
-        HEX bd 01 05 bd 01 00 c1 01
-        HEX 0f c1 00 0a c4 01 05 c4
-        HEX 01 00 c1 01 f1 c1 00 f6
-        HEX c4 01 fb c4 01 00 c1 01
-        HEX fb d3 00 05 d3 01 fb c9
-        HEX 00 05 c9 01 00 cc 01 fb
-        HEX c9 01 00 00 00 01 01 00
-        HEX 00 00 00 08 bc 00 0c bc
-        HEX 01 08 c8 01 14 cc 01 20
-        HEX 00 01 e0 00 01 ec cc 01
-        HEX f8 c8 01 f4 bc 01 f8 bc
-        HEX 01 f0 e8 00 f4 d0 01 fc
-        HEX c8 01 f8 b8 01 00 b4 01
-        HEX 08 b8 01 04 c8 01 0c d0
-        HEX 01 10 e8 01 fe c6 00 fe
-        HEX c8 01 f8 d8 01 f8 ec 01
-        HEX 02 c6 00 02 c8 01 08 d8
-        HEX 01 08 ec 01 00 c4 00 00
-        HEX f0 01 03 ba 00 fd ba 00
-        HEX 00 00 00 f6 f6 00 0a f6
-        HEX 01 14 ec 01 1e f6 01 1e
-        HEX 00 01 28 00 01 28 ec 01
-        HEX 1e e2 01 1e d8 01 2d d3
-        HEX 01 37 ba 01 2d bf 01 23
-        HEX ba 01 28 c4 01 1e ce 01
-        HEX 19 ba 01 0a b0 01 00 c4
-        HEX 01 f6 b0 01 e7 ba 01 f6
-        HEX f6 00 ec ec 01 e2 f6 01
-        HEX e2 00 01 d8 00 01 d8 ec
-        HEX 01 e2 e2 01 e2 d8 01 d3
-        HEX d3 01 c9 ba 01 d3 bf 01
-        HEX dd ba 01 d8 c4 01 e2 ce
-        HEX 01 e7 ba 01 ec c9 00 0a
-        HEX c9 01 14 c9 00 0a c9 01
-        HEX 00 00 00 00 dd 00 0f e7
-        HEX 01 0f 00 01 2d 00 01 23
-        HEX fb 01 23 e7 01 19 d8 01
-        HEX 23 dd 01 2d c4 01 0f ba
-        HEX 01 05 c4 01 00 ba 01 00
-        HEX dd 00 f1 e7 01 f1 00 01
-        HEX d3 00 01 dd fb 01 dd e7
-        HEX 01 e7 d8 01 dd dd 01 d3
-        HEX c4 01 f1 ba 01 fb c4 01
-        HEX 00 ba 01 0f ba 00 11 b5
-        HEX 01 0a b3 01 0f ab 01 05
-        HEX b0 01 f1 ba 00 ef b5 01
-        HEX f6 b3 01 f1 ab 01 fb b0
-        HEX 01 05 b0 01 09 b5 00 05
-        HEX b8 01 f7 b5 00 fb b8 01
-        HEX 00 00 00 00 e2 00 01 01
-        HEX 01 14 00 01 0a f6 01 0a
-        HEX d8 01 14 e2 01 14 c4 01
-        HEX 0a ba 01 0a ab 01 00 a6
-        HEX 01 01 01 00 ec 00 01 f6
-        HEX f6 01 f6 d8 01 ec e2 01
-        HEX ec c4 01 f6 ba 01 f6 ab
-        HEX 01 00 a6 01 0a ba 00 14
-        HEX b0 01 28 b0 01 46 ec 01
-        HEX 28 ec 01 14 d8 01 f6 ba
-        HEX 00 ec b0 01 d8 b0 01 ba
-        HEX ec 01 d8 ec 01 ec d8 01
-        HEX 05 b0 00 fb b0 00 05 b8
-        HEX 00 fb b8 01 00 00 00
 @
 
 <<dng.asm>>=
         PROCESSOR 6502
 <<dng defines>>
 <<dng entry>>
-<<dng view stub>>
+<<dng view>>
 <<dng generator>>
 <<dng prompt>>
 <<dng main loop>>
@@ -17944,14 +18937,29 @@ MON_SHAPES
 <<dng cmd inform>>
 <<dng map helpers>>
 <<dng monster distance>>
-<<dng renderer stub>>
+<<dng perspective tables>>
+<<dng primitive box>>
+<<dng primitive ladder shaft>>
+<<dng primitive field>>
+<<dng primitive ladder down>>
+<<dng primitive ladder up>>
+<<dng primitive open left>>
+<<dng primitive open right>>
+<<dng primitive ahead feat>>
+<<dng primitive wall left>>
+<<dng primitive wall right>>
+<<dng primitive ahead wall>>
+<<dng primitive ahead open>>
+<<dng primitive door left>>
+<<dng primitive door right>>
+<<dng primitive glyph at>>
 <<dng generator helpers>>
-<<dng shape draw stub>>
+<<dng shape draw>>
 <<dng state>>
 <<dng strings>>
 <<dng tables>>
 <<dng template>>
-<<dng shapes blob>>
+<<dng shapes>>
 @
 
 \section{SPA}

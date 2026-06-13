@@ -9,6 +9,54 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 15 (2026-06-13): DNG renderer decomposed -- DNG fully done
+
+- The four remaining DNG stubs are gone; DNG is 100% annotated,
+  byte-perfect. The first-person view is a RAY MARCHER: DNG_DRAW
+  ($8982) walks VIEW_DEPTH cells along the facing vector and at
+  each depth slice inspects three cells -- ahead (VIEW_CELL) and
+  the two beside it (VIEW_L/R, found by rotating the facing
+  vector +/-90 deg) -- drawing the wireframe in perspective until
+  a solid cell sets VIEW_BLOCKED. The status line decodes the
+  facing into a compass word.
+- The perspective is entirely in the tables, not the code:
+  DNG_GEOM ($9E42, 194 bytes) is a packed pool of ten-entry
+  columns (depths 1-10) of converging screen coordinates, indexed
+  by VIEW_DEPTH. Kept as one labeled blob; the ~12 drawing
+  primitives address it by fixed byte offset (DNG_GEOM+$XX,X).
+- Twelve wireframe primitives, each one feature: DRAW_COFFIN (the
+  full 3D box), DRAW_LADDER_SHAFT/_DN/_UP, DRAW_FIELD (red bars),
+  DRAW_OPEN_L/R (branch openings, peek one deeper via AHEAD_FEAT),
+  DRAW_WALL_L/R, DRAW_AHEAD_WALL (corridor end face + prev-slice
+  connectors), DRAW_AHEAD_OPEN (doorway), DRAW_DOOR_L/R, plus the
+  GLYPH_AT trampoline. All read box-edge coords from DNG_GEOM and
+  stroke with LINE_AGAIN; only DRAW_FIELD changes colour.
+- SHAPE_DRAW ($A449) is a scaled vector-stroke interpreter: shapes
+  are (x,y,flag) vertex triples (move/draw), scaled down by depth
+  halvings (SHAPE_SCALE_BYTE, sign-preserving ROR). The shape
+  pointer is self-modified into SHAPE_FETCH (the disk's stale
+  $FFFF operand, now named). MON_SHAPES ($A692) restructured into
+  a 25-word pointer table + SHAPE_STROKES blob.
+- RENDERED the 25 vector shapes:
+  images/dng_monster_shapes.png (renderer
+  .claude/scripts/render_dng_shapes.py), embedded as a figure --
+  humanoids, beasts, the chest, a sack, the eye/gazer; sparse
+  tiles are the chest/coffin/ladder glyphs and unused sentinels.
+- Cell-feature legend confirmed against the renderer: 0 open, 1
+  wall, 2 trapdoor, 3 secret door, 4 door, 5 chest, 6 coffin,
+  7 ladder down, 8 ladder up, 9 revealed trapdoor, $C force
+  field; high nibble = monster slot. Sentinels $1E/$20/$29 in the
+  view = chest/coffin placeholders (no shape / no block).
+- Three branch-target bugs caught by byte-compare on first build
+  (JMP .check_blocked and two JMP .after_ahead2 mislabeled) --
+  compute every branch, as ever. Hygiene all green: 0 EQU stubs,
+  0 raw-hex operands, 0 missing plates (203 routines), 0
+  placement violations, 1 TODO-SYM. ORG stubs 11 -> 7 (twn, cas,
+  spa, gen, tm, makeindata, tcmaps). PDF 641 pages, clean.
+- Next session: TWN/CAS pair (pins TCMAPS format, COURT_CELLS
+  writer, quest assignment, TM_REVEAL), then SPA/GEN/TM, then
+  makeindata (world map render), then synthesis.
+
 ### Round 14 (2026-06-13): DNG decomposed (everything but the renderer)
 
 - DNG ($8956-$B098, 10051 bytes) is now decomposed into 84
@@ -368,14 +416,8 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [ ] DNG renderer: the last 3 DNG stubs (DNG_GEOM $9E42 =
-      perspective tables + wireframe wall/door/ladder/field/
-      chest/coffin painters that DNG_DRAW sequences; SHAPE_DRAW
-      $A449 = scaled vector-shape renderer; MON_SHAPES = the
-      dungeon-monster shape art, monsters 21-45). The geometry
-      tables at the file tail ($AFxx-$B098) are coordinate-list
-      shaped. Render the monster shapes once SHAPE_DRAW's format
-      is known. Everything else in DNG is already decomposed.
+- [x] DNG fully decomposed (Round 15: renderer, perspective
+      tables, SHAPE_DRAW, MON_SHAPES rendered). DNG is done.
 - [ ] TWN/CAS pair: pins the TCMAPS map format, the COURT_CELLS
       writer, QUEST_FLAGS assignment (kings), TM_REVEAL setter
       (princess rescue?), shops vs OWNED_* arrays.
