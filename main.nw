@@ -362,6 +362,44 @@ Region & Contents & Lifetime \\
 \end{tabular}
 \end{table}
 
+Figure~\ref{fig:layers} draws these three layers and, just as important,
+the \emph{direction} of the calls between them.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth]
+  % three layers as stacked bands, plus a thin vector-table band
+  \node[dgmode, minimum width=86mm, minimum height=12mm] (overlay)
+        {\textbf{current mode overlay}\ \ \scriptsize one of GEN OUT DNG TWN CAS SPA TM\\\scriptsize main loop, command handlers, mode-specific rendering};
+  \node[dgmode, minimum width=86mm, minimum height=12mm, below=8mm of overlay] (engine)
+        {\textbf{MI.U1 engine} (resident)\\\scriptsize player state, string tables, text/window, turn economy, GAME\_LOAD};
+  \node[dgmemblock, fill=dgio, minimum width=86mm, minimum height=8mm, below=8mm of engine] (vec)
+        {jump-vector table --- 34 fixed [[JMP]]s at [[$1583]] (a stable API)};
+  \node[dgmode, minimum width=86mm, minimum height=12mm, below=6mm of vec] (stuph)
+        {\textbf{STUPH library} (resident)\\\scriptsize glyph banks, hi-res blitter, double-buffer, keys, sound, RNG, file loader};
+
+  % downward calls (left side): overlay -> engine, and both -> vector band
+  \draw[->] ($(overlay.south)+(-30mm,0)$) -- node[dgnote,left]{calls into} ($(engine.north)+(-30mm,0)$);
+  \draw[->] ($(overlay.east)+(0,0)$) to[bend left=20]
+        node[dgnote,right,pos=0.5]{via vectors} (vec.east);
+  \draw[->] ($(engine.south)+(20mm,0)$) -- ($(vec.north)+(20mm,0)$);
+  \draw[->] (vec.south) -- node[dgnote,right]{dispatch} (stuph.north);
+  % the one UPWARD transfer: GAME_LOAD jumps to the overlay entry point
+  \draw[dgaccentedge, ->] (engine.west) to[bend right=42]
+        node[dgnote,left,pos=0.5]{GAME\_LOAD:\\JMP OVERLAY\_ENTRY} (overlay.west);
+\end{tikzpicture}
+\caption{The three resident layers and the direction of control. Each
+  layer calls only \emph{downward}: an overlay calls into the engine, and
+  both the overlay and the engine reach the library only through the
+  34-entry jump-vector table at [[$1583]] (so the library's internals can
+  move without re-assembling a caller). The engine never calls \emph{out}
+  to a specific overlay; the sole upward transfer is [[GAME_LOAD]]'s single
+  [[JMP]] to the fixed entry point [[OVERLAY_ENTRY]] (highlighted), which is
+  why the engine needs no compile-time knowledge of any mode. A port
+  collapses the layers into modules behind this fixed API.}
+\label{fig:layers}
+\end{figure}
+
 A porter does not need this address map --- on a machine with enough
 memory, every overlay and the engine can be resident simultaneously and
 ``loading an overlay'' becomes ``calling that mode's entry point.'' What
@@ -11075,7 +11113,8 @@ name is copied down into the current-location slot, parsed, loaded
 through the RAM-disk cache (retrying through [[DISK_PROMPT]] ---
 \emph{Put in the Ultima disk} --- on errors), the screen furniture
 is redrawn, and control jumps to [[OVERLAY_ENTRY]] --- where the
-file just landed. A = 0 (or any offset past the table) skips all
+file just landed (Figure~\ref{fig:gameload}). A = 0 (or any offset past
+the table) skips all
 that and loads \texttt{GEN}, the character generator: the new-game
 path. [[RESPAWN]] is death's continuation: A = 4 is the
 \texttt{OUT} entry, so the slain player wakes outdoors.
@@ -11127,6 +11166,46 @@ GAME_LOAD
         JSR WIN_RESTORE
         JMP OVERLAY_ENTRY
 @ %def RESPAWN EXIT_TO_OUT GAME_LOAD
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
+  \node[dgterminal] (entry) {GAME\_LOAD (A = table offset)};
+  \node[dgprocess, below=of entry] (stack) {reset the stack\\\scriptsize no return -- old call chain abandoned};
+  \node[dgdecision, below=of stack] (bad) {A $\geq$ [[$19]]?\\\scriptsize (offset past the table)};
+  \node[dgsub, right=20mm of bad] (gen)
+        {load GEN\\\scriptsize the new-game / chargen path};
+  \node[dgprocess, below=of bad] (copy)
+        {copy name LOC\_NAME[A]\\down into the current slot};
+  \node[dgsub, below=of copy] (load)
+        {FILE\_LOAD via the /RAM cache\\\scriptsize lands at OVERLAY\_ENTRY};
+  \node[dgdecision, below=of load] (err) {disk error?};
+  \node[dgio, right=20mm of err] (prompt) {DISK\_PROMPT\\\scriptsize "Put in the Ultima disk"};
+  \node[dgprocess, below=of err] (redraw)
+        {redraw the frame\\\scriptsize PAGE1\_LOCK, STATS\_DRAW,\\DRAW\_BORDERS, WIN\_RESTORE};
+  \node[dgterminal, below=of redraw] (jmp) {JMP OVERLAY\_ENTRY};
+
+  \draw[->] (entry)--(stack); \draw[->] (stack)--(bad);
+  \draw[->] (bad) -- node[dgnote,above]{yes} (gen);
+  \draw[->] (bad) -- node[dgnote,left]{no} (copy);
+  \draw[->] (copy)--(load); \draw[->] (load)--(err);
+  \draw[->] (err) -- node[dgnote,above]{yes} (prompt);
+  \draw[->] (prompt) |- ($(load.north)+(0,3mm)$);
+  \draw[->] (err) -- node[dgnote,left]{no} (redraw);
+  \draw[->] (redraw)--(jmp);
+  \draw[->] (gen) |- (jmp.east);
+\end{tikzpicture}
+\caption{Inside [[GAME_LOAD]], the engine's one mode-switch routine. The
+  caller passes the destination's offset into the seven-name table
+  ([[LOC_NAME]], order \texttt{GEN OUT DNG TWN CAS SPA TM}); the routine
+  resets the stack (a mode switch never returns), and an out-of-range
+  offset is the new-game path that loads \texttt{GEN}. Otherwise it makes
+  the chosen name current, loads that overlay through the \texttt{/RAM}
+  cache (retrying through [[DISK_PROMPT]] on a disk error), redraws the
+  screen furniture, and jumps to [[OVERLAY_ENTRY]] --- exactly where the
+  file just landed. [[RESPAWN]] is this with the \texttt{OUT} offset.}
+\label{fig:gameload}
+\end{figure}
 
 \section{Quit, and the bootstrap at the overlay address}
 

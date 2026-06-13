@@ -1396,21 +1396,24 @@ Priority families (do in this rough order):
       RLE state machine = fig:mi-decode + the $8700 high-bit RLE = fig:mi-payload;
       makeindata_subsystem.md) as flowcharts, in the MAKE.INDATA section.
       DONE round D6.
-- [~] (b cont.) boot/overlay-load flow: the boot chain (fig:bootflow,
-      ch:architecture) DONE round D4. STILL TODO: a GAME_LOAD-internals flow
-      (reset stack -> load overlay via /RAM cache -> redraw frame -> jump to
-      OVERLAY_ENTRY) targeted in the engine chapter.
+- [x] (b cont.) boot/overlay-load flow: the boot chain (fig:bootflow,
+      ch:architecture) DONE round D4. The GAME_LOAD-internals flow
+      (fig:gameload: reset stack -> A>=$19? GEN : copy name -> FILE_LOAD via
+      /RAM -> DISK_PROMPT retry -> redraw frame -> JMP OVERLAY_ENTRY)
+      targeted after the RESPAWN/GAME_LOAD chunk. DONE round D8.
 - [~] memory/disk maps + dgrecord bytefield layouts: PlayerBlock
       (fig:playerblock), object-record SoA (fig:soa), TCMAPS 764-byte record
       (fig:tcmap) all DONE round D3. STILL TODO: a bytefield/blocks version of
       the resident MEMORY MAP (have tab:memmap-arch as a table) and a
       DISK-LAYOUT diagram (the boot chain / ProDOS file load order); the
       $B400 live map buffer is covered by fig:tcmap (it IS the copied record).
-- [~] engine-API / dispatch call graphs (manual TikZ layout): the patched-JSR
-      command dispatch (fig:dispatch, TWN) DONE round D4. STILL TODO: the
-      STUPH jump-vector table + who-calls-what; the overlay -> engine call
-      directions (the engine never calls a specific overlay -- a porting
-      point worth a diagram).
+- [x] engine-API / dispatch call graphs (manual TikZ layout): the patched-JSR
+      command dispatch (fig:dispatch, TWN) DONE round D4. The STUPH
+      jump-vector table + overlay->engine call directions are now ONE figure
+      (fig:layers, ch:architecture): three resident layers, downward-only
+      calls through the $1583 vector band, and the single upward
+      GAME_LOAD->OVERLAY_ENTRY jump (engine never calls a specific overlay).
+      DONE round D8.
 - [x] rendering-pipeline diagrams (ch:rendering): the two-page XOR
       double-buffer flip (fig:pageflip); the tile-viewport blit (fig:tileblit);
       the ray-marcher slice loop (fig:raymarch, companion to fig:dng-gen);
