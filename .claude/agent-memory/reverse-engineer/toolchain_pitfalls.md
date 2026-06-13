@@ -115,3 +115,27 @@ Toolchain facts proven byte-perfect in rounds 0-2.
 - Don't EQU an absolute-addressed ZERO-PAGE operand (e.g. LDA $00D6,Y):
   giving $00D6 a symbol lets dasm re-optimize it to 2-byte zero-page form
   and diverge. Leave such deliberate 3-byte abs-to-zp accesses raw.
+- TO RECOVER A DECOMPRESSOR'S OUTPUT (round 25/MAKE.INDATA), EMULATE the
+  actual 6502 bytes, don't hand-translate the control flow. A scoped 64K-mem
+  emulator (.claude/scripts/makeindata_emu.py, ~40 opcodes, run-as-subroutine
+  until the entry RTS) is faster and correct where hand-porting the tricky
+  backward branches is error-prone. Then de-interleave the page ($2000-relative
+  via the canonical hires row formula) and render with render_hires.
+- AUTHORING a self-modify-free copy/decompress loop byte-perfect: every
+  16-bit pointer advance the original does as INC lo / BNE / INC hi must be
+  written out IN FULL -- a bare `INC MI_SRC` assembles to one byte and silently
+  diverges (round 25 diverged 83 bytes this way). Transcribe the reference
+  disassembly literally; don't "simplify".
+- A TIGHTLY INTERWOVEN routine (run-continuations that branch back into the
+  header parser and share one store-and-return RTS, like MAKE.INDATA's
+  $1E47-$1EFC) must be ONE chunk / ONE SUBROUTINE so the .local branch targets
+  resolve. Splitting it on the documented entry points (MI_DECODE_RUN/_BACK)
+  forces cross-chunk .L refs that die in the real per-chunk tangle. Keep the
+  documented entries as local labels (.run/.back) inside the single scope.
+- A `$[[...]]` code-ref inside LaTeX math mode CRASHES pdflatex ("\ttfamily
+  invalid in math mode") -- noweb [[ ]] expands to \Tt{} which can't live in
+  $...$. Never put an address ref inside math; write the formula in words or
+  put the math and the ref in separate spans (round 25).
+- The status.py plate heuristic needs the LITERAL "Behavior:" within 15 lines
+  of SUBROUTINE; a perfectly good plate written without that header word counts
+  as "missing" (round 25 had 4). Always include a "Behavior:" line.

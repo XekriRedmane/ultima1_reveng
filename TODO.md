@@ -9,6 +9,62 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 25 (2026-06-13): MAKE.INDATA fully decomposed -- the LAST stub cleared
+
+- MAKE.INDATA ($1E00-$5435, 13877 bytes) is decomposed across 13 chunks
+  (8 code + 3 HEX data + entry + collection); byte-perfect (13877/13877).
+  It is the cold-start BUILDER: the first program U1.SYSTEM chains to,
+  predates the MI.U1 engine, runs once at $1E00, never touches the disk,
+  and is discarded. THE FINAL ORG STUB IS GONE.
+- WHAT IT ACTUALLY DOES (corrects the scout's guess): it builds the TWO
+  TITLE SCREENS, not the world map. MI_BUILD ($1F17) stamps the $8700
+  payload + the $6000 intro art into place, decompresses the castle title
+  onto hi-res page 1 (MI_DECOMP from MI_TITLE_STREAM $49EC), runs the
+  payload (which unpacks the ORIGIN SYSTEMS logo to $9600), then
+  LFSR-fizzles the logo onto page 2. Leaves the castle ready on page 1
+  for U1.INTRO to animate.
+- TWO DECOMPRESSORS, both ported to a scoped 6502 emulator
+  (.claude/scripts/makeindata_emu.py) to recover the rasters: MI_DECOMP
+  ($1E03 driver + MI_DECODE $1E47 inner, ONE interwoven scope) is a
+  column-major hi-res RLE with 2 sentinels (vertical run / background run
+  with a back-reference replay); the $1E1D math is the canonical Apple II
+  hi-res row->addr formula (verified). The $8700 payload is a second,
+  simpler high-bit-flagged RLE that builds the logo at $9600.
+- RENDERED both screens (standing rule): images/makeindata_title.png (the
+  castle-by-the-sea night scene -- moon, stars, blue sea) and
+  images/makeindata_origin.png (ORIGIN SYSTEMS INC.). Both embedded as
+  figures. Renderer .claude/scripts/render_makeindata.py.
+- RESOLVED the last TODO-SYM: the U1.INTRO ART_* region is the on-disk
+  MI_ART_IMAGE ($27BD-$49EB, copied to $6000); art ends at $85FF, NOT the
+  guessed $8Fxx. Updated the U1.INTRO prose + the ART_* defines comment.
+- CORRECTED a stale claim: OUT's "/U1.VARS is written once by MAKE.INDATA"
+  is FALSE -- makeindata has no disk code and builds only the title
+  screens. Reworded the OUT save section. The packed world map loads
+  read-only from /U1.VARS (absent from the crack disk); its origin is
+  unconfirmed and is NOT makeindata. So "render the four continents" is
+  NOT achievable here -- moved to the blocked list.
+- Pitfalls (agent memory): every stream-ptr advance is a full 16-bit
+  INC/BNE/INC (bare INC diverged 83 bytes); the interwoven decompressor
+  must be ONE SUBROUTINE (run continuations branch back into the header
+  parser, share .store_ret); emulate tricky backward-branch decompressors
+  rather than hand-translating; 4 plates needed a literal "Behavior:"
+  line for the status heuristic; data chunks reordered before first use
+  to satisfy chunk-placement; one $[[...]] math-mode code-ref crashed
+  pdflatex (no [[ ]] inside $...$).
+- ALL 16 TARGETS BYTE-PERFECT. Hygiene FULLY GREEN: 0 EQU stubs, 0 ORG
+  stubs, 0 TODO-SYM, 0 missing plates (348 routines), 0 placement
+  violations, 0 raw-hex operands. PDF 979 pages, clean (0 errors, 0
+  undefined refs). The scoreboard verdict is now "All measurable
+  criteria met -- remaining work is editorial (synthesis)."
+- Pipeline kept: .claude/scripts/makeindata_emu.py (canonical recovery
+  emulator), makeindata_decomp.py (early hand-port), render_makeindata.py,
+  mi_author.py (chapter generator), gen_makeindata.py (region math).
+- NEXT SESSION: the SYNTHESIS CHAPTERS (/synthesize) -- the document is
+  byte-complete; what remains to make it "done" per CLAUDE.md is the
+  platform-independent design prose (game overview, data structures, the
+  quest/gem/time-machine win condition, the overlay/engine architecture).
+  Optionally the TM CRAFT_GFX render as its own focused round.
+
 ### Round 24 scout (2026-06-13): MAKE.INDATA scouted -- the art/map builder
 
 MAKE.INDATA ($1E00-$5435, 13877 bytes) is the LAST target and the only one
@@ -849,13 +905,12 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       gate (destroy the gem THEN kill Mondain -> VICTORIOUS -> NIF +
       Control-RESET), the wireframe interior scene, the grid combat +
       spells, Mondain's AI. Pins the entire SPA->CAS->TM win loop in code.
-- [ ] makeindata (13877): the LAST target. SCOUTED (Round 24): a one-shot
-      hi-res decompressor + build driver ($1E00 code) + ~13KB packed art/map
-      data. Driver stamps $8700 helper, copies art to $6000, decompresses from
-      $49EC, LFSR-fizzles the title. Decompose next: clone gen_gen at
-      BASE=$1E00, port the decompressor ($1E03/$1E47), recover + render the
-      intro frames and the four continents. Resolves ART_* + the last TODO-SYM
-      and clears the final ORG stub. See makeindata_subsystem.md.
+- [x] makeindata (13877): DONE (Round 25, byte-perfect, 13 chunks). The
+      cold-start title-screen BUILDER -- two RLE decompressors build the castle
+      title (page 1) + the ORIGIN logo (page 2, fizzle-revealed) + the intro
+      art ($6000). Both screens rendered. Cleared the LAST ORG stub and the
+      last TODO-SYM (ART_* region ends $85FF). It does NOT build the world map
+      (corrected the scout + a stale OUT claim). See makeindata_subsystem.md.
 - [ ] TM CRAFT_GFX render (deferred, own round like DNG 15): emulate
       SHAPE_STEP ($9EE5) + BLIT_LINE ($A176) + PROJ_TBL ($9D2A) +
       scene-setup positions to render the craft interior / Mondain / gem.
@@ -874,5 +929,18 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
 
 ## Blocked
 
-(nothing blocked — when an item resists analysis, record here what was
-tried and what evidence would unblock it, then move on)
+- Render the four-continent WORLD MAP. Tried: full decomposition of
+  MAKE.INDATA (round 25) -- it builds only the title screens, NOT the
+  map; OUT round 12's RLE scan of makeindata found no 4096-cell stream.
+  The packed continents load read-only from /U1.VARS at MAP_BASE, but
+  /U1.VARS is ABSENT from this 4am crack disk (only /U1.PLAYER and the
+  code files are present). Unblock = obtain a /U1.VARS file (a full,
+  uncracked Ultima I ProDOS disk) and run OUT's RLE map loader on it.
+  Until then the four continents cannot be imaged from the materials on
+  hand. (The 10 town/castle maps ARE rendered -- they live in TCMAPS,
+  which is present; see images/tcmaps_*.png.)
+- TM CRAFT_GFX render (deferred, own round like DNG 15): emulate
+  SHAPE_STEP ($9EE5) + BLIT_LINE ($A176) + PROJ_TBL ($9D2A) + the
+  scene-setup positions to image the craft interior / Mondain / gem. Not
+  a static sprite gallery -- a runtime display list. Unblock recipe in
+  tm_subsystem.md. Not blocked on missing data; just an unwritten round.
