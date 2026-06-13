@@ -388,6 +388,49 @@ loading the next (chapters~\ref{ch:boot}--\ref{ch:intro}):
   overlay, and play begins.
 \end{enumerate}
 
+Figure~\ref{fig:bootflow} draws that chain as a load sequence: each loader
+brings in the next file and transfers control to it, the early stages
+falling away as the later ones take over memory, until the steady-state
+configuration (the \texttt{STUPH} library, the \texttt{MI.U1} engine, and
+one mode overlay) is resident and the [[GAME_LOAD]] loop takes over.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 14mm]
+  \node[dgterminal] (prom) {Disk II PROM};
+  \node[dgprocess, below=of prom] (boot) {boot block\\\scriptsize loaded at \$0800};
+  \node[dgprocess, below=of boot] (prodos)
+        {ProDOS kernel\\\scriptsize loaded at \$2000 (external dep.)};
+  \node[dgprocess, below=of prodos] (sys)
+        {U1.SYSTEM\\\scriptsize installs the resident file library};
+  \node[dgprocess, below=of sys] (mid)
+        {MAKE.INDATA\\\scriptsize builds 2 title screens, then discarded};
+  \node[dgprocess, below=of mid] (intro)
+        {U1.INTRO\\\scriptsize animates title; waits for a key};
+  \node[dgio, right=18mm of intro] (key) {keypress};
+  \node[dgprocess, below=of intro] (engine)
+        {load MI.U1 engine + first overlay};
+  \node[dgmode, below=of engine, dgaccentnode] (loop)
+        {play: the GAME\_LOAD\\mode loop};
+
+  \draw[->] (prom) -- node[dgnote,right]{loads + jumps} (boot);
+  \draw[->] (boot) -- node[dgnote,right]{finds PRODOS} (prodos);
+  \draw[->] (prodos) -- node[dgnote,right]{runs first .SYSTEM} (sys);
+  \draw[->] (sys) -- node[dgnote,right]{chains} (mid);
+  \draw[->] (mid) -- node[dgnote,right]{chains} (intro);
+  \draw[->] (key) -- (intro);
+  \draw[->] (intro) -- node[dgnote,right]{on key} (engine);
+  \draw[->, dgaccentedge] (engine) -- (loop);
+\end{tikzpicture}
+\caption{The cold-start load chain. Each loader is more game-specific than
+  the last and hands control to the next; the early stages (boot block,
+  \texttt{MAKE.INDATA}) are discarded once their job is done. Steady state
+  is the resident library + engine + one overlay, driven by the
+  [[GAME_LOAD]] mode loop (figure~\ref{fig:mode-fsm}). Load addresses are
+  the documented memory-layout exception to the symbol rule.}
+\label{fig:bootflow}
+\end{figure}
+
 From there, \textbf{every mode change goes through one routine},
 [[GAME_LOAD]] in the engine. The game keeps a table of the seven overlay
 filenames ([[LOC_NAME]]) at fixed four-byte strides, in the order
@@ -14578,7 +14621,47 @@ through a word table, [[CMD_TBL]], by self-modifying the operand of a
 [[JSR]]. Most of the 26 commands are no-ops in town and point at the
 engine's [[QUERY_MARK]] (the ``Huh?'' beep); the rest are the
 town-mode handlers below. Accelerator and Noise reuse the engine's
-sound toggles.
+sound toggles. Figure~\ref{fig:dispatch} shows the data flow: the command
+index selects a word from [[CMD_TBL]], that word is written into the
+operand byte of the [[JSR]] a few instructions ahead, and then the [[JSR]]
+executes --- a self-modifying indirect call. The portable equivalent is a
+function-pointer table indexed by the command number.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=8mm and 16mm]
+  \node[dgsub] (get) {GET\_COMMAND\\\scriptsize (engine)};
+  \node[dgprocess, below=of get] (idx) {command index\\\scriptsize X = 2 * cmd};
+  \node[dgmemblock, right=of idx, fill=dgmem] (tbl)
+        {CMD\_TBL[X]\\\scriptsize 26 handler addresses};
+  \node[dgprocess, below=of idx] (patch)
+        {patch the JSR operand\\\scriptsize (self-modifying code)};
+  \node[dgprocess, below=of patch] (jsr) {JSR <patched target>};
+  \node[dgsub, below left=8mm and 2mm of jsr] (handler)
+        {command handler\\\scriptsize CMD\_MOVE, CMD\_ATTACK, ...};
+  \node[dgsub, below right=8mm and 2mm of jsr] (huh)
+        {QUERY\_MARK\\\scriptsize "Huh?" (no-op cmds)};
+  \node[dgterminal, below=14mm of jsr] (back) {back to main loop};
+
+  \draw[->] (get) -- (idx);
+  \draw[->] (idx) -- node[dgnote,above]{look up} (tbl);
+  \draw[->] (tbl.south) to[bend left=20]
+        node[dgnote,right]{address} (patch.east);
+  \draw[->] (idx) -- (patch);
+  \draw[->] (patch) -- (jsr);
+  \draw[->] (jsr) -- (handler);
+  \draw[->] (jsr) -- (huh);
+  \draw[->] (handler) -- (back);
+  \draw[->] (huh) -- (back);
+\end{tikzpicture}
+\caption{The patched-[[JSR]] command dispatch, shared by all the grid
+  overlays. The engine's [[GET_COMMAND]] yields an index; [[CMD_TBL]] maps
+  it to a handler address; that address is written into the operand of a
+  [[JSR]] in the instruction stream (self-modifying code), which then runs.
+  Most commands point at [[QUERY_MARK]]. A port replaces the patch with a
+  function-pointer table indexed by the command number.}
+\label{fig:dispatch}
+\end{figure}
 
 <<twn command table>>=
         ORG $8A56

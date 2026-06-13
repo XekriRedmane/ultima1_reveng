@@ -9,6 +9,34 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D4 (2026-06-13): Dispatch call graph + boot/overlay-load flow
+
+- Two structural diagrams:
+  * fig:bootflow -- the cold-start LOAD CHAIN (PROM -> boot block -> ProDOS
+    -> U1.SYSTEM -> MAKE.INDATA -> U1.INTRO -> keypress -> engine+overlay ->
+    the GAME_LOAD loop), conceptual in ch:architecture's "Boot and load
+    flow" (page 20). Cross-refs fig:mode-fsm. Load addresses shown (the
+    documented memory-layout exception).
+  * fig:dispatch -- the patched-JSR command DISPATCH call graph
+    (GET_COMMAND -> CMD_TBL[X] -> patch the JSR operand -> JSR -> handler or
+    QUERY_MARK -> back to loop), TARGETED in the TWN "command table and
+    dispatch" subsection (page 393).
+- Both faithful: bootflow from the architecture boot-chain enumerate +
+  ch:boot/ch:intro; dispatch from the TWN CMD_TBL + the SMC dispatch idiom
+  documented in ch:architecture and twn_cas_subsystem.md.
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs. PDF 1023 -> 1026 pages. NOTE: adding fig:bootflow as
+  ch:architecture's first figure renumbered that chapter's figures (mode-fsm
+  2.1->2.2, etc.) -- all cross-refs use \ref so they auto-updated; verified
+  all 12 campaign labels resolve and each is \ref'd from prose.
+
+CAMPAIGN STATE after D4: 12 figures across both parts. Design part:
+fig:bootflow, fig:mode-fsm, fig:mode-loop, fig:win-fsm (ch:architecture);
+fig:playerblock, fig:soa, fig:tcmap (ch:datastructures); fig:dng-gen,
+fig:npc-ai, fig:combat (ch:algorithms). Implementation part: fig:dispatch
+(TWN), fig:mondain-ai (TM). Priority families (a) state machines and (b)
+flowcharts are well covered; record layouts + boot/dispatch graphs started.
+
 ### Round D3 (2026-06-13): Memory/record bytefield layouts (data-structure chapter)
 
 - Exercised the plain-TikZ bytefield substitute (dgrecord/\dgfield) on the
@@ -1280,18 +1308,21 @@ Priority families (do in this rough order):
 - [ ] (b cont.) the two RLE decompressors (makeindata MI_DECOMP column-major
       RLE + the $8700 high-bit RLE; makeindata_subsystem.md) as flowcharts,
       beside the MAKE.INDATA section.
-- [ ] (b cont.) boot/overlay-load flow: the boot chain (PROM->boot block->
-      ProDOS->U1.SYSTEM->U1.INTRO->engine+overlay) as a sequence/flow
-      diagram (ch:boot/ch:architecture); the GAME_LOAD dispatch as a flow.
+- [~] (b cont.) boot/overlay-load flow: the boot chain (fig:bootflow,
+      ch:architecture) DONE round D4. STILL TODO: a GAME_LOAD-internals flow
+      (reset stack -> load overlay via /RAM cache -> redraw frame -> jump to
+      OVERLAY_ENTRY) targeted in the engine chapter.
 - [~] memory/disk maps + dgrecord bytefield layouts: PlayerBlock
       (fig:playerblock), object-record SoA (fig:soa), TCMAPS 764-byte record
       (fig:tcmap) all DONE round D3. STILL TODO: a bytefield/blocks version of
       the resident MEMORY MAP (have tab:memmap-arch as a table) and a
       DISK-LAYOUT diagram (the boot chain / ProDOS file load order); the
       $B400 live map buffer is covered by fig:tcmap (it IS the copied record).
-- [ ] engine-API / dispatch call graphs (manual TikZ layout): the STUPH
-      jump-vector table + who-calls-what; the patched-JSR command dispatch;
-      overlay -> engine call directions.
+- [~] engine-API / dispatch call graphs (manual TikZ layout): the patched-JSR
+      command dispatch (fig:dispatch, TWN) DONE round D4. STILL TODO: the
+      STUPH jump-vector table + who-calls-what; the overlay -> engine call
+      directions (the engine never calls a specific overlay -- a porting
+      point worth a diagram).
 - [ ] rendering-pipeline diagrams (ch:rendering): the two-page XOR
       double-buffer flip; the tile-viewport blit; the ray-marcher slice loop
       (companion to fig:dng-gen); the SPA/TM projected-vector + XOR-sprite

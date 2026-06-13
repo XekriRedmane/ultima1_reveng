@@ -83,7 +83,19 @@ FIGURES SO FAR (label -> chapter -> page at time of writing):
   pgfmath ternary evaluates BOTH branches so a bare sqrt(span-4) crashes on
   span<4) and the byte size prints in a right column.
 
-PDF 1013 -> 1018 (D1) -> 1021 (D2) -> 1023 (D3) pages. 16/16 byte-perfect.
+- Round D4: fig:bootflow (cold-start load chain, ch:architecture "Boot and
+  load flow"), fig:dispatch (patched-JSR command dispatch call graph,
+  targeted in the TWN command-table subsection). fig:bootflow as
+  ch:architecture's FIRST figure renumbered that chapter's figures -- fine,
+  all cross-refs use \ref and auto-update; always re-verify all labels
+  resolve after inserting a figure early in a chapter.
+
+12 CAMPAIGN FIGURES total after D4. Design: bootflow/mode-fsm/mode-loop/
+win-fsm (ch:architecture), playerblock/soa/tcmap (ch:datastructures),
+dng-gen/npc-ai/combat (ch:algorithms). Implementation: dispatch (TWN),
+mondain-ai (TM). Families (a) state machines + (b) flowcharts well covered.
+
+PDF 1013->1018(D1)->1021(D2)->1023(D3)->1026(D4) pages. 16/16 byte-perfect.
 See TODO.md "Diagram campaign" for remaining per-subsystem coverage: the
 per-mode loop variants (OUT/DNG/SPA), the RLE decompressors, boot/overlay
 load flow, memory/record bytefield (dgrecord) layouts, engine-API/dispatch
