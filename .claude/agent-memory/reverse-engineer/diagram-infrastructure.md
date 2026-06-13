@@ -95,13 +95,30 @@ FIGURES SO FAR (label -> chapter -> page at time of writing):
   all cross-refs use \ref and auto-update; always re-verify all labels
   resolve after inserting a figure early in a chapter.
 
-12 CAMPAIGN FIGURES total after D4. Design: bootflow/mode-fsm/mode-loop/
-win-fsm (ch:architecture), playerblock/soa/tcmap (ch:datastructures),
-dng-gen/npc-ai/combat (ch:algorithms). Implementation: dispatch (TWN),
-mondain-ai (TM). Families (a) state machines + (b) flowcharts well covered.
+- Round D5 (ch:rendering, the chapter's first figures): fig:pageflip
+  (two-page XOR double-buffer flip), fig:tileblit (DRAW_MAP 19x9 nested
+  loop), fig:raymarch (DNG_DRAW ray-marcher slice loop, cross-refs
+  fig:dng-gen), fig:sprite (SPA/TM BLIT_SHAPE_AT projected-vector + XOR
+  sprite, cross-refs fig:pageflip).
+- Round D6 (sec:makeindata): fig:mi-decode (MI_DECODE column-major stream
+  decompressor state machine), fig:mi-payload ($8700 high-bit RLE).
+- Round D7 (Implementation, per overlay): fig:out-loop, fig:dng-loop,
+  fig:spa-loop -- the three main-loop variants of the generic fig:mode-loop.
+- Round D8: fig:layers (ch:architecture, 3-layer call-direction graph +
+  $1583 vector band + the lone GAME_LOAD->OVERLAY_ENTRY upward jump),
+  fig:gameload (engine, GAME_LOAD internals), fig:memmap (ch:architecture,
+  blocks view of tab:memmap-arch with lifetime braces -- uses
+  decorations.pathreplacing brace), fig:disklayout (ch:disk, /U1 files ->
+  boot/load chain).
 
-PDF 1013->1018(D1)->1021(D2)->1023(D3)->1026(D4) pages. 16/16 byte-perfect.
-See TODO.md "Diagram campaign" for remaining per-subsystem coverage: the
-per-mode loop variants (OUT/DNG/SPA), the RLE decompressors, boot/overlay
-load flow, memory/record bytefield (dgrecord) layouts, engine-API/dispatch
-call graphs, rendering-pipeline diagrams.
+25 CAMPAIGN FIGURES total after D8. ALL checklist priority families DONE
+(state machines, flowcharts, NPC/AI states, per-mode loops, RLE
+decompressors, boot/load flow, memory/record layouts, call graphs,
+rendering pipeline). Every warranting subsystem has >=1 figure across the
+Design + Implementation parts. Remaining work is optional deepening (e.g. a
+GEN chargen-flow or disk-formatter-RWTS figure), not a gap.
+
+PDF 1013->1018(D1)->1021(D2)->1023(D3)->1026(D4)->1030(D5)->1032(D6)->
+1033(D7)->1038(D8) pages. 16/16 byte-perfect throughout. The brace
+decoration (decorations.pathreplacing, already loaded line 35) is the way to
+annotate spans in blocks/memory diagrams.

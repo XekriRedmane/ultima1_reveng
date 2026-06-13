@@ -362,6 +362,47 @@ Region & Contents & Lifetime \\
 \end{tabular}
 \end{table}
 
+Figure~\ref{fig:memmap} draws the same map as address-ordered blocks, with
+the one band that is reloaded on every mode switch called out.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth]
+  \def\bw{52mm}
+  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=10mm] (stuph)
+        {[[$0800]]--[[$1FFF]]\quad \textbf{STUPH} library + glyph banks};
+  \node[dgmemblock, fill=dgproc, minimum width=\bw, minimum height=12mm, below=0pt of stuph] (hgr)
+        {[[$2000]]--[[$5FFF]]\quad hi-res pages 1 \& 2\\\scriptsize (double-buffered display)};
+  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=8mm, below=0pt of hgr] (map)
+        {[[$6000]]--[[$6FFF]]\quad current-continent map / scratch};
+  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=11mm, below=0pt of map] (engine)
+        {[[$7000]]--[[$89BC]]\quad \textbf{MI.U1} engine + player state};
+  \node[dgmemblock, fill=dgio, minimum width=\bw, minimum height=12mm, below=0pt of engine] (ov)
+        {[[$8956]]--$\approx$[[$B0FF]]\quad \textbf{current mode overlay}\\\scriptsize OUT / DNG / TWN / CAS / SPA / GEN / TM};
+  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=10mm, below=0pt of ov] (buf)
+        {[[$B400]]+\quad town/castle live map buffer,\\\scriptsize object records};
+
+  % lifetime brace on the right: the overlay band is the one reloaded band
+  \draw[dgaccentedge, decorate, decoration={brace, amplitude=5pt}]
+        ($(ov.north east)+(3mm,0)$) -- ($(ov.south east)+(3mm,0)$);
+  \node[dgnote, right=7mm of ov, text width=26mm, anchor=west]
+        {reloaded every mode switch};
+  % whole-session brace spanning the persistent bands
+  \draw[dgline, decorate, decoration={brace, amplitude=5pt}]
+        ($(buf.south west)+(-3mm,0)$) -- ($(stuph.north west)+(-3mm,0)$);
+  \node[dgnote, left=7mm of map, text width=24mm, anchor=east, align=right]
+        {persist the whole session (except the overlay band)};
+\end{tikzpicture}
+\caption{The resident memory map during play (a blocks view of
+  Table~\ref{tab:memmap-arch}). Bands are drawn in ascending address order.
+  Every band except the mode-overlay window persists for the whole session;
+  the overlay region (highlighted) is reloaded on each mode switch, one
+  mode at a time, over the same addresses. The two hi-res pages share the
+  [[$2000]]--[[$5FFF]] span for double-buffering. A port with more memory
+  drops the overlay scheme and keeps every layer resident at once.}
+\label{fig:memmap}
+\end{figure}
+
 Figure~\ref{fig:layers} draws these three layers and, just as important,
 the \emph{direction} of the calls between them.
 
@@ -2201,7 +2242,53 @@ resident engine \texttt{MI.U1} occupies [[$7000]]--[[$8955]] and ends
 exactly where the overlay region begins. The game also creates two
 files on a separate player disk, \texttt{U1.PLAYER} and
 \texttt{U1.VARS} (their pathnames appear in \texttt{MI.U1}), holding
-the saved character and game state.
+the saved character and game state. Figure~\ref{fig:disklayout} relates
+the files on the disk to the load chain that pulls them into memory.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=4mm and 18mm]
+  % LEFT: the disk as a stack of files on the ProDOS volume /U1
+  \node[dgnote] (disktitle) {ProDOS volume \texttt{/U1} (140K, 35 tracks)};
+  \node[dgmemblock, fill=dgterm, below=2mm of disktitle, text width=42mm] (boot)
+        {block 0 = track 0, phys sectors 0+2\\\scriptsize ProDOS boot block};
+  \node[dgmemblock, fill=dgmem, below=0pt of boot, text width=42mm] (prodos) {\texttt{PRODOS} kernel (stock 1.1.1)};
+  \node[dgmemblock, fill=dgmem, below=0pt of prodos, text width=42mm] (sys) {\texttt{U1.SYSTEM} (launcher)};
+  \node[dgmemblock, fill=dgmem, below=0pt of sys, text width=42mm] (mi) {\texttt{MAKE.INDATA} (title builder)};
+  \node[dgmemblock, fill=dgmem, below=0pt of mi, text width=42mm] (intro) {\texttt{U1.INTRO} (title + menu)};
+  \node[dgmemblock, fill=dgmem, below=0pt of intro, text width=42mm] (eng) {\texttt{MI.U1} engine, \texttt{STUPH} lib};
+  \node[dgmemblock, fill=dgio, below=0pt of eng, text width=42mm] (ovl) {7 overlays + \texttt{TCMAPS} / \texttt{MAPCHARS} / \texttt{NIF}};
+
+  % RIGHT: the load chain (who loads whom, and to where)
+  \node[dgterminal, right=24mm of boot] (c1) {PROM reads block 0};
+  \node[dgprocess, below=of c1] (c2) {boot block loads ProDOS\\\scriptsize -> [[$2000]] then relocates high};
+  \node[dgprocess, below=of c2] (c3) {ProDOS runs U1.SYSTEM\\\scriptsize -> [[$2000]]};
+  \node[dgprocess, below=of c3] (c4) {U1.SYSTEM chains\\MAKE.INDATA -> [[$1E00]]\\then U1.INTRO -> [[$0800]]};
+  \node[dgprocess, below=of c4] (c5) {U1.INTRO loads the engine\\MI.U1 -> [[$7000]], STUPH -> [[$0800]]};
+  \node[dgterminal, below=of c5] (c6) {GAME\_LOAD loads one overlay\\-> [[$8956]] (per mode)};
+
+  \draw[->] (c1)--(c2); \draw[->] (c2)--(c3); \draw[->] (c3)--(c4);
+  \draw[->] (c4)--(c5); \draw[->] (c5)--(c6);
+  % link the disk files to the chain steps
+  \draw[dgline, ->] (boot.east) -- (c1.west);
+  \draw[dgline, ->] (prodos.east) to[bend right=8] (c2.west);
+  \draw[dgline, ->] (sys.east) to[bend right=8] (c3.west);
+  \draw[dgline, ->] (mi.east) to[bend right=6] (c4.west);
+  \draw[dgline, ->] (eng.east) to[bend right=6] (c5.west);
+  \draw[dgline, ->] (ovl.east) to[bend right=6] (c6.west);
+\end{tikzpicture}
+\caption{The disk's boot/load chain (Table~\ref{tab:volume-files}). The
+  140K \texttt{.dsk} holds the ProDOS volume \texttt{/U1}; its files (left)
+  are loaded in a chain (right), each loader pulling in the next. The
+  controller PROM reads block~0 (track~0, physical sectors~0 and~2); the
+  boot block brings in the stock ProDOS kernel, which runs the
+  \texttt{U1.SYSTEM} launcher; that chains \texttt{MAKE.INDATA} (which
+  builds the title screens, then is discarded) and \texttt{U1.INTRO}, which
+  loads the resident engine and library and hands off to [[GAME_LOAD]].
+  From there a single overlay is resident at a time. Load addresses are the
+  documented memory-layout exception.}
+\label{fig:disklayout}
+\end{figure}
 
 \chapter{Boot block}
 \label{ch:boot}

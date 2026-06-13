@@ -9,6 +9,40 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D8 (2026-06-13): Structural call/memory graphs (D8a + D8b)
+
+- The four remaining structural diagrams, in two commits:
+- D8a (commit "D8a"):
+  * fig:layers (ch:architecture) -- the three resident layers (overlay /
+    MI.U1 engine / STUPH) drawn as stacked bands with the direction of
+    control: downward-only calls, both upper layers reaching the library
+    only through the fixed 34-entry jump-vector band at $1583, and the
+    single upward GAME_LOAD->OVERLAY_ENTRY jump (engine never calls a
+    specific overlay). Folds two checklist items (STUPH vector table +
+    overlay->engine directions) into one faithful figure.
+  * fig:gameload (engine chapter, after RESPAWN/GAME_LOAD) -- the mode-switch
+    internals: reset stack -> A>=$19 ? load GEN : copy LOC_NAME[A] ->
+    FILE_LOAD via /RAM -> DISK_PROMPT retry -> redraw frame -> JMP
+    OVERLAY_ENTRY.
+- D8b (commit "D8b"):
+  * fig:memmap (ch:architecture, after tab:memmap-arch) -- the resident
+    memory map as address-ordered dgmemblock bands, with a brace on the one
+    reloaded overlay band and a brace on the persistent bands. The blocks
+    view of the existing table.
+  * fig:disklayout (ch:disk, after tab:volume-files) -- the ProDOS /U1 files
+    (left) mapped to the boot/load chain (right): PROM block 0 -> ProDOS ->
+    U1.SYSTEM -> chains MAKE.INDATA + U1.INTRO -> engine+STUPH -> GAME_LOAD
+    overlay, with load addresses. Consistent with fig:bootflow (D4).
+- All faithful: fig:layers from the STUPH vector table + the 3-layer prose;
+  fig:gameload from the RESPAWN/GAME_LOAD routine; fig:memmap from
+  tab:memmap-arch; fig:disklayout from the boot-chain enumerate +
+  tab:volume-files + the disk-image-format section.
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs; all 4 labels resolve + \ref'd. No new overfull/float
+  warnings from the figures (verified by input-line). PDF 1033 -> 1038.
+- CAMPAIGN STATE after D8: 25 figures across both parts; all checklist
+  priority families DONE. See the "Diagram campaign" coverage note.
+
 ### Round D7 (2026-06-13): Per-mode main-loop variants (OUT/DNG/SPA)
 
 - Three targeted loop-variant flowcharts in the Implementation part, each
@@ -1401,12 +1435,14 @@ Priority families (do in this rough order):
       (fig:gameload: reset stack -> A>=$19? GEN : copy name -> FILE_LOAD via
       /RAM -> DISK_PROMPT retry -> redraw frame -> JMP OVERLAY_ENTRY)
       targeted after the RESPAWN/GAME_LOAD chunk. DONE round D8.
-- [~] memory/disk maps + dgrecord bytefield layouts: PlayerBlock
+- [x] memory/disk maps + dgrecord bytefield layouts: PlayerBlock
       (fig:playerblock), object-record SoA (fig:soa), TCMAPS 764-byte record
-      (fig:tcmap) all DONE round D3. STILL TODO: a bytefield/blocks version of
-      the resident MEMORY MAP (have tab:memmap-arch as a table) and a
-      DISK-LAYOUT diagram (the boot chain / ProDOS file load order); the
-      $B400 live map buffer is covered by fig:tcmap (it IS the copied record).
+      (fig:tcmap) DONE round D3. The blocks-style resident MEMORY MAP
+      (fig:memmap, ch:architecture -- the blocks view of tab:memmap-arch with
+      the reloaded overlay band braced) and the DISK-LAYOUT diagram
+      (fig:disklayout, ch:disk -- the ProDOS /U1 files mapped to the boot/load
+      chain and their load addresses) DONE round D8. The $B400 live map buffer
+      is covered by fig:tcmap (it IS the copied record).
 - [x] engine-API / dispatch call graphs (manual TikZ layout): the patched-JSR
       command dispatch (fig:dispatch, TWN) DONE round D4. The STUPH
       jump-vector table + overlay->engine call directions are now ONE figure
@@ -1419,12 +1455,18 @@ Priority families (do in this rough order):
       the ray-marcher slice loop (fig:raymarch, companion to fig:dng-gen);
       the SPA/TM projected-vector + XOR-sprite path (fig:sprite). DONE round D5.
 
-Coverage by subsystem (figures so far): architecture (mode-fsm, win-fsm),
-algorithms (dng-gen, combat). REMAINING with no figure yet: boot/intro,
-STUPH, MI.U1 engine, OUT, DNG renderer, TWN, CAS, SPA, GEN, TM, makeindata,
-data structures, rendering, porting. Lean in -- every subsystem that
-warrants a diagram should get one in both the Design and Implementation
-parts.
+Coverage by subsystem (25 figures, after D8): architecture (bootflow,
+mode-fsm, mode-loop, win-fsm, layers, memmap), data structures (playerblock,
+soa, tcmap), algorithms (dng-gen, npc-ai, combat), rendering (pageflip,
+tileblit, raymarch, sprite), disk/boot (disklayout), engine (gameload), OUT
+(out-loop), DNG (dng-loop), SPA (spa-loop), TWN (dispatch), TM (mondain-ai),
+makeindata (mi-decode, mi-payload). All checklist priority families are now
+DONE. Subsystems WITHOUT a dedicated figure yet (candidates if the campaign
+continues): GEN (chargen point-buy flow / disk-formatter RWTS state machine),
+the DNG ray-marcher already has fig:raymarch; CAS shares fig:dispatch+npc-ai
+with TWN; NIF is a static image (no behavior to diagram); porting chapter is
+a catalogue (tab:render-split covers it). The doc now leans heavily into
+diagrams across both parts; remaining work is optional deepening, not gaps.
 
 ## Structural
 
