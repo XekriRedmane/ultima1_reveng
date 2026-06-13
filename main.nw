@@ -30821,1037 +30821,3677 @@ RW_SEEKDLT
 @ %def FMT_GEOM RW_DRVSEL RW_HALFTRK RW_RETRY RW_SECMAP RW_SWIDX
 @ %def RW_SEEKDLT
 
-\section{TM}
+\section{TM: the time machine and the final battle}
+\label{ch:tm}
 
-\texttt{TM} --- time machine (endgame) overlay, 8123 bytes at [[$8956]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
+\texttt{TM} is the last overlay the engine ever loads --- the endgame. The
+overworld's \texttt{CAS} chapter ends by setting \texttt{TM\_REVEAL} once the
+space ace has rescued the princess; travelling to the time machine then loads
+this file and jumps to [[TM_ENTRY]]. Everything here happens inside Mondain's
+craft, face to face with the wizard himself, and winning here wins the whole
+game.
 
-<<tm blob>>=
-        ORG $8956
-TM_BLOB
-        ; STUB — not yet disassembled (time machine (endgame) overlay)
-        HEX 4c d7 8a 08 d8 85 02 a9
-        HEX 08 85 08 a9 00 85 04 46
-        HEX 02 90 03 18 65 00 6a 66
-        HEX 04 c6 08 d0 f2 28 60 08
-        HEX d8 85 02 a9 08 85 08 a9
-        HEX 00 85 05 85 06 46 02 90
-        HEX 0b 18 a5 05 65 00 85 05
-        HEX a5 06 65 01 6a 85 06 66
-        HEX 05 66 04 c6 08 d0 e6 28
-        HEX 60 08 d8 85 03 a9 10 85
-        HEX 08 a9 00 85 07 85 06 46
-        HEX 03 66 02 90 0b a5 06 18
-        HEX 65 00 85 06 a5 07 65 01
-        HEX 6a 85 07 66 06 66 05 66
-        HEX 04 c6 08 d0 e2 28 60 85
-        HEX 03 08 d8 a9 10 85 08 a9
-        HEX 00 85 06 85 07 06 04 26
-        HEX 05 26 06 26 07 a5 06 38
-        HEX e5 02 85 09 a5 07 e5 03
-        HEX 90 08 e6 04 85 07 a5 09
-        HEX 85 06 c6 08 d0 df 28 60
-        HEX 08 d8 48 29 0f 85 02 68
-        HEX 29 f0 4a 85 03 4a 4a 65
-        HEX 03 65 02 28 60 08 d8 84
-        HEX 08 86 09 a0 00 84 05 b1
-        HEX 00 20 fe 89 85 04 c8 b1
-        HEX 00 88 48 20 44 8a 68 c8
-        HEX 20 40 8a a5 05 91 00 88
-        HEX a5 04 91 00 a6 09 a4 08
-        HEX 28 60 4a 4a 4a 4a 29 0f
-        HEX aa ca 30 12 18 a5 04 79
-        HEX 5d 8a 85 04 a5 05 79 5f
-        HEX 8a 85 05 4c 47 8a 60 64
-        HEX e8 00 03 84 08 86 09 a0
-        HEX 00 84 04 b1 00 48 20 b3
-        HEX 8a 68 c8 20 af 8a 88 a5
-        HEX 04 91 00 a6 09 a4 08 60
-        HEX 84 08 86 09 a0 00 84 04
-        HEX 84 05 b1 00 48 20 b3 8a
-        HEX 68 c8 20 af 8a b1 00 48
-        HEX c8 20 b3 8a 68 c8 20 af
-        HEX 8a a0 00 a5 04 91 00 c8
-        HEX a5 05 91 00 a6 09 a4 08
-        HEX 60 4a 4a 4a 4a 08 f8 29
-        HEX 0f aa ca 30 12 18 a5 04
-        HEX 79 cf 8a 85 04 a5 05 79
-        HEX d3 8a 85 05 4c b8 8a 28
-        HEX 60 01 16 56 96 00 00 02
-        HEX 40 a2 e8 a9 03 8e f4 7e
-        HEX 8d f5 7e a9 00 8d f2 7e
-        HEX a9 00 20 95 9e 20 50 9e
-        HEX a9 00 a0 ff 20 6c 9e 20
-        HEX 3c a4 7c 7f 03 45 6e 74
-        HEX 65 72 69 6e 67 20 74 68
-        HEX 65 20 63 72 61 66 74 2c
-        HEX 20 74 68 6f 75 20 64 6f
-        HEX 73 74 7c 7f 03 72 65 6d
-        HEX 61 72 6b 20 75 70 6f 6e
-        HEX 20 66 6f 75 72 20 68 6f
-        HEX 6c 65 73 20 6d 61 72 6b
-        HEX 65 64 3a 7c 7c 7c 7f 0d
-        HEX 52 20 20 47 20 20 42 20
-        HEX 20 57 7c 7c 20 54 68 65
-        HEX 20 70 72 6f 70 65 72 20
-        HEX 67 65 6d 73 20 66 69 74
-        HEX 20 69 6e 20 65 61 63 68
-        HEX 20 68 6f 6c 65 2e 7c 7c
-        HEX 7f 05 46 75 72 74 68 65
-        HEX 72 20 65 78 61 6d 69 6e
-        HEX 61 74 69 6f 6e 20 6c 65
-        HEX 61 64 73 7c 7f 06 74 68
-        HEX 65 65 20 74 6f 20 74 77
-        HEX 6f 20 64 69 73 63 6f 76
-        HEX 65 72 69 65 73 3a 7c 7c
-        HEX 7f 02 54 68 65 72 65 20
-        HEX 69 73 20 61 20 62 75 74
-        HEX 74 6f 6e 20 6d 61 72 6b
-        HEX 65 64 20 4c 41 55 4e 43
-        HEX 48 2c 7c 7f 04 61 6e 64
-        HEX 20 74 68 6f 75 20 61 72
-        HEX 74 20 6c 6f 63 6b 65 64
-        HEX 20 69 6e 2c 20 77 69 74
-        HEX 68 7c 7f 04 6e 6f 74 68
-        HEX 69 6e 67 20 74 6f 20 64
-        HEX 6f 20 62 75 74 20 70 72
-        HEX 65 73 73 20 69 74 21 00
-        HEX a2 5e a9 05 20 4b a4 a2
-        HEX 73 a9 01 20 4b a4 a2 88
-        HEX a9 06 20 4b a4 a2 9d a9
-        HEX 07 20 4b a4 20 f7 87 e6
-        HEX 25 20 3c a4 7c 7c 7c 20
-        HEX 20 41 73 20 73 6f 6f 6e
-        HEX 20 61 73 20 74 68 6f 75
-        HEX 20 68 61 73 74 20 70 72
-        HEX 65 73 73 65 64 20 74 68
-        HEX 65 7c 6c 61 72 67 65 20
-        HEX 62 6c 61 63 6b 20 62 75
-        HEX 74 74 6f 6e 2c 20 6c 69
-        HEX 67 68 74 73 20 62 65 67
-        HEX 69 6e 20 74 6f 7c 20 64
-        HEX 61 6e 63 65 20 61 63 72
-        HEX 6f 73 73 20 74 68 65 20
-        HEX 63 6f 6e 74 72 6f 6c 20
-        HEX 73 63 72 65 65 6e 73 2e
-        HEX 7c 7c 7f 02 47 65 6e 65
-        HEX 72 61 74 6f 72 73 20 73
-        HEX 68 61 6b 65 20 74 68 65
-        HEX 20 76 65 72 79 20 66 6c
-        HEX 6f 6f 72 7c 7f 09 62 65
-        HEX 6e 65 61 74 68 20 74 68
-        HEX 79 20 66 65 65 74 2e 7c
-        HEX 7c 20 54 68 65 20 73 6d
-        HEX 61 6c 6c 20 63 72 61 66
-        HEX 74 20 62 65 67 69 6e 73
-        HEX 20 74 6f 20 74 72 65 6d
-        HEX 62 6c 65 7c 7f 05 61 6e
-        HEX 64 20 72 61 74 74 6c 65
-        HEX 20 61 73 20 74 68 79 20
-        HEX 6a 6f 75 72 6e 65 79 7c
-        HEX 7f 07 74 68 72 6f 75 67
-        HEX 68 20 74 69 6d 65 20 62
-        HEX 65 67 69 6e 73 2e 2e 2e
-        HEX 00 20 f7 87 e6 25 20 3c
-        HEX a4 7c 7c 7c 7c 7c 7c 20
-        HEX 41 66 74 65 72 20 62 75
-        HEX 74 20 61 20 66 65 77 20
-        HEX 6d 6f 6d 65 6e 74 73 20
-        HEX 74 68 6f 75 20 64 6f 73
-        HEX 74 7c 20 66 65 65 6c 20
-        HEX 61 20 73 74 72 6f 6e 67
-        HEX 20 6d 61 67 69 63 20 70
-        HEX 75 6c 6c 69 6e 67 20 74
-        HEX 68 65 65 7c 7f 09 66 72
-        HEX 6f 6d 20 74 68 79 20 63
-        HEX 72 61 66 74 2e 2e 2e 00
-        HEX 20 f7 87 e6 25 20 3c a4
-        HEX 7c 7c 7c 7c 7f 09 2e 2e
-        HEX 2e 41 20 6d 6f 6d 65 6e
-        HEX 74 20 6c 61 74 65 72 2c
-        HEX 7c 7f 07 74 68 6f 75 20
-        HEX 61 72 74 20 66 61 63 65
-        HEX 20 74 6f 20 66 61 63 65
-        HEX 7c 7f 03 77 69 74 68 20
-        HEX 74 68 65 20 65 76 69 6c
-        HEX 20 4d 6f 6e 64 61 69 6e
-        HEX 20 68 69 6d 73 65 6c 66
-        HEX 21 7c 7c 7c 7c 7f 07 47
-        HEX 6f 6f 64 20 6c 75 63 6b
-        HEX 2c 20 74 68 69 73 20 69
-        HEX 73 20 69 74 21 00 20 f7
-        HEX 87 e6 25 20 cb 9d a9 02
-        HEX 8d 76 a4 a9 03 8d 77 a4
-        HEX a9 00 8d ab 95 a9 05 a0
-        HEX 03 a2 05 20 15 9d a9 01
-        HEX a0 05 20 6c 9e a0 05 b9
-        HEX e3 a3 18 69 03 a8 a9 03
-        HEX 99 fc a2 a9 04 85 00 a9
-        HEX 05 85 01 20 1f 9c a9 10
-        HEX 8d 28 b6 a9 05 8d 29 b6
-        HEX 20 64 9c a9 0f 8d 2a b6
-        HEX a9 05 8d 2b b6 20 b5 9c
-        HEX a2 ff 9a 20 19 81 7c 0e
-        HEX 00 20 44 98 20 6e 83 ad
-        HEX e5 7e 0d e6 7e f0 08 ad
-        HEX c6 7e 0d c7 7e d0 03 4c
-        HEX f8 88 20 15 98 d0 09 20
-        HEX 08 98 20 df 9b 4c 67 8e
-        HEX 20 a2 82 b0 cb bd a8 8e
-        HEX 8d a0 8e bd a9 8e 8d a1
-        HEX 8e 20 1d 84 20 14 84 4c
-        HEX 5e 8e b8 96 be 96 c4 96
-        HEX ca 96 01 98 45 88 dc 8e
-        HEX 07 84 fb 91 07 84 07 84
-        HEX 07 84 d6 94 07 84 ac 95
-        HEX 07 84 5b 88 07 84 3f 96
-        HEX 54 96 5d 96 8a 96 07 84
-        HEX 07 84 07 84 ad 96 ad f2
-        HEX 7e d0 03 ee f2 7e 20 19
-        HEX 81 77 69 74 68 20 00 ae
-        HEX 7a 7e 20 b8 80 38 74 ad
-        HEX 7a 7e c9 04 f0 08 c9 08
-        HEX 90 07 c9 0b b0 03 4c 07
-        HEX 84 20 19 81 ba a0 00 20
-        HEX 6f 91 f0 07 e0 02 f0 0c
-        HEX 4c 73 8f 20 19 81 70 61
-        HEX 73 73 00 60 a9 06 20 cb
-        HEX 15 a2 01 a0 05 ad 7a 7e
-        HEX c9 07 f0 08 c9 0c f0 04
-        HEX c9 0e 90 04 a2 04 a0 00
-        HEX 8e 7a a4 8c 7b a4 a9 80
-        HEX 18 6d ca 7e 85 c3 20 b9
-        HEX 15 c5 c3 b0 20 ad 7a 7e
-        HEX 0a 18 6d 7a 7e 18 6d c8
-        HEX 7e 20 54 82 d0 02 a9 01
-        HEX 8d 4b 7e 20 5c 9d cd 7a
-        HEX a4 90 0f f0 0d 20 19 81
-        HEX 7e 4d 69 73 73 65 64 21
-        HEX 00 60 20 19 81 7e 48 69
-        HEX 74 20 4d 6f 6e 64 61 69
-        HEX 6e 21 20 00 ad 4b 7e 20
-        HEX 0d 82 20 19 81 20 64 61
-        HEX 6d 61 67 65 00 a9 02 20
-        HEX cb 15 38 ad f4 7e ed 4b
-        HEX 7e 8d f4 7e ad f5 7e e9
-        HEX 00 8d f5 7e ad f5 7e 30
-        HEX 2f c9 01 d0 05 ad f4 7e
-        HEX c9 f4 b0 23 ad f5 7e 30
-        HEX 1f d0 05 ad f4 7e f0 18
-        HEX ad 76 a4 c9 07 f0 10 20
-        HEX 93 9c a9 07 8d 76 a4 a9
-        HEX 02 8d f2 7e 20 64 9c 60
-        HEX ad f2 7e 30 fa 20 93 9c
-        HEX a9 08 8d 76 a4 a9 ff 8d
-        HEX f2 7e 20 64 9c ad f5 7e
-        HEX 10 e5 20 19 81 7e 4d 6f
-        HEX 6e 64 61 69 6e 20 69 73
-        HEX 20 64 65 61 64 21 00 ad
-        HEX ab 95 d0 12 20 19 81 20
-        HEX 2e 2e 2e 6f 72 20 69 73
-        HEX 20 68 65 3f 00 60 20 36
-        HEX a4 7c 7c 7c 7c 7f 05 54
-        HEX 48 4f 55 20 41 52 54 20
-        HEX 56 49 43 54 4f 52 49 4f
-        HEX 55 53 21 00 20 03 b7 4e
-        HEX 49 46 00 20 cc 7d b0 f4
-        HEX ad 54 89 8d f2 03 ad 55
-        HEX 89 8d f3 03 49 a5 8d f4
-        HEX 03 a0 00 a2 1f b9 00 40
-        HEX 99 00 60 a9 00 99 00 40
-        HEX c8 d0 f2 ee 75 90 ee 78
-        HEX 90 ee 7d 90 ca 10 e6 8e
-        HEX 81 15 a9 03 85 6d a9 0a
-        HEX 20 cb 15 c6 6d d0 f7 20
-        HEX ee a3 a9 60 85 80 85 7f
-        HEX a9 c0 85 6d a2 bf a5 7f
-        HEX 8d d3 90 49 60 8d c5 90
-        HEX 49 5f 8d ec 90 bd 00 12
-        HEX 8d da 90 bd c0 12 49 00
-        HEX 8d db 90 bd ff 11 8d dd
-        HEX 90 bd bf 12 49 00 8d de
-        HEX 90 a0 27 b9 00 40 99 00
-        HEX 20 88 10 f7 ca d0 d6 a0
-        HEX 27 b9 00 60 99 d0 5f 88
-        HEX 10 f7 ad e8 90 18 69 28
-        HEX 8d e8 90 90 03 ee e9 90
-        HEX 20 ad 15 2c 10 c0 c6 6d
-        HEX d0 a2 20 9e 15 85 80 20
-        HEX 9b 15 a9 0b 85 25 a9 22
-        HEX 85 24 a2 1f bd 4f 91 20
-        HEX b0 15 c6 24 ca d0 f5 8e
-        HEX e8 90 a9 60 8d e9 90 85
-        HEX 80 2c 10 c0 ad 00 c0 10
-        HEX fb 20 ad 15 2c 10 c0 a2
-        HEX 14 20 e9 15 2c 00 c0 30
-        HEX 03 ca d0 f5 20 ad 15 4c
-        HEX 2f 91 50 72 65 73 73 20
-        HEX 43 6f 6e 74 72 6f 6c 2d
-        HEX 52 45 53 45 54 20 74 6f
-        HEX 20 72 65 73 74 61 72 74
-        HEX 2e 20 15 98 d0 03 a2 00
-        HEX 60 20 7d 82 c9 0b d0 1c
-        HEX 20 19 81 4e 6f 72 74 68
-        HEX 00 a0 00 a5 00 cd 28 b6
-        HEX d0 29 a5 01 cd 29 b6 90
-        HEX 22 a2 02 60 c9 15 d0 1e
-        HEX 20 19 81 45 61 73 74 00
-        HEX a0 01 a5 01 cd 29 b6 d0
-        HEX 0a a5 00 cd 28 b6 b0 03
-        HEX a2 02 60 a2 01 60 c9 0a
-        HEX d0 1c 20 19 81 53 6f 75
-        HEX 74 68 00 a0 02 a5 00 cd
-        HEX 28 b6 d0 e7 a5 01 cd 29
-        HEX b6 b0 e0 a2 02 60 c9 08
-        HEX d0 8f 20 19 81 57 65 73
-        HEX 74 00 a0 03 a5 01 cd 29
-        HEX b6 d0 c8 a5 00 cd 28 b6
-        HEX 90 c1 a2 02 60 20 bf 83
-        HEX ae 79 7e f0 2a bd 93 7e
-        HEX d0 25 20 19 81 7e 54 68
-        HEX 6f 75 20 68 61 73 74 20
-        HEX 75 73 65 64 20 75 70 20
-        HEX 74 68 61 74 20 73 70 65
-        HEX 6c 6c 21 00 4c 03 84 ad
-        HEX f2 7e d0 03 ee f2 7e ad
-        HEX 79 7e 0a a8 b9 49 92 8d
-        HEX 47 92 b9 4a 92 8d 48 92
-        HEX 4c ce 92 ce 92 b7 92 b7
-        HEX 92 d9 92 b7 92 b7 92 b7
-        HEX 92 4a 93 92 93 e8 93 75
-        HEX 94 ae 79 7e f0 03 de 93
-        HEX 7e ad d8 7e c9 02 f0 07
-        HEX a9 03 20 54 82 f0 28 ad
-        HEX 79 7e c9 08 f0 0b c9 09
-        HEX f0 07 20 5c 9d c9 07 b0
-        HEX 16 a9 0a 20 cb 15 ad d2
-        HEX 7e 18 69 80 85 c3 20 b9
-        HEX 15 c5 c3 b0 02 18 60 38
-        HEX 60 a5 24 c9 16 90 03 20
-        HEX 89 80 20 19 81 20 66 61
-        HEX 69 6c 65 64 21 00 4c 03
-        HEX 84 20 19 81 7e 4e 6f 74
-        HEX 20 61 70 70 6c 69 63 61
-        HEX 62 6c 65 21 00 4c 03 84
-        HEX 20 5f 92 90 03 4c 9f 92
-        HEX 4c eb 83 20 19 81 3a 20
-        HEX 00 20 6f 91 d0 09 20 19
-        HEX 81 70 61 73 73 00 60 8a
-        HEX 48 20 5f 92 90 04 68 4c
-        HEX 9f 92 68 c9 02 f0 0d 20
-        HEX 19 81 7e 4d 69 73 73 65
-        HEX 64 21 00 60 ad d2 7e 20
-        HEX 54 82 d0 02 a9 01 8d 4b
-        HEX 7e ad 7a 7e c9 08 d0 0b
-        HEX ad 4b 7e 4a 18 6d 4b 7e
-        HEX 4c 44 93 c9 09 d0 07 ad
-        HEX 4b 7e 0a 4c 44 93 c9 0a
-        HEX 90 0f c9 0c b0 0b ad 4b
-        HEX 7e 0a 18 6d 4b 7e 8d 4b
-        HEX 7e 4c 80 8f 20 5f 92 90
-        HEX 03 4c 9f 92 a9 13 20 54
-        HEX 82 8d 2c b6 ee 2c b6 a9
-        HEX 09 20 54 82 8d 2d b6 ee
-        HEX 2d b6 ac 2d b6 b9 e3 a3
-        HEX 18 6d 2c b6 a8 b9 fc a2
-        HEX d0 d2 20 47 9c ad 2c b6
-        HEX 85 00 ad 2d b6 85 01 20
-        HEX 1f 9c 20 19 81 7e 44 6f
-        HEX 6e 65 00 60 20 19 81 3a
-        HEX 20 00 20 6f 91 d0 09 20
-        HEX 19 81 70 61 73 73 00 60
-        HEX 98 48 20 5f 92 68 90 03
-        HEX 4c 9f 92 a8 20 36 94 f0
-        HEX 03 4c 9f 92 a9 04 ac 2c
-        HEX b6 ae 2d b6 20 15 9d a2
-        HEX 04 a9 00 a0 01 20 34 a0
-        HEX ac 2d b6 b9 e3 a3 18 6d
-        HEX 2c b6 a8 a9 02 99 fc a2
-        HEX 20 19 81 7e 44 6f 6e 65
-        HEX 00 60 20 19 81 3a 20 00
-        HEX 20 6f 91 d0 09 20 19 81
-        HEX 70 61 73 73 00 60 98 48
-        HEX 20 5f 92 90 04 68 4c 9f
-        HEX 92 68 a8 20 36 94 c9 02
-        HEX f0 03 4c 9f 92 ac 2c b6
-        HEX ae 2d b6 20 06 9d ac 2d
-        HEX b6 b9 e3 a3 18 6d 2c b6
-        HEX a8 a9 00 99 fc a2 20 19
-        HEX 81 7e 44 6f 6e 65 00 60
-        HEX b9 6d 94 85 04 b9 71 94
-        HEX 85 05 30 06 18 65 01 4c
-        HEX 51 94 38 29 7f 85 c3 a5
-        HEX 01 e5 c3 8d 2d b6 a5 04
-        HEX 30 06 18 65 00 4c 67 94
-        HEX 38 29 7f 85 c3 a5 00 e5
-        HEX c3 8d 2c b6 4c bc 9d 00
-        HEX 01 00 81 81 00 01 00 20
-        HEX 5f 92 90 03 4c 9f 92 20
-        HEX 19 81 7e 22 49 4e 54 45
-        HEX 52 46 49 43 49 4f 2d 4e
-        HEX 55 4e 43 21 22 7e 54 68
-        HEX 65 20 73 70 65 6c 6c 20
-        HEX 64 6f 74 68 20 73 65 65
-        HEX 6d 7e 74 6f 20 6d 61 6b
-        HEX 65 20 68 69 6d 20 73 74
-        HEX 72 6f 6e 67 65 72 21 00
-        HEX ad f5 7e 30 12 ad f4 7e
-        HEX 6d f4 7e 8d f4 7e ad f5
-        HEX 7e 6d f5 7e 8d f5 7e 60
-        HEX ad ab 95 d0 23 ad f2 7e
-        HEX d0 03 ee f2 7e a5 00 85
-        HEX 06 a5 01 85 07 ad 2a b6
-        HEX 85 08 ad 2b b6 85 09 20
-        HEX 6e a2 a5 c3 c9 02 90 1c
-        HEX 20 19 81 2e 2e 2e 27 74
-        HEX 69 73 20 6e 6f 74 68 69
-        HEX 6e 67 20 68 65 72 65 21
-        HEX 3f 21 00 60 ee ab 95 20
-        HEX e4 9c ad c7 7e 4a 85 c4
-        HEX ad c6 7e 6a 85 c3 46 c4
-        HEX 66 c3 a5 c3 0a 8d 4b 7e
-        HEX a5 c4 2a 8d 4c 7e 18 ad
-        HEX 4b 7e 65 c3 8d 4b 7e ad
-        HEX 4c 7e 65 c4 8d 4c 7e a9
-        HEX 05 85 c3 a9 02 20 cb 15
-        HEX c6 c3 10 f7 20 19 81 2e
-        HEX 2e 2e 00 ad 4c 7e ae 4b
-        HEX 7e 20 07 82 20 19 81 20
-        HEX 64 61 6d 61 67 65 00 38
-        HEX ad c6 7e ed 4b 7e 8d c6
-        HEX 7e ad c7 7e ed 4c 7e 8d
-        HEX c7 7e 20 19 81 7e 54 68
-        HEX 65 20 47 65 6d 20 69 73
-        HEX 20 44 45 53 54 52 4f 59
-        HEX 45 44 21 00 ad f2 7e 10
-        HEX 03 4c 34 90 60 00 ad ab
-        HEX 95 f0 5a 20 19 81 7e cd
-        HEX ef ee e4 e1 e9 ee a7 f3
-        HEX a0 ed e1 e7 e9 e3 e1 ec
-        HEX a0 e1 f5 f2 e1 a0 e4 ef
-        HEX f4 e8 7e f3 e5 e5 ed a0
-        HEX f3 f5 e2 f3 f4 e1 ee f4
-        HEX e9 e1 ec ec f9 a0 e4 e9
-        HEX ed e9 ee e9 f3 e8 e5 e4
-        HEX 7e e9 ee a0 f4 e8 e5 a0
-        HEX e1 e2 f3 e5 ee e3 e5 a0
-        HEX ef e6 a0 f4 e8 e5 a0 e7
-        HEX e5 ed ae 00 60 20 19 81
-        HEX ae ae ae e9 f4 a0 ec ef
-        HEX ef eb f3 7e e1 f3 a0 e9
-        HEX e6 a0 e8 e5 a0 e9 f3 a0
-        HEX e3 f2 e5 e1 f4 e9 ee e7
-        HEX a0 f4 e8 e5 a0 e5 f6 e9
-        HEX ec 7e e7 e5 ed bf a1 00
-        HEX 60 20 19 81 7e e9 f3 a0
-        HEX ee ef f4 a0 e1 ec ec ef
-        HEX f7 e5 e4 a1 00 60 20 15
-        HEX 98 20 66 84 4c cb 9d 20
-        HEX 19 81 ae ae ae e8 e5 a7
-        HEX f3 a0 f7 e1 f4 e3 e8 e9
-        HEX ee e7 ac 7e f4 e8 e1 f4
-        HEX a0 f7 ef f5 ec e4 a0 e2
-        HEX e5 a0 e6 ef ef ec e9 f3
-        HEX e8 a1 00 60 20 19 81 ae
-        HEX ae ae cd ef ee e4 e1 e9
-        HEX ee a0 f7 e9 ec ec 7e ee
-        HEX ef f4 a0 ee e5 e7 ef f4
-        HEX e9 e1 f4 e5 a1 00 60 20
-        HEX a2 85 a9 00 8d 49 82 4c
-        HEX cb 9d a2 00 a0 81 d0 10
-        HEX a2 00 a0 01 d0 0a a2 01
-        HEX a0 00 f0 04 a2 81 a0 00
-        HEX 86 04 84 05 a5 04 30 09
-        HEX 18 65 00 8d 2c b6 4c eb
-        HEX 96 38 29 7f 85 c3 a5 00
-        HEX e5 c3 8d 2c b6 a5 05 30
-        HEX 09 18 65 01 8d 2d b6 4c
-        HEX 04 97 38 29 7f 85 c3 a5
-        HEX 01 e5 c3 8d 2d b6 ac 2d
-        HEX b6 b9 e3 a3 18 6d 2c b6
-        HEX a8 b9 fc a2 d0 03 4c ba
-        HEX 97 c9 03 d0 1a 20 81 80
-        HEX 20 19 81 42 6c 6f 63 6b
-        HEX 65 64 21 00 20 98 15 a9
-        HEX 0e 20 cb 15 4c 01 98 20
-        HEX 1b 97 20 91 97 20 19 81
-        HEX 7e 42 75 72 6e 65 64 21
-        HEX 20 00 ad c6 7e 85 04 ad
-        HEX c7 7e 85 05 a9 0a 85 02
-        HEX a9 00 20 cd 89 a5 05 8d
-        HEX 27 b6 a5 04 8d 26 b6 38
-        HEX ad c6 7e ed 26 b6 8d c6
-        HEX 7e ad c7 7e ed 27 b6 8d
-        HEX c7 7e ae 26 b6 ad 27 b6
-        HEX 20 07 82 20 19 81 20 70
-        HEX 6f 69 6e 74 73 00 a9 02
-        HEX 20 cb 15 a2 08 bd 00 12
-        HEX 8d a8 97 8d ad 97 bd c0
-        HEX 12 8d a9 97 8d ae 97 a0
-        HEX 26 b9 00 20 49 7f 99 00
-        HEX 20 88 d0 f5 e8 e0 98 90
-        HEX dc 4c e6 15 20 47 9c ad
-        HEX 2c b6 85 00 ad 2d b6 85
-        HEX 01 20 1f 9c a9 00 20 cb
-        HEX 15 20 01 98 ad f2 7e d0
-        HEX 29 a5 00 85 06 a5 01 85
-        HEX 07 ad 2a b6 85 08 ad 2b
-        HEX b6 85 09 20 6e a2 a5 c3
-        HEX c9 02 b0 0e ee f2 7e 20
-        HEX e4 9c a9 06 8d 77 a4 20
-        HEX b5 9c 60 a0 01 a9 10 4c
-        HEX e2 82 a0 05 a9 50 20 e4
-        HEX 82 20 d1 15 d0 fb 60 a2
-        HEX 23 8e 26 98 20 27 98 d0
-        HEX 05 ce 26 98 d0 f6 aa 60
-        HEX 00 a9 0f 8d 43 98 20 7b
-        HEX a0 20 e3 15 ce 43 98 d0
-        HEX f5 20 c8 15 20 66 82 d0
-        HEX 01 60 4c bf 15 00 ad f2
-        HEX 7e d0 29 a9 06 20 54 82
-        HEX d0 21 20 19 81 d9 ef f5
-        HEX a0 e8 e5 e1 f2 a0 e1 a0
-        HEX f3 f4 f2 e1 ee e7 e5 a0
-        HEX e3 e8 e1 ee f4 e9 ee e7
-        HEX 7c 0e 00 60 ad f2 7e 10
-        HEX 24 18 a9 19 6d f4 7e 8d
-        HEX f4 7e a9 00 6d f5 7e 8d
-        HEX f5 7e 30 10 20 93 9c a9
-        HEX 07 8d 76 a4 20 64 9c a9
-        HEX 02 8d f2 7e 60 a0 00 a5
-        HEX 01 cd 29 b6 90 06 f0 06
-        HEX a0 01 d0 02 a0 81 84 05
-        HEX a2 00 a5 00 cd 28 b6 90
-        HEX 06 f0 06 a2 01 d0 02 a2
-        HEX 81 86 04 ad f2 7e c9 02
-        HEX f0 1b 20 5c 9d c9 02 b0
-        HEX 03 4c 71 99 c9 07 b0 0a
-        HEX a9 02 20 54 82 f0 03 4c
-        HEX e7 99 4c 36 99 a5 04 d0
-        HEX 06 20 b9 15 20 45 9e 49
-        HEX 80 85 04 a5 05 d0 06 20
-        HEX b9 15 20 45 9e 49 80 85
-        HEX 05 20 36 99 90 31 ad f5
-        HEX 7e 30 2c 18 ad f4 7e 69
-        HEX 05 8d f4 7e ad f5 7e 69
-        HEX 00 8d f5 7e c9 01 d0 05
-        HEX ad f4 7e c9 f4 90 10 a9
-        HEX 01 8d f2 7e 20 93 9c a9
-        HEX 02 8d 76 a4 20 64 9c 60
-        HEX a9 02 20 54 82 f0 0a a5
-        HEX 04 f0 06 20 98 9d a8 f0
-        HEX 14 a5 05 f0 06 20 74 9d
-        HEX a8 f0 0a a5 04 f0 1a 20
-        HEX 98 9d a8 d0 14 20 93 9c
-        HEX ad 2c b6 8d 28 b6 ad 2d
-        HEX b6 8d 29 b6 20 64 9c 18
-        HEX 60 38 60 a9 04 20 cb 15
-        HEX 20 19 81 41 74 74 61 63
-        HEX 6b 65 64 20 62 79 20 4d
-        HEX 6f 6e 64 61 69 6e 21 7e
-        HEX 00 ad cc 7e 4a 85 c3 ad
-        HEX 7b 7e 0a 0a 0a 18 65 c3
-        HEX 85 c3 38 a9 b9 e5 c3 30
-        HEX 18 0a 85 c3 20 b9 15 c5
-        HEX c3 90 0e 20 19 81 4d 69
-        HEX 73 73 65 64 21 7c 0e 00
-        HEX 60 ad c6 7e 85 c3 ad c7
-        HEX 7e 85 c4 a0 05 46 c4 66
-        HEX c3 88 d0 f9 a9 14 20 54
-        HEX 82 18 65 c3 8d 4b 7e a5
-        HEX c4 69 00 8d 4c 7e 4c 15
-        HEX 9b 20 19 81 4d 6f 6e 64
-        HEX 61 69 6e 20 63 61 73 74
-        HEX 73 20 00 a9 03 20 54 82
-        HEX 0a a8 b9 0f 9a 8d 0d 9a
-        HEX b9 10 9a 8d 0e 9a 4c 15
-        HEX 9a 15 9a 5b 9a cd 9a 20
-        HEX 19 81 6d 61 67 69 63 20
-        HEX 6d 69 73 73 69 6c 65 21
-        HEX 7e 00 a9 0a 20 cb 15 ad
-        HEX d0 7e 18 6d d2 7e 4a 85
-        HEX c3 38 a9 c3 e5 c3 30 0d
-        HEX 0a 85 c3 20 b9 15 c5 c3
-        HEX 90 03 4c bf 9a a9 65 20
-        HEX 54 82 8d 4b 7e a9 00 8d
-        HEX 4c 7e 4c 15 9b 20 19 81
-        HEX 6d 69 6e 64 20 62 6c 61
-        HEX 73 74 65 72 21 7e 00 a9
-        HEX 0a 20 cb 15 a9 64 20 54
-        HEX 82 c9 46 b0 03 4c bf 9a
-        HEX 20 19 81 48 69 74 21 20
-        HEX 53 74 61 74 73 20 61 72
-        HEX 65 20 72 65 64 75 63 65
-        HEX 64 2e 7c 0e 00 a2 0a bd
-        HEX c8 7e f0 18 48 c9 10 b0
-        HEX 02 a9 10 4a 4a 4a 4a 85
-        HEX c3 38 68 e5 c3 b0 02 a9
-        HEX 00 9d c8 7e ca ca 10 df
-        HEX 60 20 19 81 4d 69 73 73
-        HEX 65 64 21 7c 0e 00 60 20
-        HEX 19 81 70 73 69 6f 6e 69
-        HEX 63 20 73 68 6f 63 6b 21
-        HEX 7e 00 20 91 97 a9 0a 20
-        HEX cb 15 20 91 97 a9 64 20
-        HEX 54 82 c9 46 b0 03 4c bf
-        HEX 9a ad c6 7e 85 c3 ad c7
-        HEX 7e 85 c4 a0 05 46 c4 66
-        HEX c3 88 d0 f9 8c 4c 7e a5
-        HEX c3 20 54 82 8d 4b 7e 20
-        HEX 19 81 48 69 74 21 20 00
-        HEX ad 4c 7e ae 4b 7e 20 07
-        HEX 82 20 19 81 20 64 61 6d
-        HEX 61 67 65 00 a9 02 20 cb
-        HEX 15 ad 4c 7e cd c7 7e d0
-        HEX 06 ad 4b 7e cd c6 7e b0
-        HEX 1a 20 19 81 7c 0e 00 38
-        HEX ad c6 7e ed 4b 7e 8d c6
-        HEX 7e ad c7 7e ed 4c 7e 8d
-        HEX c7 7e 60 20 19 81 7e 54
-        HEX 48 4f 55 20 41 52 54 20
-        HEX 44 45 41 44 21 00 a9 00
-        HEX 8d c6 7e 8d c7 7e 20 6e
-        HEX 83 20 36 a4 7c 7c a0 d4
-        HEX e8 ef f5 a0 e8 e1 f3 f4
-        HEX a0 e2 e5 e5 ee a0 e4 e5
-        HEX e6 e5 e1 f4 e5 e4 a0 e2
-        HEX f9 7c a0 a0 a0 a0 a0 cd
-        HEX ef ee e4 e1 e9 ee a0 f4
-        HEX e8 e5 a0 d7 e9 fa e1 f2
-        HEX e4 a1 7c 7c 7c a0 a0 d4
-        HEX c8 c5 a0 d5 ce c9 d6 c5
-        HEX d2 d3 c5 a0 c9 d3 a0 c4
-        HEX cf cf cd c5 c4 a1 a1 00
-        HEX 20 a9 83 20 f7 87 4c f8
-        HEX 88 ad f2 7e f0 3a a9 13
-        HEX 20 54 82 8d 2c b6 ee 2c
-        HEX b6 a9 09 20 54 82 8d 2d
-        HEX b6 ee 2d b6 ac 2d b6 b9
-        HEX e3 a3 18 6d 2c b6 a8 b9
-        HEX fc a2 d0 d5 a9 09 ac 2c
-        HEX b6 ae 2d b6 20 15 9d a2
-        HEX 09 a9 00 a0 00 20 34 a0
-        HEX 60 a9 01 a4 00 a6 01 20
-        HEX 15 9d a2 01 a9 00 a0 01
-        HEX 20 34 a0 a9 01 a0 01 20
-        HEX 6c 9e a4 01 b9 e3 a3 18
-        HEX 65 00 a8 a9 09 99 fc a2
-        HEX 60 a9 00 a0 01 20 6c 9e
-        HEX a4 00 a6 01 20 06 9d a4
-        HEX 01 b9 e3 a3 18 65 00 a8
-        HEX a9 00 99 fc a2 60 ad 76
-        HEX a4 ac 28 b6 ae 29 b6 20
-        HEX 15 9d ae 76 a4 a9 00 a0
-        HEX 01 20 34 a0 a9 01 ac 76
-        HEX a4 20 6c 9e ac 29 b6 b9
-        HEX e3 a3 18 6d 28 b6 a8 a9
-        HEX 08 99 fc a2 60 a9 00 ac
-        HEX 76 a4 20 6c 9e ac 28 b6
-        HEX ae 29 b6 20 06 9d ac 29
-        HEX b6 b9 e3 a3 18 6d 28 b6
-        HEX a8 a9 00 99 fc a2 60 ad
-        HEX 77 a4 ac 2a b6 ae 2b b6
-        HEX 20 15 9d ae 77 a4 a9 00
-        HEX a0 01 20 34 a0 a9 01 ac
-        HEX 77 a4 20 6c 9e ac 2b b6
-        HEX b9 e3 a3 18 6d 2a b6 a8
-        HEX a9 07 99 fc a2 60 a9 00
-        HEX ac 77 a4 20 6c 9e ac 2a
-        HEX b6 ae 2b b6 20 06 9d ac
-        HEX 2b b6 b9 e3 a3 18 6d 2a
-        HEX b6 a8 a9 00 99 fc a2 60
-        HEX a9 00 20 15 9d a2 00 a9
-        HEX 00 a0 01 20 34 a0 60 85
-        HEX c3 b9 2a 9d 85 c5 b9 3e
-        HEX 9d 85 c6 bd 52 9d aa a4
-        HEX c3 4c 18 a0 00 07 15 23
-        HEX 31 3f 4d 5b 69 77 85 93
-        HEX a1 af bd cb d9 e7 f5 03
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 01 00 08 18 28
-        HEX 38 48 58 68 78 88 a5 00
-        HEX 85 06 a5 01 85 07 ad 28
-        HEX b6 85 08 ad 29 b6 85 09
-        HEX 20 6e a2 a5 c3 60 a5 05
-        HEX 30 0a 18 6d 29 b6 8d 2d
-        HEX b6 4c 8f 9d 38 29 7f 85
-        HEX c3 ad 29 b6 e5 c3 8d 2d
-        HEX b6 ad 28 b6 8d 2c b6 4c
-        HEX bc 9d a5 04 30 0a 18 6d
-        HEX 28 b6 8d 2c b6 4c b3 9d
-        HEX 38 29 7f 85 c3 ad 28 b6
-        HEX e5 c3 8d 2c b6 ad 29 b6
-        HEX 8d 2d b6 4c bc 9d ac 2d
-        HEX b6 b9 e3 a3 18 6d 2c b6
-        HEX a8 b9 fc a2 60 20 aa 15
-        HEX 20 b5 9e a0 00 b1 e4 99
-        HEX 31 9e 30 07 a9 00 91 e4
-        HEX c8 d0 f2 a9 01 a0 04 20
-        HEX 6c 9e a9 13 8d 2c b6 a9
-        HEX 09 8d 2d b6 20 bc 9d c9
-        HEX 02 d0 1a a0 04 ae 2c b6
-        HEX bd 2a 9d 91 e8 bd 3e 9d
-        HEX 91 ea ae 2d b6 bd 52 9d
-        HEX 91 ec 20 84 a0 ce 2d b6
-        HEX d0 da ce 2c b6 d0 d0 a0
-        HEX 00 b9 31 9e 91 e4 30 03
-        HEX c8 d0 f6 a9 00 a0 04 20
-        HEX 6c 9e 60 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 a8
-        HEX 30 05 f0 05 a9 01 60 a9
-        HEX 81 60 a2 00 a0 00 84 28
-        HEX a5 28 99 00 b4 8a 99 00
-        HEX b5 e8 e0 07 90 04 a2 00
-        HEX e6 28 c8 d0 eb 60 8d 26
-        HEX b6 8c 27 b6 20 b5 9e ad
-        HEX 26 b6 ac 27 b6 c0 ff f0
-        HEX 05 91 e4 4c d9 9e a0 00
-        HEX b1 e4 30 08 ad 26 b6 91
-        HEX e4 c8 d0 f4 4c d9 9e 0a
-        HEX aa bd b3 9e 85 d2 e8 bd
-        HEX b3 9e 85 d3 a0 00 b1 d2
-        HEX 18 65 d2 85 d4 c8 b1 d2
-        HEX 65 d3 85 d5 60 7c a4 a0
-        HEX 00 b9 d6 00 99 00 b6 b1
-        HEX d4 18 65 d2 99 d6 00 c8
-        HEX b9 d6 00 99 00 b6 b1 d4
-        HEX 65 d3 99 d6 00 c8 c0 26
-        HEX d0 df 60 a0 25 b9 00 b6
-        HEX 99 d6 00 88 10 f7 60 24
-        HEX b0 10 0b a0 06 b1 b2 85
-        HEX b0 c8 b1 b2 85 b1 a0 00
-        HEX b1 b2 18 65 b1 85 b5 b1
-        HEX b2 29 01 8d 05 a0 c8 b1
-        HEX b2 18 65 b0 85 b4 c6 b4
-        HEX a9 ff 85 bd c8 b1 b2 6a
-        HEX 90 02 e6 bd a9 ff 85 c5
-        HEX a9 09 8d f8 9f c8 b1 b2
-        HEX 8d f9 9f f0 19 30 05 a9
-        HEX 29 8d f8 9f a9 80 8d 9d
-        HEX 9f 8d cb 9f a9 08 8d a1
-        HEX 9f 8d cf 9f 10 10 a9 01
-        HEX 8d 9d 9f 8d cb 9f a9 00
-        HEX 8d a1 9f 8d cf 9f 18 a9
-        HEX 08 65 b2 85 be a9 00 65
-        HEX b3 85 bf c8 18 b1 b2 65
-        HEX b2 85 c1 c8 b1 b2 65 b3
-        HEX 85 c2 a5 b4 85 bc a0 00
-        HEX 84 c0 84 c4 a6 b1 bd c0
-        HEX 12 85 b9 bd 00 12 85 b8
-        HEX 24 c5 10 32 24 bd 30 02
-        HEX e6 c5 a4 c0 d0 22 b1 be
-        HEX e6 be d0 02 e6 bf c9 01
-        HEX b0 48 90 00 b1 be e6 be
-        HEX d0 02 e6 bf 85 c0 b1 be
-        HEX 85 ba e6 be d0 02 e6 bf
-        HEX c6 c0 a5 ba d0 2c c6 c5
-        HEX a4 c4 d0 22 b1 c1 e6 c1
-        HEX d0 02 e6 c2 c9 01 b0 1a
-        HEX 90 00 b1 c1 e6 c1 d0 02
-        HEX e6 c2 85 c4 b1 c1 85 bb
-        HEX e6 c1 d0 02 e6 c2 c6 c4
-        HEX a5 bb e0 c0 b0 10 a4 bc
-        HEX c0 28 b0 0a c9 80 d0 02
-        HEX a9 00 09 00 91 b8 e8 e4
-        HEX b5 f0 03 4c 7c 9f a9 00
-        HEX f0 02 c6 c5 c6 bc 30 09
-        HEX a4 bc c4 b0 90 03 4c 7a
-        HEX 9f 60 8c 26 b6 8e 27 b6
-        HEX 20 b5 9e ac 26 b6 a5 c5
-        HEX 91 e8 a5 c6 91 ea ad 27
-        HEX b6 91 ec 4c d9 9e 8d 26
-        HEX b6 8c 27 b6 8e 71 a4 20
-        HEX b5 9e ac 71 a4 ad 26 b6
-        HEX c9 ff f0 02 91 ee b1 e6
-        HEX ae 27 b6 f0 0a e0 ff f0
-        HEX 03 8a d0 03 38 f1 ee 8d
-        HEX 70 a4 a9 01 91 e4 20 84
-        HEX a0 ad 75 a4 d0 f8 ce 70
-        HEX a4 d0 f3 ac 71 a4 a9 00
-        HEX 91 e4 4c d9 9e 20 b5 9e
-        HEX 20 84 a0 4c d9 9e a9 ff
-        HEX 8d 72 a4 8d 75 a4 ee 72
-        HEX a4 ac 72 a4 b1 e4 f0 f6
-        HEX 10 01 60 20 9f a0 4c 8c
-        HEX a0 b1 f4 18 65 d2 85 bf
-        HEX b1 f6 65 d3 85 c0 b1 e8
-        HEX 85 c3 b1 ea 85 c4 b1 ee
-        HEX a8 b1 bf 8d 74 a4 a8 b1
-        HEX da aa 10 14 29 3f 85 b9
-        HEX 38 a5 c3 f1 d8 85 c3 a5
-        HEX c4 e5 b9 85 c4 4c e7 a0
-        HEX 29 3f 85 b9 18 a5 c3 71
-        HEX d8 85 c3 a5 c4 65 b9 85
-        HEX c4 ac 72 a4 8a 29 40 f0
-        HEX 0b b1 ec ac 74 a4 38 f1
-        HEX dc 4c 02 a1 b1 ec ac 74
-        HEX a4 18 71 dc 85 b1 a5 c3
-        HEX aa a5 c4 f0 0c bd 04 b4
-        HEX 18 69 24 bc 04 b5 4c 1d
-        HEX a1 bd 00 b4 bc 00 b5 85
-        HEX c5 85 b0 84 c6 ac 74 a4
-        HEX b1 d6 c9 ff f0 2c 18 65
-        HEX c6 8d 73 a4 a8 b1 f8 18
-        HEX 65 d2 85 b2 b1 fa 65 d3
-        HEX 85 b3 18 a5 b2 69 02 85
-        HEX c1 a5 b3 69 00 85 c2 a0
-        HEX 00 b1 b2 85 b4 c8 b1 b2
-        HEX 85 b5 ac 74 a4 b1 de 0a
-        HEX aa bd 6e a1 8d 6c a1 bd
-        HEX 6f a1 8d 6d a1 4c 11 11
-        HEX 74 a1 b8 a1 be a1 a2 00
-        HEX a4 b1 c0 c0 90 10 a5 b4
-        HEX 18 65 c1 85 c1 a9 00 65
-        HEX c2 85 c2 4c af a1 b9 00
-        HEX 12 85 b2 b9 c0 12 85 b3
-        HEX a5 b4 85 b8 a4 b0 c0 28
-        HEX b0 04 a1 c1 91 b2 e6 c1
-        HEX d0 02 e6 c2 c8 c6 b8 d0
-        HEX ed e6 b1 c6 b5 d0 c1 4c
-        HEX 06 a2 20 e5 9e 4c 06 a2
-        HEX a2 00 a4 b1 c0 c0 90 10
-        HEX a5 b4 18 65 c1 85 c1 a9
-        HEX 00 65 c2 85 c2 4c fd a1
-        HEX b9 00 12 85 b2 b9 c0 12
-        HEX 85 b3 a5 b4 85 b8 a4 b0
-        HEX c0 28 b0 08 a1 c1 29 7f
-        HEX 51 b2 91 b2 e6 c1 d0 02
-        HEX e6 c2 c8 c6 b8 d0 e9 e6
-        HEX b1 c6 b5 d0 bd 4c 06 a2
-        HEX ac 72 a4 b1 f0 d0 04 b1
-        HEX f2 f0 13 b1 f0 d0 07 38
-        HEX b1 f2 e9 01 91 f2 38 b1
-        HEX f0 e9 01 91 f0 60 a9 01
-        HEX 18 71 ee d1 e6 90 02 a9
-        HEX 00 91 ee a8 b1 bf 8d 74
-        HEX a4 a8 b1 e0 aa b1 e2 ac
-        HEX 72 a4 91 f2 8a 91 f0 cc
-        HEX 71 a4 d0 03 ee 75 a4 60
-        HEX 86 b0 84 b1 8d 26 b6 20
-        HEX b5 9e ac 26 b6 b1 f8 18
-        HEX 65 d2 85 b2 b1 fa 65 d3
-        HEX 85 b3 20 e5 9e 4c d9 9e
-        HEX 38 a5 06 e5 08 b0 09 8d
-        HEX 26 b6 38 a9 00 ed 26 b6
-        HEX a0 00 84 c3 84 c4 a8 aa
-        HEX e8 ca f0 0c 98 18 65 c3
-        HEX 85 c3 90 f5 e6 c4 b0 f1
-        HEX 38 a5 07 e5 09 b0 09 8d
-        HEX 26 b6 38 a9 00 ed 26 b6
-        HEX a0 00 84 b9 84 ba a8 aa
-        HEX e8 ca f0 0c 98 18 65 b9
-        HEX 85 b9 90 f5 e6 ba b0 f1
-        HEX 18 a5 b9 65 c3 85 c3 a5
-        HEX ba 65 c4 85 c4 90 05 a9
-        HEX ff 85 c3 60 a0 01 84 b9
-        HEX 88 84 ba 38 a5 c3 aa e5
-        HEX b9 85 c3 a5 c4 e5 ba 85
-        HEX c4 90 0d c8 a5 b9 69 01
-        HEX 85 b9 90 e7 e6 ba b0 e3
-        HEX 84 c3 98 86 c4 60 01 01
-        HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 01
-        HEX 01 00 00 00 00 00 00 00
-        HEX 00 00 00 00 02 02 02 00
-        HEX 02 02 02 00 01 01 00 00
-        HEX 00 00 00 02 02 02 02 02
-        HEX 00 02 00 00 00 00 00 02
-        HEX 00 01 01 00 00 00 00 00
-        HEX 00 00 00 00 00 00 02 00
-        HEX 00 00 00 00 02 00 01 01
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 01 01 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 02 00 00 00 00 00 02 00
-        HEX 01 01 00 00 00 00 00 02
-        HEX 02 02 02 02 00 02 00 00
-        HEX 00 00 00 02 00 01 01 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 02 02 02 00 02 02
-        HEX 02 00 01 01 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 01
-        HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 01 01 01 01
-        HEX 01 01 01 01 01 00 15 2a
-        HEX 3f 54 69 7e 93 a8 bd d2
-        HEX a0 ff 84 00 84 01 c8 84
-        HEX 07 84 08 46 01 66 00 90
-        HEX 06 a5 01 49 b4 85 01 a5
-        HEX 00 85 02 a5 01 29 1f 18
-        HEX 69 20 85 03 a5 01 29 e0
-        HEX 2a 2a 2a 2a aa bd 2e a4
-        HEX 31 02 91 02 e6 07 d0 d3
-        HEX e6 08 d0 cf 8c 00 20 60
-        HEX ff bf df ef f7 fb fd fe
-        HEX 20 1e 84 4c 45 a4 20 b4
-        HEX 83 20 aa 15 20 a7 15 20
-        HEX a1 80 4c 19 81 86 6c e8
-        HEX e8 e8 e8 86 6d a0 21 84
-        HEX 07 20 d4 15 20 63 a4 20
-        HEX 63 a4 20 63 a4 a6 6c 86
-        HEX 06 a6 6d e6 07 a4 07 4c
-        HEX da 15 00 00 00 00 00 ff
-        HEX 00 00 00 00 00 00 3e 03
-        HEX 02 10 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 02 0f 80 80 e0 81
-        HEX e0 81 e0 a1 80 a0 fc a6
-        HEX fc ae fc f2 fc a2 b8 81
-        HEX d0 81 a0 83 98 86 98 86
-        HEX 9c 8e 02 0f 80 80 c0 83
-        HEX c0 83 c1 83 81 81 f1 cf
-        HEX fb bf dd bb cd b3 ed b7
-        HEX e5 a7 f1 8f f1 8f f9 9f
-        HEX f9 9f 02 0f 80 80 c1 83
-        HEX c1 83 c1 83 83 81 fd cf
-        HEX fd bf cd bb c5 b3 e1 b7
-        HEX e1 a7 f1 8f f1 8f f8 9f
-        HEX f8 9f 02 0f 80 80 80 80
-        HEX 80 80 80 80 80 80 c0 80
-        HEX e0 81 f0 83 e0 81 c0 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 02 10 d5 a8 d5 a8
-        HEX d5 a0 d5 a2 d5 a2 d5 a2
-        HEX d5 a2 d5 82 d4 80 90 a8
-        HEX 81 aa 85 aa 95 aa 95 aa
-        HEX 95 aa 95 a8 02 0f 80 81
-        HEX 80 81 e0 87 b0 8c a8 94
-        HEX a4 a4 a4 a4 a2 c4 e2 c7
-        HEX ae f4 ec b7 ec b7 e8 97
-        HEX b0 8c e0 87 02 0f 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 c0 80 e0 81 c0 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 02 0f 80 80
-        HEX 80 80 80 80 c0 80 90 82
-        HEX 80 80 c8 84 e0 81 c8 84
-        HEX 80 80 90 82 c0 80 80 80
-        HEX 80 80 80 80 02 0f 80 80
-        HEX 80 80 c0 80 90 82 88 86
-        HEX 80 80 cc 88 e0 81 c4 8c
-        HEX 80 80 98 84 90 82 c0 80
-        HEX 80 80 80 80 02 0f 80 80
-        HEX a0 81 88 84 d4 88 90 84
-        HEX 82 90 c4 8c e0 81 c8 88
-        HEX 82 90 88 86 c4 82 88 84
-        HEX a0 81 80 80 02 0f a4 89
-        HEX a8 85 c9 a4 d6 9a 98 86
-        HEX 83 b0 cc 8c e0 81 cc 8c
-        HEX 83 b0 98 86 d6 9a c9 a4
-        HEX a8 85 a4 89 02 10 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 81 c0 a2 a2 ce b9 9c 9c
-        HEX f8 8f c8 89 a0 82 80 80
-        HEX 80 80 80 80 80 80 02 10
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 a0 82 cc 99
-        HEX 9e bc e3 e3 c0 81 a0 82
-        HEX 80 80 80 80 80 80 80 80
-        HEX 02 10 80 80 80 80 80 80
-        HEX 80 80 80 80 a0 82 c8 89
-        HEX 98 8c fc 9f de bd a3 e2
-        HEX 81 c0 80 80 80 80 80 80
-        HEX 80 80 02 10 80 80 80 80
-        HEX 80 80 80 80 80 80 a0 82
-        HEX cc 99 9e bc e3 e3 c0 81
-        HEX a0 82 80 80 80 80 80 80
-        HEX 80 80 80 80 02 0f 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 9c 80
-        HEX fe 87 ff ff 02 0f 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX c0 80 80 80 c0 80 d0 82
-        HEX 80 80 80 80 02 0f 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 40 00 40 00 44 08
-        HEX 10 02 50 02 44 08 50 02
-        HEX 00 00 00 00 02 0f 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX c0 80 c1 a0 c0 a0 84 88
-        HEX 90 82 d4 8a c4 88 d0 82
-        HEX 80 80 80 80 02 0f 00 00
-        HEX 00 00 00 00 10 02 10 02
-        HEX 10 02 01 20 44 08 44 08
-        HEX 50 02 11 22 05 28 00 00
-        HEX 00 00 00 00 02 0f 80 80
-        HEX 80 80 90 82 90 82 80 80
-        HEX 81 a0 c1 a0 84 88 84 88
-        HEX 80 80 81 a0 80 80 80 80
-        HEX 80 80 80 80 02 0f 00 00
-        HEX 00 00 10 02 00 00 01 20
-        HEX 00 00 00 00 00 00 00 00
-        HEX 01 20 00 00 00 00 00 00
-        HEX 00 00 00 00 02 0f 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 80 80 80 80
-        HEX 80 80 80 80 02 24 44 64
-        HEX 84 a4 c6 e6 06 26 46 66
-        HEX 86 a8 ca ec 0e 2e 4e 6e
-        HEX 8e ae ce ee 00 00 00 00
-        HEX 00 00 00 00 01 01 01 01
-        HEX 01 01 01 01 02 02 02 02
-        HEX 02 02 02 02 65 03 7d 03
-        HEX 95 03 ad 03 c5 03 dd 03
-        HEX f5 03 0d 04 18 04 22 04
-        HEX 2c 04 36 04 40 04 4a 04
-        HEX 54 04 5e 04 68 04 0e 03
-        HEX 26 03 0a 00 01 02 03 04
-        HEX 05 06 07 08 09 0a 0b 0c
-        HEX 0d 0e 0f 10 11 12 13 14
-        HEX 15 16 17 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 14 1e 00
-        HEX 00 00 0a 0a 0a 0a 0a 0c
-        HEX 0c 0c 0c 00 0a 0a 0a 0a
-        HEX 0a 0a 0a 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 ff 01 01
-        HEX 0a 01 01 01 08 04 01 07
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 00 00 00 00
-        HEX 00 00 00 00 72 73 74 7e
-        HEX 7f 80 81 89 8d 8e 04 04
-        HEX 04 04 04 04 04 04 04 04
-        HEX 00 01 02 02 03 02 02 02
-        HEX 02 03 02 03 04 05 06 07
-        HEX 08 09 0a 0b 0a 09 08 0c
-        HEX 0d 0e 0f 10 11 12 13 14
-        HEX 15 16 17
-@ %def TM_BLOB
+The fight has one subtlety that the whole overlay is built around. Mondain is
+shielded by his Gem of Immortality, modelled as a 16-bit hit-point counter
+[[GEM_HP]] seeded to $1000$ on entry. Striking Mondain drains the gem, but
+\emph{killing Mondain while the gem still stands does not win} --- the code
+prints only `` \ldots or is he?'' and he regenerates. The player must first
+\texttt{GET} the gem to destroy it (which sets the victory flag at [[$95AB]]
+and weakens Mondain's aura), and \emph{then} reduce [[GEM_HP]] to zero. Only
+that order triggers ``THOU ART VICTORIOUS!'', the \texttt{NIF} victory screen,
+and the Control-RESET restart hook. The order of the two acts is the puzzle the
+endgame poses.
+
+Structurally the overlay is three things layered together: a small combat
+engine (a turn loop, a command dispatcher, and Mondain's AI), a pseudo-3D
+wireframe renderer that draws the craft interior and animates the figures on a
+grid of cells, and the shared fixed-point and BCD math the rest of the file
+leans on. It reuses the engine's calling conventions throughout ---
+\texttt{MSG\_PRINT} for inline text, the \texttt{POPUP\_TEXT} trampolines for
+framed narration, and \texttt{RND}/\texttt{RND\_MOD} for every roll.
+
+\subsection{Arithmetic and number formatting}
+
+The file opens with its math toolbox: the overlay entry point (a jump to
+[[TM_ENTRY]]) sits in front of a set of shift-add multiply and restoring-divide
+routines, followed by the binary-to-BCD converters the stats display uses to
+print decimal numbers.
+
+<<tm defines>>=
+        PROCESSOR 6502
+;
+; TM runs at the shared overlay base ($8956) and calls into the resident STUPH
+; library ($15xx), the MI.U1 engine API ($80xx-$88xx), and the MLIB file
+; library ($B7xx).  It owns Mondain's gem hit-point counter (GEM_HP) and the
+; combat-state byte (CUR_MON) in the shared player-state block, and drives the
+; hi-res renderer directly through the HGR row pointers in zero page.
+;
+; --- zero page ---
+ZP_PTR          EQU $0000
+ZP_M0           EQU $0002
+ZP_M1           EQU $0003
+ZP_M2           EQU $0004
+ZP_M3           EQU $0005
+ZP_M4           EQU $0006
+ZP_M5           EQU $0007
+ZP_MCNT         EQU $0008
+ZP_MREM         EQU $0009
+MON_CH          EQU $0024
+MON_CV          EQU $0025
+ZP_SFX_TAIL     EQU $007D
+ZP_PAGE_XOR     EQU $007F
+ZP_PAGE_TGL     EQU $0080
+ZP_C3           EQU $00C3
+ZP_C4           EQU $00C4
+ZP_C5           EQU $00C5
+ZP_C6           EQU $00C6
+ZP_SH0          EQU $00E6
+ZP_SH1          EQU $00E8
+ZP_SH2          EQU $00EA
+ZP_SH3          EQU $00EC
+ZP_SH4          EQU $00EE
+; --- STUPH resident library + stale SMC operands ---
+STALE_BLITVEC   EQU $1111
+HGR_ROW_LO      EQU $1200
+HGR_ROW_HI      EQU $12C0
+SFX_ON          EQU $1581
+CLR_EOL         EQU $1598
+CLR_WINDOW      EQU $159B
+WIN_FULL        EQU $159E
+WIN_VIEW        EQU $15A7
+VIEW_CLEAR      EQU $15AA
+PAGE_FLIP       EQU $15AD
+FONT_DRAW       EQU $15B0
+RND             EQU $15B9
+KEY_WAIT        EQU $15BF
+CURSOR_FLASH    EQU $15C8
+SFX_PLAY        EQU $15CB
+SFX_DRAIN       EQU $15D1
+COLOR_SET       EQU $15D4
+LINE_TO         EQU $15DA
+ACCEL_NUDGE     EQU $15E3
+FRAME_SYNC      EQU $15E6
+VDELAY          EQU $15E9
+; --- hi-res pages + buffers + soft-switch shadows ---
+HGR1            EQU $2000
+HGR2            EQU $4000
+GAME_VARS       EQU $6000
+; --- MI.U1 player state + gem HP ---
+DISK_PROMPT     EQU $7DCC
+DMG_AMT         EQU $7E4B
+READY_SPELL     EQU $7E79
+READY_WEAPON    EQU $7E7A
+READY_ARMOUR    EQU $7E7B
+OWNED_SPELLS    EQU $7E93
+PLR_HITS        EQU $7EC6
+PLR_STR         EQU $7EC8
+PLR_AGI         EQU $7ECA
+PLR_STA         EQU $7ECC
+PLR_CHA         EQU $7ECE
+PLR_WIS         EQU $7ED0
+PLR_INT         EQU $7ED2
+PLR_CLASS       EQU $7ED8
+PLR_FOOD        EQU $7EE5
+CUR_MON         EQU $7EF2
+GEM_HP          EQU $7EF4
+; --- MI.U1 engine API ---
+PUTCH_NL_COL1   EQU $807F
+CURSOR_COL1     EQU $8081
+NEWLINE         EQU $8089
+WIN_SHRINK      EQU $80A1
+STR_NTH_CAP     EQU $80B1
+STR_NTH         EQU $80B8
+MSG_AT          EQU $8115
+MSG_PRINT       EQU $8119
+PRINT_NUM16     EQU $8207
+PRINT_NUM8      EQU $820D
+RND_MOD         EQU $8254
+KEY_PENDING     EQU $8266
+KEY_ALIAS       EQU $827D
+GET_COMMAND     EQU $82A2
+TICK            EQU $82E2
+TICK_SND        EQU $82E4
+STATS_DRAW      EQU $8331
+PRINT_STAT16    EQU $8355
+STATS_VALUES    EQU $836E
+STATS_HITS      EQU $838C
+WIN_RESTORE     EQU $83A9
+WIN_SAVE        EQU $83B4
+PRINT_SPELL     EQU $83BF
+NO_EFFECT_MSG   EQU $83EB
+BEEP_CMD        EQU $8403
+QUERY_MARK      EQU $8407
+BEEP_HUH        EQU $840F
+KBD_CLEAR       EQU $8414
+STALE_DISPATCH  EQU $841D
+POPUP_FRAME     EQU $841E
+READY_CMD       EQU $8466
+INVENTORY       EQU $85A2
+POPUP_REDRAW    EQU $87F7
+RESPAWN         EQU $88F8
+QUIT_VEC        EQU $8954
+; --- MLIB file library + scene buffers/state ---
+SCENE_BUF       EQU $B400
+SCENE_BUF2      EQU $B500
+SCENE_ARR       EQU $B600
+SCENE_T0        EQU $B626
+SCENE_T1        EQU $B627
+TGT_X           EQU $B628
+TGT_Y           EQU $B629
+GEM_X           EQU $B62A
+GEM_Y           EQU $B62B
+DST_X           EQU $B62C
+DST_Y           EQU $B62D
+MLIB_BLOAD      EQU $B703
+MLIB_BLOAD_AT_P EQU $B721
+MLIB_BSAVE_P    EQU $B724
+; --- soft switches ---
+KBD             EQU $C000
+KBDSTRB         EQU $C010
 
 <<tm.asm>>=
         PROCESSOR 6502
-<<tm blob>>
+<<tm defines>>
+<<tm mul>>
+<<tm bcd>>
+<<tm entry>>
+<<tm launch>>
+<<tm scene setup>>
+<<tm main loop>>
+<<tm dispatch tbl>>
+<<tm attack>>
+<<tm cast>>
+<<tm spell tbl>>
+<<tm spell helpers>>
+<<tm spell missile>>
+<<tm spell band2>>
+<<tm spell kill>>
+<<tm get>>
+<<tm inform>>
+<<tm misc cmds>>
+<<tm move>>
+<<tm pass>>
+<<tm idle>>
+<<tm mondain>>
+<<tm mondain spell tbl>>
+<<tm mondain spells>>
+<<tm death>>
+<<tm scene tick>>
+<<tm proj tbl>>
+<<tm dist>>
+<<tm craft redraw>>
+<<tm rend bss>>
+<<tm rend helpers>>
+<<tm shape step>>
+<<tm blit vec>>
+<<tm blit>>
+<<tm cell state>>
+<<tm cell helpers>>
+<<tm popup text>>
+<<tm craft gfx>>
 @
+
+<<tm mul>>=
+        ORG $8956
+OVERLAY_ENTRY
+        SUBROUTINE
+        ; Overlay entry, then a small suite of fixed-point arithmetic helpers.
+        ;
+        ; Behavior:
+        ;   OVERLAY_ENTRY is the loader's jump-in point and immediately jumps to
+        ;   TM_ENTRY.  The rest are shift-add long-multiply / restoring-divide
+        ;   primitives the renderer and combat code lean on: MUL8 (A*ZP_M0 ->
+        ;   ZP_M2), MUL16 (ZP_PTR*A -> ZP_M2..ZP_M4), MUL16B (ZP_PTR*ZP_M0/M1
+        ;   -> ZP_M2..ZP_M5), and DIV16 (16-bit ZP_M2/M3 by ZP_M0/M1, quotient
+        ;   in ZP_M2/M3, remainder in ZP_M4/M5).  Each saves the decimal flag
+        ;   and forces binary mode, so callers in SED mode stay safe.
+        ;
+        ; Modifies:
+        ;   ZP_M0..ZP_M5, ZP_MCNT, ZP_MREM
+        ; Clobbers: A
+        JMP TM_ENTRY
+MUL8
+        PHP
+        CLD
+        STA ZP_M0
+        LDA #$08
+        STA ZP_MCNT
+        LDA #$00
+        STA ZP_M2
+.L8965
+        LSR ZP_M0
+        BCC .L896C
+        CLC
+        ADC ZP_PTR
+.L896C
+        ROR
+        ROR ZP_M2
+        DEC ZP_MCNT
+        BNE .L8965
+        PLP
+        RTS
+MUL16
+        PHP
+        CLD
+        STA ZP_M0
+        LDA #$08
+        STA ZP_MCNT
+        LDA #$00
+        STA ZP_M3
+        STA ZP_M4
+.L8983
+        LSR ZP_M0
+        BCC .L8992
+        CLC
+        LDA ZP_M3
+        ADC ZP_PTR
+        STA ZP_M3
+        LDA ZP_M4
+        ADC ZP_PTR+1
+.L8992
+        ROR
+        STA ZP_M4
+        ROR ZP_M3
+        ROR ZP_M2
+        DEC ZP_MCNT
+        BNE .L8983
+        PLP
+        RTS
+MUL16B
+        PHP
+        CLD
+        STA ZP_M1
+        LDA #$10
+        STA ZP_MCNT
+        LDA #$00
+        STA ZP_M5
+        STA ZP_M4
+.L89AD
+        LSR ZP_M1
+        ROR ZP_M0
+        BCC .L89BE
+        LDA ZP_M4
+        CLC
+        ADC ZP_PTR
+        STA ZP_M4
+        LDA ZP_M5
+        ADC ZP_PTR+1
+.L89BE
+        ROR
+        STA ZP_M5
+        ROR ZP_M4
+        ROR ZP_M3
+        ROR ZP_M2
+        DEC ZP_MCNT
+        BNE .L89AD
+        PLP
+        RTS
+DIV16
+        STA ZP_M1
+        PHP
+        CLD
+        LDA #$10
+        STA ZP_MCNT
+        LDA #$00
+        STA ZP_M4
+        STA ZP_M5
+.L89DB
+        ASL ZP_M2
+        ROL ZP_M3
+        ROL ZP_M4
+        ROL ZP_M5
+        LDA ZP_M4
+        SEC
+        SBC ZP_M0
+        STA ZP_MREM
+        LDA ZP_M5
+        SBC ZP_M1
+        BCC .L89F8
+        INC ZP_M2
+        STA ZP_M5
+        LDA ZP_MREM
+        STA ZP_M4
+.L89F8
+        DEC ZP_MCNT
+        BNE .L89DB
+        PLP
+        RTS
+@ %def MUL8 MUL16 MUL16B DIV16
+
+<<tm bcd>>=
+        ORG $89FE
+BCD_DBL
+        SUBROUTINE
+        ; Binary-to-BCD conversion helpers for printing 16-bit numbers.
+        ;
+        ; Behavior:
+        ;   BCD_DBL doubles a packed-BCD byte; BIN2BCD16 converts the 16-bit
+        ;   value at (ZP_PTR) to packed BCD in place by repeated weighted adds
+        ;   from the BCD_WEIGHTS digit-weight table; BCD_FROM8 / BCD_FROM16 are
+        ;   the byte / word entry points using BCD_WEIGHTS2 and decimal-mode
+        ;   adds (BCD_W_HI / BCD_W_LO).  These are generic math support shared
+        ;   with the stats display.
+        ;
+        ; Modifies:
+        ;   ZP_M0..ZP_M3, and the word at (ZP_PTR) for the in-place converters
+        ; Clobbers: A, X, Y
+        PHP
+        CLD
+        PHA
+        AND #$0F
+        STA ZP_M0
+        PLA
+        AND #$F0
+        LSR
+        STA ZP_M1
+        LSR
+        LSR
+        ADC ZP_M1
+        ADC ZP_M0
+        PLP
+        RTS
+BIN2BCD16
+        PHP
+        CLD
+        STY ZP_MCNT
+        STX ZP_MREM
+        LDY #$00
+        STY ZP_M3
+        LDA (ZP_PTR),Y
+        JSR BCD_DBL
+        STA ZP_M2
+        INY
+        LDA (ZP_PTR),Y
+        DEY
+        PHA
+        JSR BCD_ADD_LO
+        PLA
+        INY
+        JSR BCD_ADD_HI
+        LDA ZP_M3
+        STA (ZP_PTR),Y
+        DEY
+        LDA ZP_M2
+        STA (ZP_PTR),Y
+        LDX ZP_MREM
+        LDY ZP_MCNT
+        PLP
+        RTS
+BCD_ADD_HI
+        LSR
+        LSR
+        LSR
+        LSR
+BCD_ADD_LO
+        AND #$0F
+        TAX
+.L8A47
+        DEX
+        BMI .L8A5C
+        CLC
+        LDA ZP_M2
+        ADC BCD_WEIGHTS,Y
+        STA ZP_M2
+        LDA ZP_M3
+        ADC BCD_WEIGHTS+2,Y
+        STA ZP_M3
+        JMP .L8A47
+.L8A5C
+        RTS
+BCD_WEIGHTS
+        HEX 64e80003
+BCD_FROM8
+        STY ZP_MCNT
+        STX ZP_MREM
+        LDY #$00
+        STY ZP_M2
+        LDA (ZP_PTR),Y
+        PHA
+        JSR BCD_W_LO
+        PLA
+        INY
+        JSR BCD_W_HI
+        DEY
+        LDA ZP_M2
+        STA (ZP_PTR),Y
+        LDX ZP_MREM
+        LDY ZP_MCNT
+        RTS
+BCD_FROM16
+        STY ZP_MCNT
+        STX ZP_MREM
+        LDY #$00
+        STY ZP_M2
+        STY ZP_M3
+        LDA (ZP_PTR),Y
+        PHA
+        JSR BCD_W_LO
+        PLA
+        INY
+        JSR BCD_W_HI
+        LDA (ZP_PTR),Y
+        PHA
+        INY
+        JSR BCD_W_LO
+        PLA
+        INY
+        JSR BCD_W_HI
+        LDY #$00
+        LDA ZP_M2
+        STA (ZP_PTR),Y
+        INY
+        LDA ZP_M3
+        STA (ZP_PTR),Y
+        LDX ZP_MREM
+        LDY ZP_MCNT
+        RTS
+BCD_W_HI
+        LSR
+        LSR
+        LSR
+        LSR
+BCD_W_LO
+        PHP
+        SED
+        AND #$0F
+        TAX
+.L8AB8
+        DEX
+        BMI .L8ACD
+        CLC
+        LDA ZP_M2
+        ADC BCD_WEIGHTS2,Y
+        STA ZP_M2
+        LDA ZP_M3
+        ADC BCD_WEIGHTS2+4,Y
+        STA ZP_M3
+        JMP .L8AB8
+.L8ACD
+        PLP
+        RTS
+BCD_WEIGHTS2
+        HEX 0116569600000240
+@ %def BCD_DBL BIN2BCD16 BCD_ADD_HI BCD_ADD_LO BCD_WEIGHTS BCD_FROM8
+@ %def BCD_FROM16 BCD_W_HI BCD_W_LO BCD_WEIGHTS2
+
+\subsection{Entering the craft}
+
+[[TM_ENTRY]] is where the loader lands. It arms the boss fight --- seeding
+[[GEM_HP]] to $1000$ and clearing [[CUR_MON]] --- draws the craft interior, and
+runs the framed intro narration that establishes the four gem sockets and the
+\textsc{launch} button.
+
+<<tm entry>>=
+        ORG $8AD7
+TM_ENTRY
+        SUBROUTINE
+        ; Endgame entry: arm Mondain's gem, draw the craft, run the intro.
+        ;
+        ; Behavior:
+        ;   Set GEM_HP <- #$03E8 (1000 = the gem-of-immortality hit points that
+        ;   gate Mondain's life) and CUR_MON <- #$00.  Build the interior scene
+        ;   (the .L9E95 / .L9E50 / .L9E6C renderer setup), print the framed
+        ;   intro narration ("Entering the craft... four holes marked R G B W
+        ;   ... a button marked LAUNCH ... press it!"), and draw the four
+        ;   colored gem-socket markers at x = $5E/$73/$88/$9D in colors
+        ;   5/1/6/7 (R/G/B/W) via the LA44B socket drawer.
+        ;
+        ; Modifies:
+        ;   GEM_HP, CUR_MON
+        ; Clobbers: A, X, Y
+        LDX #$E8
+        LDA #$03
+        STX GEM_HP
+        STA GEM_HP+1
+        LDA #$00
+        STA CUR_MON
+        LDA #$00
+        JSR SETUP_SHAPE
+        JSR SCENE_CLEAR
+        LDA #$00
+        LDY #$FF
+        JSR PLACE_SHAPE
+        JSR POPUP_TEXT_NF
+        DC.B "|",$7F,$03,"Entering the craft, thou dost|",$7F,$03,"remark upon four holes marked:|||",$7F,$0D,"R  G  B  W|| The proper gems fit in each hole.||",$7F,$05,"Further examination leads|",$7F,$06,"thee to two discoveries:||",$7F,$02,"There is a button marked LAUNCH,|",$7F,$04,"and thou art locked in, with|",$7F,$04,"nothing to do but press it!",0
+        LDX #$5E
+        LDA #$05
+        JSR DRAW_SOCKET
+        LDX #$73
+        LDA #$01
+        JSR DRAW_SOCKET
+        LDX #$88
+        LDA #$06
+        JSR DRAW_SOCKET
+        LDX #$9D
+        LDA #$07
+        JSR DRAW_SOCKET
+        JSR POPUP_REDRAW
+@ %def TM_ENTRY
+
+The launch sequence is pure narration: three framed panels carry the player
+from pressing the black \textsc{launch} button, through the journey ``through
+time,'' to coming ``face to face with the evil Mondain himself.'' Each panel is
+a \texttt{POPUP\_TEXT\_NF} call followed by [[POPUP_REDRAW]] and an
+[[MON_CV]] bump to step down the screen.
+
+<<tm launch>>=
+        ORG $8C25
+        INC MON_CV
+        JSR POPUP_TEXT_NF
+        DC.B "|||  As soon as thou hast pressed the|large black button, lights begin to| dance across the control screens.||",$7F,$02,"Generators shake the very floor|",$7F,$09,"beneath thy feet.|| The small craft begins to tremble|",$7F,$05,"and rattle as thy journey|",$7F,$07,"through time begins...",0
+        JSR POPUP_REDRAW
+        INC MON_CV
+        JSR POPUP_TEXT_NF
+        DC.B "|||||| After but a few moments thou dost| feel a strong magic pulling thee|",$7F,$09,"from thy craft...",0
+        JSR POPUP_REDRAW
+        INC MON_CV
+        JSR POPUP_TEXT_NF
+        DC.B "||||",$7F,$09,"...A moment later,|",$7F,$07,"thou art face to face|",$7F,$03,"with the evil Mondain himself!||||",$7F,$07,"Good luck, this is it!",0
+        JSR POPUP_REDRAW
+@
+
+With the narration done, the scene is built: Mondain and the Gem are placed as
+cells on the small interior grid (their positions cached in
+[[$B628]]/[[$B629]] and [[$B62A]]/[[$B62B]]), the victory flag at [[$95AB]] is
+cleared, and Mondain's starting sprite/frame are written into [[CRAFT_GFX]]$+6$
+and $+7$ before control falls into the turn loop.
+
+<<tm scene setup>>=
+        ORG $8E07
+        INC MON_CV
+        JSR CRAFT_REDRAW
+        LDA #$02
+        STA CRAFT_GFX+6
+        LDA #$03
+        STA CRAFT_GFX+7
+        LDA #$00
+        STA GEM_GONE
+        LDA #$05
+        LDY #$03
+        LDX #$05
+        JSR PROJECT_XY
+        LDA #$01
+        LDY #$05
+        JSR PLACE_SHAPE
+        LDY #$05
+        LDA CELL_COL,Y
+        CLC
+        ADC #$03
+        TAY
+        LDA #$03
+        STA CELL_STATE,Y
+        LDA #$04
+        STA ZP_PTR
+        LDA #$05
+        STA ZP_PTR+1
+        JSR CELL_PLACE
+        LDA #$10
+        STA TGT_X
+        LDA #$05
+        STA TGT_Y
+        JSR DRAW_MONDAIN
+        LDA #$0F
+        STA GEM_X
+        LDA #$05
+        STA GEM_Y
+        JSR DRAW_GEM
+@
+
+\subsection{The turn loop and command dispatch}
+
+[[MAIN_LOOP]] is the heart of the fight. It is a classic Ultima command loop:
+tick the scene, check for the player's death, wait (animating) for a key, and
+dispatch the command through a jump table. The dispatch is a self-modified
+\texttt{JSR}: the handler address is copied from [[DISPATCH_TBL]] over the
+operand at [[DISPATCH_JSR]] each turn.
+
+<<tm main loop>>=
+        ORG $8E5E
+MAIN_LOOP
+        SUBROUTINE
+        ; The combat turn loop: tick the scene, poll, dispatch a command.
+        ;
+        ; Behavior:
+        ;   Reset the stack and print the prompt, then TURN_TOP ticks the scene
+        ;   (SCENE_TICK), refreshes the stats, and checks for death -- food or
+        ;   hits at zero jumps to RESPAWN.  IDLE_POLL animates while waiting for
+        ;   a key; with no key it runs Mondain's turn (TURN_END + .L9BDF) and
+        ;   loops.  On a key, DISPATCH reads the command, copies its handler
+        ;   address from DISPATCH_TBL over the self-modified JSR operand
+        ;   (DISPATCH_JSR), calls it, clears the keyboard, and repeats.
+        ;
+        ; Modifies:
+        ;   DISPATCH_JSR (self-modified call target)
+        ; Clobbers: A, X, Y
+        LDX #$FF
+        TXS
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+TURN_TOP
+        JSR SCENE_TICK
+        JSR STATS_VALUES
+        LDA PLR_FOOD
+        ORA PLR_FOOD+1
+        BEQ .L8E7D
+        LDA PLR_HITS
+        ORA PLR_HITS+1
+        BNE .L8E80
+.L8E7D
+        JMP RESPAWN
+.L8E80
+        JSR IDLE_POLL
+        BNE DISPATCH
+        JSR TURN_END
+        JSR SCENE_REDRAW
+        JMP TURN_TOP
+DISPATCH
+        JSR GET_COMMAND
+        BCS MAIN_LOOP
+        LDA DISPATCH_TBL,X
+        STA DISPATCH_JSR
+        LDA DISPATCH_TBL+1,X
+        STA DISPATCH_JSR+1
+DISPATCH_JSR = *+1
+        JSR STALE_DISPATCH
+        JSR KBD_CLEAR
+        JMP MAIN_LOOP
+@ %def MAIN_LOOP TURN_TOP DISPATCH
+
+[[DISPATCH_TBL]] is the command jump table, indexed by twice the command code.
+Most commands route to [[QUERY_MARK]] (the ``Huh?'' beep); the live ones are
+the four moves, Pass, Attack, Cast, Get, Inform, Quit, Ready, Steal, Transact,
+Ztats, and the two sound-toggle controls.
+
+<<tm dispatch tbl>>=
+        ORG $8EA8
+DISPATCH_TBL
+        HEX b896be96c496ca96
+        HEX 01984588dc8e0784
+        HEX fb91078407840784
+        HEX d6940784ac950784
+        HEX 5b8807843f965496
+        HEX 5d968a9607840784
+        HEX 0784ad96
+@ %def DISPATCH_TBL
+
+\subsection{Attacking Mondain and his gem}
+
+[[TM_ATTACK]] is the melee strike --- the bread-and-butter way to drain
+[[GEM_HP]]. It checks for a sword-class weapon, makes the player face Mondain,
+rolls to hit, and on success subtracts the damage from the gem. The interesting
+part is the threshold logic at the bottom: as the gem crosses $500$ and then
+$0$, Mondain's sprite changes and, once the gem is at zero \emph{and} the
+victory flag is set, it runs the entire win sequence inline --- the
+``THOU ART VICTORIOUS!'' popup, loading the \texttt{NIF} screen, hooking
+Control-RESET, a screen-melt dissolve, and the [[STR_RESTART]] prompt --- then
+hangs waiting for the reset.
+
+<<tm attack>>=
+        ORG $8EDC
+TM_ATTACK
+        SUBROUTINE
+        ; ATTACK command: strike Mondain (or his gem) in melee.
+        ;
+        ; Behavior:
+        ;   Require a sword-class weapon (READY_WEAPON = 4 or 8..10, else fall
+        ;   to QUERY_MARK "Huh?").  Pick a direction with .L916F and demand it
+        ;   face Mondain.  Hit chance gates PLR_AGI against RND; on a hit,
+        ;   damage = weapon*3 + PLR_STR (via RND_MOD) and DMG_AMT is subtracted
+        ;   from the 16-bit GEM_HP.  As GEM_HP crosses 500 then 0 Mondain's
+        ;   sprite advances (CRAFT_GFX+6 -> 7 then 8) and CUR_MON steps.  When
+        ;   GEM_HP reaches 0 with the $95AB victory flag set, run the
+        ;   "THOU ART VICTORIOUS!" win sequence (NIF screen, Control-RESET
+        ;   hook, screen-melt, STR_RESTART, hang); if the gem was never
+        ;   destroyed, only " ...or is he?" -- the gem-destroy gate.
+        ;
+        ; Modifies:
+        ;   GEM_HP, CUR_MON, DMG_AMT, CRAFT_GFX+6, CRAFT_GFX+10/+11
+        ; Clobbers: A, X, Y
+        LDA CUR_MON
+        BNE .L8EE4
+        INC CUR_MON
+.L8EE4
+        JSR MSG_PRINT
+        DC.B "with ",0
+        LDX READY_WEAPON
+        JSR STR_NTH
+        SEC
+        DC.B $74
+        LDA READY_WEAPON
+        CMP #$04
+        BEQ .L8F04
+        CMP #$08
+        BCC .L8F07
+        CMP #$0B
+        BCS .L8F07
+.L8F04
+        JMP QUERY_MARK
+.L8F07
+        JSR MSG_PRINT
+        DC.B $BA,$A0,0
+        JSR PICK_DIR
+        BEQ .L8F19
+        CPX #$02
+        BEQ .L8F22
+        JMP .L8F73
+.L8F19
+        JSR MSG_PRINT
+        DC.B "pass",0
+        RTS
+.L8F22
+        LDA #$06
+        JSR SFX_PLAY
+        LDX #$01
+        LDY #$05
+        LDA READY_WEAPON
+        CMP #$07
+        BEQ .L8F3A
+        CMP #$0C
+        BEQ .L8F3A
+        CMP #$0E
+        BCC .L8F3E
+.L8F3A
+        LDX #$04
+        LDY #$00
+.L8F3E
+        STX CRAFT_GFX+10
+        STY CRAFT_GFX+11
+        LDA #$80
+        CLC
+        ADC PLR_AGI
+        STA ZP_C3
+        JSR RND
+        CMP ZP_C3
+        BCS .L8F73
+        LDA READY_WEAPON
+        ASL
+        CLC
+        ADC READY_WEAPON
+        CLC
+        ADC PLR_STR
+        JSR RND_MOD
+        BNE .L8F66
+        LDA #$01
+.L8F66
+        STA DMG_AMT
+        JSR CELL_DISTANCE
+        CMP CRAFT_GFX+10
+        BCC HIT_RESOLVE
+        BEQ HIT_RESOLVE
+.L8F73
+        JSR MSG_PRINT
+        DC.B "~Missed!",0
+        RTS
+HIT_RESOLVE
+        JSR MSG_PRINT
+        DC.B "~Hit Mondain! ",0
+        LDA DMG_AMT
+        JSR PRINT_NUM8
+        JSR MSG_PRINT
+        DC.B " damage",0
+        LDA #$02
+        JSR SFX_PLAY
+        SEC
+        LDA GEM_HP
+        SBC DMG_AMT
+        STA GEM_HP
+        LDA GEM_HP+1
+        SBC #$00
+        STA GEM_HP+1
+        LDA GEM_HP+1
+        BMI .L8FEE
+        CMP #$01
+        BNE .L8FC8
+        LDA GEM_HP
+        CMP #$F4
+.L8FC8
+        BCS .L8FED
+        LDA GEM_HP+1
+        BMI .L8FEE
+        BNE .L8FD6
+        LDA GEM_HP
+        BEQ .L8FEE
+.L8FD6
+        LDA CRAFT_GFX+6
+        CMP #$07
+        BEQ .L8FED
+        JSR ERASE_MONDAIN
+        LDA #$07
+        STA CRAFT_GFX+6
+        LDA #$02
+        STA CUR_MON
+        JSR DRAW_MONDAIN
+.L8FED
+        RTS
+.L8FEE
+        LDA CUR_MON
+        BMI .L8FED
+        JSR ERASE_MONDAIN
+        LDA #$08
+        STA CRAFT_GFX+6
+        LDA #$FF
+        STA CUR_MON
+        JSR DRAW_MONDAIN
+        LDA GEM_HP+1
+        BPL .L8FED
+        JSR MSG_PRINT
+        DC.B "~Mondain is dead!",0
+        LDA GEM_GONE
+        BNE TM_VICTORY
+        JSR MSG_PRINT
+        DC.B " ...or is he?",0
+        RTS
+TM_VICTORY
+        JSR POPUP_TEXT
+        DC.B "||||",$7F,$05,"THOU ART VICTORIOUS!",0
+.L9052
+        JSR MLIB_BLOAD
+        DC.B "NIF",0
+        JSR DISK_PROMPT
+        BCS .L9052
+        LDA QUIT_VEC
+        STA $03F2
+        LDA $8955
+        STA $03F3
+        EOR #$A5
+        STA $03F4
+        LDY #$00
+        LDX #$1F
+.L9073
+        LDA HGR2,Y
+        STA GAME_VARS,Y
+        LDA #$00
+        STA HGR2,Y
+        INY
+        BNE .L9073
+        INC $9075
+        INC $9078
+        INC $907D
+        DEX
+        BPL .L9073
+        STX SFX_ON
+        LDA #$03
+        STA $6D
+.L9094
+        LDA #$0A
+        JSR SFX_PLAY
+        DEC $6D
+        BNE .L9094
+        JSR CELL_INDEX
+        LDA #$60
+        STA ZP_PAGE_TGL
+        STA ZP_PAGE_XOR
+        LDA #$C0
+        STA $6D
+.L90AA
+        LDX #$BF
+        LDA ZP_PAGE_XOR
+        STA $90D3
+        EOR #$60
+        STA $90C5
+        EOR #$5F
+        STA $90EC
+.L90BB
+        LDA HGR_ROW_LO,X
+        STA $90DA
+        LDA HGR_ROW_HI,X
+        EOR #$00
+        STA $90DB
+        LDA $11FF,X
+        STA $90DD
+        LDA $12BF,X
+        EOR #$00
+        STA $90DE
+        LDY #$27
+.L90D9
+        LDA HGR2,Y
+        STA HGR1,Y
+        DEY
+        BPL .L90D9
+        DEX
+        BNE .L90BB
+        LDY #$27
+.L90E7
+        LDA GAME_VARS,Y
+        STA $5FD0,Y
+        DEY
+        BPL .L90E7
+        LDA $90E8
+        CLC
+        ADC #$28
+        STA $90E8
+        BCC .L90FE
+        INC $90E9
+.L90FE
+        JSR PAGE_FLIP
+        BIT KBDSTRB
+        DEC $6D
+        BNE .L90AA
+        JSR WIN_FULL
+        STA ZP_PAGE_TGL
+        JSR CLR_WINDOW
+        LDA #$0B
+        STA MON_CV
+        LDA #$22
+        STA MON_CH
+        LDX #$1F
+.L911A
+        LDA $914F,X
+        JSR FONT_DRAW
+        DEC MON_CH
+        DEX
+        BNE .L911A
+        STX $90E8
+        LDA #$60
+        STA $90E9
+        STA ZP_PAGE_TGL
+.L912F
+        BIT KBDSTRB
+.L9132
+        LDA KBD
+        BPL .L9132
+        JSR PAGE_FLIP
+        BIT KBDSTRB
+        LDX #$14
+.L913F
+        JSR VDELAY
+        BIT KBD
+        BMI .L914A
+        DEX
+        BNE .L913F
+.L914A
+        JSR PAGE_FLIP
+        JMP .L912F
+STR_RESTART
+        HEX 507265737320436f
+        HEX 6e74726f6c2d5245
+        HEX 53455420746f2072
+        HEX 6573746172742e
+PICK_DIR
+        JSR IDLE_POLL
+        BNE .L9177
+        LDX #$00
+        RTS
+.L9177
+        JSR KEY_ALIAS
+        CMP #$0B
+        BNE .L919A
+        JSR MSG_PRINT
+        DC.B "North",0
+        LDY #$00
+        LDA ZP_PTR
+        CMP TGT_X
+        BNE .L91B9
+        LDA ZP_PTR+1
+        CMP TGT_Y
+        BCC .L91B9
+        LDX #$02
+        RTS
+.L919A
+        CMP #$15
+        BNE .L91BC
+        JSR MSG_PRINT
+        DC.B "East",0
+        LDY #$01
+        LDA ZP_PTR+1
+        CMP TGT_Y
+        BNE .L91B9
+        LDA ZP_PTR
+        CMP TGT_X
+        BCS .L91B9
+        LDX #$02
+        RTS
+.L91B9
+        LDX #$01
+        RTS
+.L91BC
+        CMP #$0A
+        BNE .L91DC
+        JSR MSG_PRINT
+        DC.B "South",0
+        LDY #$02
+        LDA ZP_PTR
+        CMP TGT_X
+        BNE .L91B9
+        LDA ZP_PTR+1
+        CMP TGT_Y
+        BCS .L91B9
+        LDX #$02
+        RTS
+.L91DC
+        CMP #$08
+        BNE PICK_DIR
+        JSR MSG_PRINT
+        DC.B "West",0
+        LDY #$03
+        LDA ZP_PTR+1
+        CMP TGT_Y
+        BNE .L91B9
+        LDA ZP_PTR
+        CMP TGT_X
+        BCC .L91B9
+        LDX #$02
+        RTS
+@ %def TM_ATTACK HIT_RESOLVE TM_VICTORY PICK_DIR STR_RESTART
+
+\subsection{Spells}
+
+[[TM_CAST]] mirrors the attack path for magic: it validates the readied spell
+against [[OWNED_SPELLS]] and dispatches through [[TM_SPELL_TBL]] via another
+self-modified jump ([[SPELL_JMP]]).
+
+<<tm cast>>=
+        ORG $91FB
+TM_CAST
+        SUBROUTINE
+        ; CAST command: dispatch the readied spell.
+        ;
+        ; Behavior:
+        ;   Print the spell name (PRINT_SPELL), refuse a used-up spell
+        ;   ("Thou hast used up that spell!" via OWNED_SPELLS), then index
+        ;   TM_SPELL_TBL by 2*READY_SPELL and copy the handler address over the
+        ;   self-modified JMP operand (SPELL_JMP) before jumping to it.
+        ;
+        ; Modifies:
+        ;   SPELL_JMP (self-modified jump target), CUR_MON
+        ; Clobbers: A, X, Y
+        JSR PRINT_SPELL
+        LDX READY_SPELL
+        BEQ .L922D
+        LDA OWNED_SPELLS,X
+        BNE .L922D
+        JSR MSG_PRINT
+        DC.B "~Thou hast used up that spell!",0
+        JMP BEEP_CMD
+.L922D
+        LDA CUR_MON
+        BNE .L9235
+        INC CUR_MON
+.L9235
+        LDA READY_SPELL
+        ASL
+        TAY
+        LDA TM_SPELL_TBL,Y
+        STA SPELL_JMP
+        LDA TM_SPELL_TBL+1,Y
+        STA SPELL_JMP+1
+SPELL_JMP = *+1
+        JMP SPELL_PRAYER
+@ %def TM_CAST
+
+[[TM_SPELL_TBL]] holds the eleven spell-handler addresses indexed by
+[[READY_SPELL]]; most point at the not-applicable tail, with magic missile and
+a handful of grid effects being the spells that actually do something here.
+
+<<tm spell tbl>>=
+        ORG $9249
+TM_SPELL_TBL
+        HEX ce92b792b792d992
+        HEX b792b792b7924a93
+        HEX 9293e8937594
+@ %def TM_SPELL_TBL
+
+<<tm spell helpers>>=
+        ORG $925F
+CAST_CHECK
+        SUBROUTINE
+        ; Cast-success check and the shared failure / not-applicable tails.
+        ;
+        ; Behavior:
+        ;   .L925F consumes one charge of the readied spell (OWNED_SPELLS),
+        ;   then decides success: a Cleric (PLR_CLASS = 2) auto-passes, others
+        ;   roll against RND; range is gated through .L9D5C and PLR_INT is
+        ;   rolled against RND.  Carry clear = success, set = failure.  .L929F
+        ;   prints " failed!" and beeps; the fall-through entries print
+        ;   "Not applicable!" / route to NO_EFFECT_MSG for the inert spells.
+        ;
+        ; Outputs:
+        ;   Carry clear on success, set on failure.
+        ; Clobbers: A, X, Y
+        LDX READY_SPELL
+        BEQ .L9267
+        DEC OWNED_SPELLS,X
+.L9267
+        LDA PLR_CLASS
+        CMP #$02
+        BEQ .L9275
+        LDA #$03
+        JSR RND_MOD
+        BEQ .L929D
+.L9275
+        LDA READY_SPELL
+        CMP #$08
+        BEQ .L9287
+        CMP #$09
+        BEQ .L9287
+        JSR CELL_DISTANCE
+        CMP #$07
+        BCS .L929D
+.L9287
+        LDA #$0A
+        JSR SFX_PLAY
+        LDA PLR_INT
+        CLC
+        ADC #$80
+        STA ZP_C3
+        JSR RND
+        CMP ZP_C3
+        BCS .L929D
+        CLC
+        RTS
+.L929D
+        SEC
+        RTS
+SPELL_FAILED
+        LDA MON_CH
+        CMP #$16
+        BCC .L92A8
+        JSR NEWLINE
+.L92A8
+        JSR MSG_PRINT
+        DC.B " failed!",0
+        JMP BEEP_CMD
+        JSR MSG_PRINT
+        DC.B "~Not applicable!",0
+        JMP BEEP_CMD
+SPELL_PRAYER
+        JSR CAST_CHECK
+        BCC .L92D6
+        JMP SPELL_FAILED
+.L92D6
+        JMP NO_EFFECT_MSG
+@ %def CAST_CHECK SPELL_FAILED SPELL_PRAYER
+
+The one offensive spell that matters against the gem is magic missile: it rolls
+damage from [[PLR_INT]], scales it by the readied weapon class, and feeds the
+result into the same hit-resolution code [[TM_ATTACK]] uses.
+
+<<tm spell missile>>=
+        ORG $92D9
+        JSR MSG_PRINT
+        DC.B ": ",0
+        JSR PICK_DIR
+        BNE .L92ED
+        JSR MSG_PRINT
+        DC.B "pass",0
+        RTS
+.L92ED
+        SUBROUTINE
+        ; Magic-missile spell aimed at Mondain.
+        ;
+        ; Behavior:
+        ;   Prompt for a direction (.L916F); on a valid cast (.L925F) and a
+        ;   facing of Mondain, roll base damage from PLR_INT and scale it by
+        ;   the readied weapon class (8 -> 1.5x, 9 -> 2x, 10..11 -> 3x), store
+        ;   DMG_AMT, then jump into the shared hit-resolution path (.L8F80,
+        ;   the "Hit Mondain!" / GEM_HP-drain code).
+        ;
+        ; Modifies:
+        ;   DMG_AMT
+        ; Clobbers: A, X, Y
+        TXA
+        PHA
+        JSR CAST_CHECK
+        BCC .L92F8
+        PLA
+        JMP SPELL_FAILED
+.L92F8
+        PLA
+        CMP #$02
+        BEQ .L930A
+        JSR MSG_PRINT
+        DC.B "~Missed!",0
+        RTS
+.L930A
+        LDA PLR_INT
+        JSR RND_MOD
+        BNE .L9314
+        LDA #$01
+.L9314
+        STA DMG_AMT
+        LDA READY_WEAPON
+        CMP #$08
+        BNE .L9329
+        LDA DMG_AMT
+        LSR
+        CLC
+        ADC DMG_AMT
+        JMP .L9344
+.L9329
+        CMP #$09
+        BNE .L9334
+        LDA DMG_AMT
+        ASL
+        JMP .L9344
+.L9334
+        CMP #$0A
+        BCC .L9347
+        CMP #$0C
+        BCS .L9347
+        LDA DMG_AMT
+        ASL
+        CLC
+        ADC DMG_AMT
+.L9344
+        STA DMG_AMT
+.L9347
+        JMP HIT_RESOLVE
+@
+
+<<tm spell band2>>=
+        ORG $934A
+SPELL_STATUS
+        SUBROUTINE
+        ; Spells 7/8/9: place, summon, and clear cells on the interior grid.
+        ;
+        ; Behavior:
+        ;   .L934A picks a random empty cell and writes a force-field marker
+        ;   into CELL_STATE there (re-rolling until empty), drawing it into the
+        ;   scene.  The two later entries take a direction (.L916F), resolve a
+        ;   target cell offset (.L9436 against the projection tables), and
+        ;   either set or clear that CELL_STATE entry with the matching sprite,
+        ;   printing "Done".
+        ;
+        ; Modifies:
+        ;   CELL_STATE, ZP_PTR, $B62C/$B62D (target cell)
+        ; Clobbers: A, X, Y
+        JSR CAST_CHECK
+        BCC .L9352
+        JMP SPELL_FAILED
+.L9352
+        LDA #$13
+        JSR RND_MOD
+        STA DST_X
+        INC DST_X
+        LDA #$09
+        JSR RND_MOD
+        STA DST_Y
+        INC DST_Y
+        LDY DST_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC DST_X
+        TAY
+        LDA CELL_STATE,Y
+        BNE SPELL_STATUS
+        JSR CELL_CLEAR
+        LDA DST_X
+        STA ZP_PTR
+        LDA DST_Y
+        STA ZP_PTR+1
+        JSR CELL_PLACE
+        JSR MSG_PRINT
+        DC.B "~Done",0
+        RTS
+        JSR MSG_PRINT
+        DC.B ": ",0
+        JSR PICK_DIR
+        BNE .L93A6
+        JSR MSG_PRINT
+        DC.B "pass",0
+        RTS
+.L93A6
+        TYA
+        PHA
+        JSR CAST_CHECK
+        PLA
+        BCC .L93B1
+        JMP SPELL_FAILED
+.L93B1
+        TAY
+        JSR .L9436
+        BEQ .L93BA
+        JMP SPELL_FAILED
+.L93BA
+        LDA #$04
+        LDY DST_X
+        LDX DST_Y
+        JSR PROJECT_XY
+        LDX #$04
+        LDA #$00
+        LDY #$01
+        JSR PLOT_VERTEX2
+        LDY DST_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC DST_X
+        TAY
+        LDA #$02
+        STA CELL_STATE,Y
+        JSR MSG_PRINT
+        DC.B "~Done",0
+        RTS
+        JSR MSG_PRINT
+        DC.B ": ",0
+        JSR PICK_DIR
+        BNE .L93FC
+        JSR MSG_PRINT
+        DC.B "pass",0
+        RTS
+.L93FC
+        TYA
+        PHA
+        JSR CAST_CHECK
+        BCC .L9407
+        PLA
+        JMP SPELL_FAILED
+.L9407
+        PLA
+        TAY
+        JSR .L9436
+        CMP #$02
+        BEQ .L9413
+        JMP SPELL_FAILED
+.L9413
+        LDY DST_X
+        LDX DST_Y
+        JSR PROJECT_CELL
+        LDY DST_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC DST_X
+        TAY
+        LDA #$00
+        STA CELL_STATE,Y
+        JSR MSG_PRINT
+        DC.B "~Done",0
+        RTS
+.L9436
+        LDA $946D,Y
+        STA ZP_M2
+        LDA $9471,Y
+        STA ZP_M3
+        BMI .L9448
+        CLC
+        ADC ZP_PTR+1
+        JMP .L9451
+.L9448
+        SEC
+        AND #$7F
+        STA ZP_C3
+        LDA ZP_PTR+1
+        SBC ZP_C3
+.L9451
+        STA DST_Y
+        LDA ZP_M2
+        BMI .L945E
+        CLC
+        ADC ZP_PTR
+        JMP .L9467
+.L945E
+        SEC
+        AND #$7F
+        STA ZP_C3
+        LDA ZP_PTR
+        SBC ZP_C3
+.L9467
+        STA DST_X
+        JMP CELL_LOOKUP
+        BRK
+        ORA (ZP_PTR,X)
+        STA ($81,X)
+        BRK
+        ORA (ZP_PTR,X)
+@ %def SPELL_STATUS
+
+The kill spell is a deliberate trap. Casting ``\texttt{INTERFICIO-NUNC!}'' at
+Mondain --- the obvious thing to try --- backfires: it prints that the spell
+makes him \emph{stronger} and doubles the remaining [[GEM_HP]]. The designers
+are steering the player away from the brute-force solution and toward
+destroying the gem.
+
+<<tm spell kill>>=
+        ORG $9475
+        JSR CAST_CHECK
+        BCC .L947D
+        JMP SPELL_FAILED
+.L947D
+        SUBROUTINE
+        ; Spell 10, "INTERFICIO-NUNC!" -- the kill spell that backfires.
+        ;
+        ; Behavior:
+        ;   A designed trap: announce the incantation, print "The spell doth
+        ;   seem to make him stronger!", then DOUBLE the remaining GEM_HP
+        ;   (16-bit add of GEM_HP to itself) instead of harming Mondain --
+        ;   unless the gem is already destroyed ($7EF5 negative), in which case
+        ;   it does nothing.
+        ;
+        ; Modifies:
+        ;   GEM_HP
+        ; Clobbers: A
+        JSR MSG_PRINT
+        DC.B "~",$22,"INTERFICIO-NUNC!",$22,"~The spell doth seem~to make him stronger!",0
+        LDA GEM_HP+1
+        BMI .L94D5
+        LDA GEM_HP
+        ADC GEM_HP
+        STA GEM_HP
+        LDA GEM_HP+1
+        ADC GEM_HP+1
+        STA GEM_HP+1
+.L94D5
+        RTS
+@
+
+\subsection{Destroying the gem --- the win gate}
+
+[[CMD_GET]] is the true solution to the puzzle. Standing adjacent to the gem
+cell and issuing \texttt{Get} destroys it: the victory flag [[$95AB]] is set
+(so a later kill actually wins), Mondain's aura is described as diminished, and
+the blast costs the player a chunk of [[PLR_HITS]]. Only after this does
+reducing [[GEM_HP]] to zero in [[TM_ATTACK]] produce victory rather than
+`` \ldots or is he?''
+
+<<tm get>>=
+        ORG $94D6
+TM_GET
+        SUBROUTINE
+        ; GET command: destroy Mondain's gem directly -- the true win gate.
+        ;
+        ; Behavior:
+        ;   If the gem still stands ($95AB clear) and the player stands
+        ;   adjacent to its cell (distance < 2 via .LA26E), set the victory
+        ;   flag (INC $95AB), clear the gem sprite, and compute self-damage of
+        ;   about 3/8 of PLR_HITS (the blast hurts the player), subtracting it
+        ;   from PLR_HITS.  Print "The Gem is DESTROYED!"; if Mondain is
+        ;   already dying (CUR_MON negative) chain straight into the victory
+        ;   sequence.  Otherwise "...'tis nothing here!?!".
+        ;
+        ; Modifies:
+        ;   $95AB (victory flag), PLR_HITS, DMG_AMT, CELL_STATE
+        ; Clobbers: A, X, Y
+        LDA GEM_GONE
+        BNE .L94FE
+        LDA CUR_MON
+        BNE .L94E3
+        INC CUR_MON
+.L94E3
+        LDA ZP_PTR
+        STA ZP_M4
+        LDA ZP_PTR+1
+        STA ZP_M5
+        LDA GEM_X
+        STA ZP_MCNT
+        LDA GEM_Y
+        STA ZP_MREM
+        JSR COORD_SUB
+        LDA ZP_C3
+        CMP #$02
+        BCC .L951A
+.L94FE
+        JSR MSG_PRINT
+        DC.B "...'tis nothing here!?!",0
+        RTS
+.L951A
+        INC GEM_GONE
+        JSR DRAW_OBJ3
+        LDA PLR_HITS+1
+        LSR
+        STA ZP_C4
+        LDA PLR_HITS
+        ROR
+        STA ZP_C3
+        LSR ZP_C4
+        ROR ZP_C3
+        LDA ZP_C3
+        ASL
+        STA DMG_AMT
+        LDA ZP_C4
+        ROL
+        STA DMG_AMT+1
+        CLC
+        LDA DMG_AMT
+        ADC ZP_C3
+        STA DMG_AMT
+        LDA DMG_AMT+1
+        ADC ZP_C4
+        STA DMG_AMT+1
+        LDA #$05
+        STA ZP_C3
+.L9551
+        LDA #$02
+        JSR SFX_PLAY
+        DEC ZP_C3
+        BPL .L9551
+        JSR MSG_PRINT
+        DC.B "...",0
+        LDA DMG_AMT+1
+        LDX DMG_AMT
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " damage",0
+        SEC
+        LDA PLR_HITS
+        SBC DMG_AMT
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC DMG_AMT+1
+        STA PLR_HITS+1
+        JSR MSG_PRINT
+        DC.B "~The Gem is DESTROYED!",0
+        LDA CUR_MON
+        BPL .L95AA
+        JMP TM_VICTORY
+.L95AA
+        RTS
+GEM_GONE
+        HEX 00
+@ %def TM_GET GEM_GONE
+
+<<tm inform>>=
+        ORG $95AC
+TM_INFORM
+        SUBROUTINE
+        ; INFORM command: describe the scene to the player.
+        ;
+        ; Behavior:
+        ;   If the gem is destroyed ($95AB set) print "Mondain's magical aura
+        ;   doth seem substantially diminished in the absence of the gem.";
+        ;   otherwise print "...it looks as if he is creating the evil gem?!"
+        ;   (the high-bit text is the engine's inverse-video encoding).
+        ;
+        ; Clobbers: A, X, Y
+        LDA GEM_GONE
+        BEQ .L960B
+        JSR MSG_PRINT
+        DC.B "~",$CD,$EF,$EE,$E4,$E1,$E9,$EE,$A7,$F3,$A0,$ED,$E1,$E7,$E9,$E3,$E1,$EC,$A0,$E1,$F5,$F2,$E1,$A0,$E4,$EF,$F4,$E8,"~",$F3,$E5,$E5,$ED,$A0,$F3,$F5,$E2,$F3,$F4,$E1,$EE,$F4,$E9,$E1,$EC,$EC,$F9,$A0,$E4,$E9,$ED,$E9,$EE,$E9,$F3,$E8,$E5,$E4,"~",$E9,$EE,$A0,$F4,$E8,$E5,$A0,$E1,$E2,$F3,$E5,$EE,$E3,$E5,$A0,$EF,$E6,$A0,$F4,$E8,$E5,$A0,$E7,$E5,$ED,$AE,0
+        RTS
+.L960B
+        JSR MSG_PRINT
+        DC.B $AE,$AE,$AE,$E9,$F4,$A0,$EC,$EF,$EF,$EB,$F3,"~",$E1,$F3,$A0,$E9,$E6,$A0,$E8,$E5,$A0,$E9,$F3,$A0,$E3,$F2,$E5,$E1,$F4,$E9,$EE,$E7,$A0,$F4,$E8,$E5,$A0,$E5,$F6,$E9,$EC,"~",$E7,$E5,$ED,$BF,$A1,0
+        RTS
+@ %def TM_INFORM
+
+<<tm misc cmds>>=
+        ORG $963F
+TM_QUIT
+        SUBROUTINE
+        ; The short stub command handlers: Quit, Ready, Steal, Transact, Ztats.
+        ;
+        ; Behavior:
+        ;   Quit prints "is not allowed!" (no escape from the final battle);
+        ;   Ready re-equips via READY_CMD then redraws; Steal and Transact are
+        ;   refused in-character ("he's watching" / "Mondain will not
+        ;   negotiate!"); Ztats shows the inventory (INVENTORY) and redraws the
+        ;   craft.  Each is a separate entry reached through DISPATCH_TBL.
+        ;
+        ; Clobbers: A, X, Y
+        JSR MSG_PRINT
+        DC.B "~",$E9,$F3,$A0,$EE,$EF,$F4,$A0,$E1,$EC,$EC,$EF,$F7,$E5,$E4,$A1,0
+        RTS
+TM_READY
+        JSR IDLE_POLL
+        JSR READY_CMD
+        JMP CRAFT_REDRAW
+TM_STEAL
+        JSR MSG_PRINT
+        DC.B $AE,$AE,$AE,$E8,$E5,$A7,$F3,$A0,$F7,$E1,$F4,$E3,$E8,$E9,$EE,$E7,$AC,"~",$F4,$E8,$E1,$F4,$A0,$F7,$EF,$F5,$EC,$E4,$A0,$E2,$E5,$A0,$E6,$EF,$EF,$EC,$E9,$F3,$E8,$A1,0
+        RTS
+TM_TRANSACT
+        JSR MSG_PRINT
+        DC.B $AE,$AE,$AE,$CD,$EF,$EE,$E4,$E1,$E9,$EE,$A0,$F7,$E9,$EC,$EC,"~",$EE,$EF,$F4,$A0,$EE,$E5,$E7,$EF,$F4,$E9,$E1,$F4,$E5,$A1,0
+        RTS
+TM_ZTATS
+        JSR INVENTORY
+        LDA #$00
+        STA $8249
+        JMP CRAFT_REDRAW
+@ %def TM_QUIT TM_READY TM_STEAL TM_TRANSACT TM_ZTATS
+
+\subsection{Movement on the interior grid}
+
+The four [[CMD_MOVE_N]]/\texttt{S}/\texttt{E}/\texttt{W} handlers all funnel
+into one step routine. It resolves the destination cell, reads its
+[[CELL_STATE]], and acts: an empty cell is walked into, a force field prints
+``Blocked!'', and anything else burns the player for a tenth of their
+[[PLR_HITS]] with a full-screen XOR flash. Walking next to Mondain wakes him
+([[CUR_MON]] advances).
+
+<<tm move>>=
+        ORG $96B8
+TM_MOVE_N
+        SUBROUTINE
+        ; The four MOVE handlers (N/S/E/W) and the shared step routine.
+        ;
+        ; Behavior:
+        ;   Each direction entry loads a signed (dx,dy) and falls into .L96CE,
+        ;   which computes the destination cell = player pos +/- dir and reads
+        ;   CELL_STATE (CELL_COL[row] base + column).  An empty cell walks the
+        ;   player there (.L97BA); a force field ($03) prints "Blocked!"; any
+        ;   other obstacle "Burned!" -- a field zaps the player for PLR_HITS/10
+        ;   points with an XOR screen-flash (.L9791).  Stepping adjacent to
+        ;   Mondain advances CUR_MON.
+        ;
+        ; Modifies:
+        ;   ZP_PTR (player cell), PLR_HITS, CELL_STATE, CUR_MON
+        ; Clobbers: A, X, Y
+        LDX #$00
+        LDY #$81
+        BNE .L96CE
+TM_MOVE_S
+        LDX #$00
+        LDY #$01
+        BNE .L96CE
+TM_MOVE_E
+        LDX #$01
+        LDY #$00
+        BEQ .L96CE
+TM_MOVE_W
+        LDX #$81
+        LDY #$00
+.L96CE
+        STX ZP_M2
+        STY ZP_M3
+        LDA ZP_M2
+        BMI .L96DF
+        CLC
+        ADC ZP_PTR
+        STA DST_X
+        JMP .L96EB
+.L96DF
+        SEC
+        AND #$7F
+        STA ZP_C3
+        LDA ZP_PTR
+        SBC ZP_C3
+        STA DST_X
+.L96EB
+        LDA ZP_M3
+        BMI .L96F8
+        CLC
+        ADC ZP_PTR+1
+        STA DST_Y
+        JMP .L9704
+.L96F8
+        SEC
+        AND #$7F
+        STA ZP_C3
+        LDA ZP_PTR+1
+        SBC ZP_C3
+        STA DST_Y
+.L9704
+        LDY DST_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC DST_X
+        TAY
+        LDA CELL_STATE,Y
+        BNE .L9717
+        JMP .L97BA
+.L9717
+        CMP #$03
+        BNE .L9735
+.L971B
+        JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "Blocked!",0
+        JSR CLR_EOL
+        LDA #$0E
+        JSR SFX_PLAY
+        JMP TM_PASS
+.L9735
+        JSR .L971B
+        JSR SCREEN_FLASH
+        JSR MSG_PRINT
+        DC.B "~Burned! ",0
+        LDA PLR_HITS
+        STA ZP_M2
+        LDA PLR_HITS+1
+        STA ZP_M3
+        LDA #$0A
+        STA ZP_M0
+        LDA #$00
+        JSR DIV16
+        LDA ZP_M3
+        STA SCENE_T1
+        LDA ZP_M2
+        STA SCENE_T0
+        SEC
+        LDA PLR_HITS
+        SBC SCENE_T0
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC SCENE_T1
+        STA PLR_HITS+1
+        LDX SCENE_T0
+        LDA SCENE_T1
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " points",0
+        LDA #$02
+        JSR SFX_PLAY
+SCREEN_FLASH
+        LDX #$08
+.L9793
+        LDA HGR_ROW_LO,X
+        STA $97A8
+        STA $97AD
+        LDA HGR_ROW_HI,X
+        STA $97A9
+        STA $97AE
+        LDY #$26
+.L97A7
+        LDA HGR1,Y
+        EOR #$7F
+        STA HGR1,Y
+        DEY
+        BNE .L97A7
+        INX
+        CPX #$98
+        BCC .L9793
+        JMP FRAME_SYNC
+.L97BA
+        JSR CELL_CLEAR
+        LDA DST_X
+        STA ZP_PTR
+        LDA DST_Y
+        STA ZP_PTR+1
+        JSR CELL_PLACE
+        LDA #$00
+        JSR SFX_PLAY
+        JSR TM_PASS
+        LDA CUR_MON
+        BNE .L9800
+        LDA ZP_PTR
+        STA ZP_M4
+        LDA ZP_PTR+1
+        STA ZP_M5
+        LDA GEM_X
+        STA ZP_MCNT
+        LDA GEM_Y
+        STA ZP_MREM
+        JSR COORD_SUB
+        LDA ZP_C3
+        CMP #$02
+        BCS .L9800
+        INC CUR_MON
+        JSR DRAW_OBJ3
+        LDA #$06
+        STA CRAFT_GFX+7
+        JSR DRAW_GEM
+.L9800
+        RTS
+@ %def TM_MOVE_N TM_MOVE_S TM_MOVE_E TM_MOVE_W SCREEN_FLASH
+
+<<tm pass>>=
+        ORG $9801
+TM_PASS
+        SUBROUTINE
+        ; PASS command and the end-of-turn tail.
+        ;
+        ; Behavior:
+        ;   TM_PASS ticks the clock (TICK with Y=1, A=$10) and returns.
+        ;   TURN_END runs the sound tick (TICK_SND) and drains the SFX queue
+        ;   (SFX_DRAIN) before each of Mondain's turns.
+        ;
+        ; Clobbers: A, Y
+        LDY #$01
+        LDA #$10
+        JMP TICK
+TURN_END
+        LDY #$05
+        LDA #$50
+        JSR TICK_SND
+.L980F
+        JSR SFX_DRAIN
+        BNE .L980F
+        RTS
+@ %def TM_PASS TURN_END
+
+\subsection{Idle animation and Mondain's turn}
+
+[[IDLE_POLL]] is what makes the scene feel alive between keystrokes: it polls
+the keyboard for a few dozen frames, animating the wireframe each frame.
+[[SCENE_TICK]] runs the per-turn upkeep --- flavour text and, crucially, the
+gem's slow regeneration of [[GEM_HP]] while Mondain is recovering.
+
+<<tm idle>>=
+        ORG $9815
+IDLE_POLL
+        SUBROUTINE
+        ; Idle keyboard poll, animated frame, and per-turn scene tick.
+        ;
+        ; Behavior:
+        ;   IDLE_POLL spins ~$23 frames waiting for a key, animating each frame
+        ;   via IDLE_FRAME (LA07B shape step + ACCEL_NUDGE + CURSOR_FLASH) and
+        ;   returning the key (zero = none).  SCENE_TICK runs once per turn:
+        ;   while the fight is idle it may print a "Your hear a strange
+        ;   chanting" flavour line, and while Mondain's gem is regenerating it
+        ;   heals GEM_HP toward 500 and cycles his sprite/CUR_MON state.
+        ;
+        ; Modifies:
+        ;   GEM_HP, CUR_MON, CRAFT_GFX+6
+        ; Clobbers: A, X, Y
+        LDX #$23
+        STX IDLE_CNT
+.L981A
+        JSR IDLE_FRAME
+        BNE .L9824
+        DEC IDLE_CNT
+        BNE .L981A
+.L9824
+        TAX
+        RTS
+IDLE_CNT
+        HEX 00
+IDLE_FRAME
+        LDA #$0F
+        STA ANIM_CNT
+.L982C
+        JSR ANIM_FRAME
+        JSR ACCEL_NUDGE
+        DEC ANIM_CNT
+        BNE .L982C
+        JSR CURSOR_FLASH
+        JSR KEY_PENDING
+        BNE .L9840
+        RTS
+.L9840
+        JMP KEY_WAIT
+ANIM_CNT
+        HEX 00
+SCENE_TICK
+        LDA CUR_MON
+        BNE .L9872
+        LDA #$06
+        JSR RND_MOD
+        BNE .L9871
+        JSR MSG_PRINT
+        DC.B $D9,$EF,$F5,$A0,$E8,$E5,$E1,$F2,$A0,$E1,$A0,$F3,$F4,$F2,$E1,$EE,$E7,$E5,$A0,$E3,$E8,$E1,$EE,$F4,$E9,$EE,$E7,"|",$0E,0
+.L9871
+        RTS
+.L9872
+        LDA CUR_MON
+        BPL .L989B
+        CLC
+        LDA #$19
+        ADC GEM_HP
+        STA GEM_HP
+        LDA #$00
+        ADC GEM_HP+1
+        STA GEM_HP+1
+        BMI .L989A
+        JSR ERASE_MONDAIN
+        LDA #$07
+        STA CRAFT_GFX+6
+        JSR DRAW_MONDAIN
+        LDA #$02
+        STA CUR_MON
+.L989A
+        RTS
+.L989B
+        LDY #$00
+        LDA ZP_PTR+1
+        CMP TGT_Y
+        BCC .L98AA
+        BEQ .L98AC
+        LDY #$01
+        BNE .L98AC
+.L98AA
+        LDY #$81
+.L98AC
+        STY ZP_M3
+        LDX #$00
+        LDA ZP_PTR
+        CMP TGT_X
+        BCC .L98BD
+        BEQ .L98BF
+        LDX #$01
+        BNE .L98BF
+.L98BD
+        LDX #$81
+.L98BF
+        STX ZP_M2
+@ %def IDLE_POLL IDLE_FRAME SCENE_TICK IDLE_CNT ANIM_CNT
+
+[[MONDAIN_TURN]] is the wizard's AI. It chooses an action by distance to the
+player: adjacent he attacks in melee, at middle range he may cast, and far away
+he steps toward the player. His gem regenerates as he acts, healing [[GEM_HP]]
+back toward $500$ and cycling his sprite state --- which is why the player must
+keep up the pressure once the gem is destroyed.
+
+<<tm mondain>>=
+        ORG $98C1
+MONDAIN_TURN
+        SUBROUTINE
+        ; MONDAIN_TURN: Mondain's AI -- choose melee, spell, or a step.
+        ;
+        ; Behavior:
+        ;   By distance to the player (.L9D5C): adjacent -> MONDAIN_MELEE; at
+        ;   mid range a 1/2 chance picks MONDAIN_CAST, else he steps; far ->
+        ;   MONDAIN_STEP (a biased wander toward the player).  When his gem is
+        ;   regenerating he heals GEM_HP by 5 per turn toward 500 and advances
+        ;   his sprite/state.  MONDAIN_STEP moves him into an empty cell and
+        ;   returns carry = blocked.  MONDAIN_CAST rolls one of three spells
+        ;   from MONDAIN_SPELL_TBL and patches its dispatcher.
+        ;
+        ; Modifies:
+        ;   GEM_HP, CUR_MON, CRAFT_GFX+6, $B628/$B629 (Mondain cell)
+        ; Clobbers: A, X, Y
+        LDA CUR_MON
+        CMP #$02
+        BEQ .L98E3
+        JSR CELL_DISTANCE
+        CMP #$02
+        BCS .L98D2
+        JMP MONDAIN_MELEE
+.L98D2
+        CMP #$07
+        BCS .L98E0
+        LDA #$02
+        JSR RND_MOD
+        BEQ .L98E0
+        JMP MONDAIN_CAST
+.L98E0
+        JMP MONDAIN_STEP
+.L98E3
+        LDA ZP_M2
+        BNE .L98ED
+        JSR RND
+        JSR NEGATE_SIGN
+.L98ED
+        EOR #$80
+        STA ZP_M2
+        LDA ZP_M3
+        BNE .L98FB
+        JSR RND
+        JSR NEGATE_SIGN
+.L98FB
+        EOR #$80
+        STA ZP_M3
+        JSR MONDAIN_STEP
+        BCC .L9935
+        LDA GEM_HP+1
+        BMI .L9935
+        CLC
+        LDA GEM_HP
+        ADC #$05
+        STA GEM_HP
+        LDA GEM_HP+1
+        ADC #$00
+        STA GEM_HP+1
+        CMP #$01
+        BNE .L9923
+        LDA GEM_HP
+        CMP #$F4
+.L9923
+        BCC .L9935
+        LDA #$01
+        STA CUR_MON
+        JSR ERASE_MONDAIN
+        LDA #$02
+        STA CRAFT_GFX+6
+        JSR DRAW_MONDAIN
+.L9935
+        RTS
+MONDAIN_STEP
+        LDA #$02
+        JSR RND_MOD
+        BEQ .L9947
+        LDA ZP_M2
+        BEQ .L9947
+        JSR CELL_DELTA_X
+        TAY
+        BEQ .L995B
+.L9947
+        LDA ZP_M3
+        BEQ .L9951
+        JSR CELL_DELTA_Y
+        TAY
+        BEQ .L995B
+.L9951
+        LDA ZP_M2
+        BEQ .L996F
+        JSR CELL_DELTA_X
+        TAY
+        BNE .L996F
+.L995B
+        JSR ERASE_MONDAIN
+        LDA DST_X
+        STA TGT_X
+        LDA DST_Y
+        STA TGT_Y
+        JSR DRAW_MONDAIN
+        CLC
+        RTS
+.L996F
+        SEC
+        RTS
+MONDAIN_MELEE
+        LDA #$04
+        JSR SFX_PLAY
+        JSR MSG_PRINT
+        DC.B "Attacked by Mondain!~",0
+        LDA PLR_STA
+        LSR
+        STA ZP_C3
+        LDA READY_ARMOUR
+        ASL
+        ASL
+        ASL
+        CLC
+        ADC ZP_C3
+        STA ZP_C3
+        SEC
+        LDA #$B9
+        SBC ZP_C3
+        BMI .L99BF
+        ASL
+        STA ZP_C3
+        JSR RND
+        CMP ZP_C3
+        BCC .L99BF
+        JSR MSG_PRINT
+        DC.B "Missed!|",$0E,0
+        RTS
+.L99BF
+        LDA PLR_HITS
+        STA ZP_C3
+        LDA PLR_HITS+1
+        STA ZP_C4
+        LDY #$05
+.L99CB
+        LSR ZP_C4
+        ROR ZP_C3
+        DEY
+        BNE .L99CB
+        LDA #$14
+        JSR RND_MOD
+        CLC
+        ADC ZP_C3
+        STA DMG_AMT
+        LDA ZP_C4
+        ADC #$00
+        STA DMG_AMT+1
+        JMP MONDAIN_HIT
+MONDAIN_CAST
+        JSR MSG_PRINT
+        DC.B "Mondain casts ",0
+        LDA #$03
+        JSR RND_MOD
+        ASL
+        TAY
+        LDA MONDAIN_SPELL_TBL,Y
+        STA $9A0D
+        LDA MONDAIN_SPELL_TBL+1,Y
+        STA $9A0E
+        JMP .L9A15
+@ %def MONDAIN_TURN MONDAIN_STEP MONDAIN_MELEE MONDAIN_CAST
+
+[[MONDAIN_SPELL_TBL]] gives the three spells Mondain rolls between: magic
+missile, mind blaster, and psionic shock.
+
+<<tm mondain spell tbl>>=
+        ORG $9A0F
+MONDAIN_SPELL_TBL
+        HEX 159a5b9acd9a
+@ %def MONDAIN_SPELL_TBL
+
+His three spells resolve through a common path. Magic missile and psionic shock
+deal scaled damage; mind blaster instead drains the player's attributes. All
+three converge on [[MONDAIN_HIT]], which subtracts the damage from [[PLR_HITS]]
+and sends the player to [[TM_DEATH]] if it reaches zero.
+
+<<tm mondain spells>>=
+        ORG $9A15
+.L9A15
+        SUBROUTINE
+        ; Mondain's three spells and the shared player-hit resolution.
+        ;
+        ; Behavior:
+        ;   Magic missile (armour-gated hit, damage = (hits>>5)+RND_MOD($14)),
+        ;   mind blaster ("Stats are reduced." -- drains each PLR_STR..PLR_INT
+        ;   attribute), and psionic shock (a screen-flash plus shifted-hits
+        ;   damage).  All converge on MONDAIN_HIT, which prints "Hit! N
+        ;   damage", subtracts the 16-bit DMG_AMT from PLR_HITS, and jumps to
+        ;   TM_DEATH if that would reach zero.
+        ;
+        ; Modifies:
+        ;   PLR_HITS, PLR_STR..PLR_INT, DMG_AMT
+        ; Clobbers: A, X, Y
+        JSR MSG_PRINT
+        DC.B "magic missile!~",0
+        LDA #$0A
+        JSR SFX_PLAY
+        LDA PLR_WIS
+        CLC
+        ADC PLR_INT
+        LSR
+        STA ZP_C3
+        SEC
+        LDA #$C3
+        SBC ZP_C3
+        BMI .L9A4B
+        ASL
+        STA ZP_C3
+        JSR RND
+        CMP ZP_C3
+        BCC .L9A4B
+        JMP .L9ABF
+.L9A4B
+        LDA #$65
+        JSR RND_MOD
+        STA DMG_AMT
+        LDA #$00
+        STA DMG_AMT+1
+        JMP MONDAIN_HIT
+        JSR MSG_PRINT
+        DC.B "mind blaster!~",0
+        LDA #$0A
+        JSR SFX_PLAY
+        LDA #$64
+        JSR RND_MOD
+        CMP #$46
+        BCS .L9A7E
+        JMP .L9ABF
+.L9A7E
+        JSR MSG_PRINT
+        DC.B "Hit! Stats are reduced.|",$0E,0
+        LDX #$0A
+.L9A9D
+        LDA PLR_STR,X
+        BEQ .L9ABA
+        PHA
+        CMP #$10
+        BCS .L9AA9
+        LDA #$10
+.L9AA9
+        LSR
+        LSR
+        LSR
+        LSR
+        STA ZP_C3
+        SEC
+        PLA
+        SBC ZP_C3
+        BCS .L9AB7
+        LDA #$00
+.L9AB7
+        STA PLR_STR,X
+.L9ABA
+        DEX
+        DEX
+        BPL .L9A9D
+        RTS
+.L9ABF
+        JSR MSG_PRINT
+        DC.B "Missed!|",$0E,0
+        RTS
+        JSR MSG_PRINT
+        DC.B "psionic shock!~",0
+        JSR SCREEN_FLASH
+        LDA #$0A
+        JSR SFX_PLAY
+        JSR SCREEN_FLASH
+        LDA #$64
+        JSR RND_MOD
+        CMP #$46
+        BCS .L9AF7
+        JMP .L9ABF
+.L9AF7
+        LDA PLR_HITS
+        STA ZP_C3
+        LDA PLR_HITS+1
+        STA ZP_C4
+        LDY #$05
+.L9B03
+        LSR ZP_C4
+        ROR ZP_C3
+        DEY
+        BNE .L9B03
+        STY DMG_AMT+1
+        LDA ZP_C3
+        JSR RND_MOD
+        STA DMG_AMT
+MONDAIN_HIT
+        JSR MSG_PRINT
+        DC.B "Hit! ",0
+        LDA DMG_AMT+1
+        LDX DMG_AMT
+        JSR PRINT_NUM16
+        JSR MSG_PRINT
+        DC.B " damage",0
+        LDA #$02
+        JSR SFX_PLAY
+        LDA DMG_AMT+1
+        CMP PLR_HITS+1
+        BNE .L9B45
+        LDA DMG_AMT
+        CMP PLR_HITS
+.L9B45
+        BCS TM_DEATH
+        JSR MSG_PRINT
+        DC.B "|",$0E,0
+        SEC
+        LDA PLR_HITS
+        SBC DMG_AMT
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC DMG_AMT+1
+        STA PLR_HITS+1
+        RTS
+@ %def MONDAIN_HIT
+
+[[TM_DEATH]] is the losing ending --- ``THOU ART DEAD!'' and the popup that the
+universe is doomed --- before the engine respawns the player.
+
+<<tm death>>=
+        ORG $9B61
+TM_DEATH
+        SUBROUTINE
+        ; TM_DEATH: the player's defeat ending.
+        ;
+        ; Behavior:
+        ;   Print "THOU ART DEAD!", zero PLR_HITS, refresh the stats, and pop
+        ;   up "Thou hast been defeated by Mondain the Wizard!  THE UNIVERSE IS
+        ;   DOOMED!!" before restoring the window and jumping to RESPAWN.
+        ;
+        ; Modifies:
+        ;   PLR_HITS
+        ; Clobbers: A, X, Y
+        JSR MSG_PRINT
+        DC.B "~THOU ART DEAD!",0
+        LDA #$00
+        STA PLR_HITS
+        STA PLR_HITS+1
+        JSR STATS_VALUES
+        JSR POPUP_TEXT
+        DC.B "||",$A0,$D4,$E8,$EF,$F5,$A0,$E8,$E1,$F3,$F4,$A0,$E2,$E5,$E5,$EE,$A0,$E4,$E5,$E6,$E5,$E1,$F4,$E5,$E4,$A0,$E2,$F9,"|",$A0,$A0,$A0,$A0,$A0,$CD,$EF,$EE,$E4,$E1,$E9,$EE,$A0,$F4,$E8,$E5,$A0,$D7,$E9,$FA,$E1,$F2,$E4,$A1,"|||",$A0,$A0,$D4,$C8,$C5,$A0,$D5,$CE,$C9,$D6,$C5,$D2,$D3,$C5,$A0,$C9,$D3,$A0,$C4,$CF,$CF,$CD,$C5,$C4,$A1,$A1,0
+        JSR WIN_RESTORE
+        JSR POPUP_REDRAW
+        JMP RESPAWN
+@ %def TM_DEATH
+
+\subsection{The renderer}
+
+The remaining chunks draw the craft. The scene is a pseudo-3D wireframe of the
+craft interior on a grid of cells; the helpers here place, clear, and redraw
+the player, Mondain, and the gem as they move from cell to cell.
+
+<<tm scene tick>>=
+        ORG $9BDF
+SCENE_REDRAW
+        SUBROUTINE
+        ; Per-turn scene redraw plus the cell place/clear/draw helpers.
+        ;
+        ; Behavior:
+        ;   .L9BDF, when Mondain is active, occasionally spawns a random
+        ;   obstacle into an empty CELL_STATE cell and draws it.  The helper
+        ;   block below (.L9C1F place, .L9C47 clear, .L9C64 / .L9C93 / .L9CB5 /
+        ;   .L9CE4 draw/erase Mondain and the gem, .L9D15 the shape-into-cell
+        ;   primitive) maintains the wireframe interior as pieces move.
+        ;
+        ; Modifies:
+        ;   CELL_STATE, the scene shape arrays
+        ; Clobbers: A, X, Y
+        LDA CUR_MON
+        BEQ .L9C1E
+        LDA #$13
+        JSR RND_MOD
+        STA DST_X
+        INC DST_X
+        LDA #$09
+        JSR RND_MOD
+        STA DST_Y
+        INC DST_Y
+        LDY DST_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC DST_X
+        TAY
+        LDA CELL_STATE,Y
+        BNE SCENE_REDRAW
+        LDA #$09
+        LDY DST_X
+        LDX DST_Y
+        JSR PROJECT_XY
+        LDX #$09
+        LDA #$00
+        LDY #$00
+        JSR PLOT_VERTEX2
+.L9C1E
+        RTS
+CELL_PLACE
+        LDA #$01
+        LDY ZP_PTR
+        LDX ZP_PTR+1
+        JSR PROJECT_XY
+        LDX #$01
+        LDA #$00
+        LDY #$01
+        JSR PLOT_VERTEX2
+        LDA #$01
+        LDY #$01
+        JSR PLACE_SHAPE
+        LDY ZP_PTR+1
+        LDA CELL_COL,Y
+        CLC
+        ADC ZP_PTR
+        TAY
+        LDA #$09
+        STA CELL_STATE,Y
+        RTS
+CELL_CLEAR
+        LDA #$00
+        LDY #$01
+        JSR PLACE_SHAPE
+        LDY ZP_PTR
+        LDX ZP_PTR+1
+        JSR PROJECT_CELL
+        LDY ZP_PTR+1
+        LDA CELL_COL,Y
+        CLC
+        ADC ZP_PTR
+        TAY
+        LDA #$00
+        STA CELL_STATE,Y
+        RTS
+DRAW_MONDAIN
+        LDA CRAFT_GFX+6
+        LDY TGT_X
+        LDX TGT_Y
+        JSR PROJECT_XY
+        LDX CRAFT_GFX+6
+        LDA #$00
+        LDY #$01
+        JSR PLOT_VERTEX2
+        LDA #$01
+        LDY CRAFT_GFX+6
+        JSR PLACE_SHAPE
+        LDY TGT_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC TGT_X
+        TAY
+        LDA #$08
+        STA CELL_STATE,Y
+        RTS
+ERASE_MONDAIN
+        LDA #$00
+        LDY CRAFT_GFX+6
+        JSR PLACE_SHAPE
+        LDY TGT_X
+        LDX TGT_Y
+        JSR PROJECT_CELL
+        LDY TGT_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC TGT_X
+        TAY
+        LDA #$00
+        STA CELL_STATE,Y
+        RTS
+DRAW_GEM
+        LDA CRAFT_GFX+7
+        LDY GEM_X
+        LDX GEM_Y
+        JSR PROJECT_XY
+        LDX CRAFT_GFX+7
+        LDA #$00
+        LDY #$01
+        JSR PLOT_VERTEX2
+        LDA #$01
+        LDY CRAFT_GFX+7
+        JSR PLACE_SHAPE
+        LDY GEM_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC GEM_X
+        TAY
+        LDA #$07
+        STA CELL_STATE,Y
+        RTS
+DRAW_OBJ3
+        LDA #$00
+        LDY CRAFT_GFX+7
+        JSR PLACE_SHAPE
+        LDY GEM_X
+        LDX GEM_Y
+        JSR PROJECT_CELL
+        LDY GEM_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC GEM_X
+        TAY
+        LDA #$00
+        STA CELL_STATE,Y
+        RTS
+PROJECT_CELL
+        LDA #$00
+        JSR PROJECT_XY
+        LDX #$00
+        LDA #$00
+        LDY #$01
+        JSR PLOT_VERTEX2
+        RTS
+PROJECT_XY
+        STA ZP_C3
+        LDA PROJ_TBL,Y
+        STA ZP_C5
+        LDA PROJ_TBL+20,Y
+        STA ZP_C6
+        LDA PROJ_TBL+40,X
+        TAX
+        LDY ZP_C3
+        JMP PLOT_VERTEX
+@ %def SCENE_REDRAW CELL_PLACE CELL_CLEAR DRAW_MONDAIN ERASE_MONDAIN DRAW_GEM
+@ %def DRAW_OBJ3 PROJECT_CELL PROJECT_XY
+
+[[PROJ_TBL]] holds the projection tables --- the screen X and Y of each grid
+cell --- that turn a cell coordinate into a position in the pseudo-3D interior
+view.
+
+<<tm proj tbl>>=
+        ORG $9D2A
+PROJ_TBL
+        HEX 00071523313f4d5b
+        HEX 69778593a1afbdcb
+        HEX d9e7f50300000000
+        HEX 0000000000000000
+        HEX 0000000000000001
+        HEX 0008182838485868
+        HEX 7888
+@ %def PROJ_TBL
+
+<<tm dist>>=
+        ORG $9D5C
+CELL_DISTANCE
+        SUBROUTINE
+        ; Distance and signed coordinate-delta helpers on the grid.
+        ;
+        ; Behavior:
+        ;   .L9D5C returns in ZP_C3 the distance from the player cell (ZP_PTR)
+        ;   to Mondain's cell ($B628/$B629), computed through the squared-sum
+        ;   helper .LA26E.  .L9D74 and .L9D98 apply a signed step to Mondain's
+        ;   cell, writing the new target into $B62C/$B62D and reading the
+        ;   destination CELL_STATE.
+        ;
+        ; Outputs:
+        ;   ZP_C3 = distance (.L9D5C); $B62C/$B62D = stepped cell, A = its state
+        ; Clobbers: A, X, Y
+        LDA ZP_PTR
+        STA ZP_M4
+        LDA ZP_PTR+1
+        STA ZP_M5
+        LDA TGT_X
+        STA ZP_MCNT
+        LDA TGT_Y
+        STA ZP_MREM
+        JSR COORD_SUB
+        LDA ZP_C3
+        RTS
+CELL_DELTA_Y
+        LDA ZP_M3
+        BMI .L9D82
+        CLC
+        ADC TGT_Y
+        STA DST_Y
+        JMP .L9D8F
+.L9D82
+        SEC
+        AND #$7F
+        STA ZP_C3
+        LDA TGT_Y
+        SBC ZP_C3
+        STA DST_Y
+.L9D8F
+        LDA TGT_X
+        STA DST_X
+        JMP CELL_LOOKUP
+CELL_DELTA_X
+        LDA ZP_M2
+        BMI .L9DA6
+        CLC
+        ADC TGT_X
+        STA DST_X
+        JMP .L9DB3
+.L9DA6
+        SEC
+        AND #$7F
+        STA ZP_C3
+        LDA TGT_X
+        SBC ZP_C3
+        STA DST_X
+.L9DB3
+        LDA TGT_Y
+        STA DST_Y
+        JMP CELL_LOOKUP
+CELL_LOOKUP
+        LDY DST_Y
+        LDA CELL_COL,Y
+        CLC
+        ADC DST_X
+        TAY
+        LDA CELL_STATE,Y
+        RTS
+@ %def CELL_DISTANCE CELL_DELTA_Y CELL_DELTA_X CELL_LOOKUP
+
+<<tm craft redraw>>=
+        ORG $9DCB
+CRAFT_REDRAW
+        SUBROUTINE
+        ; CRAFT_REDRAW: redraw the whole wireframe interior scene.
+        ;
+        ; Behavior:
+        ;   Clear the view, prime the shape walker (SHAPE_NEXT), save and zero
+        ;   the active shape's bytes into REND_BSS, then sweep every grid cell
+        ;   ($13 columns x 9 rows): wherever CELL_STATE holds a gem marker (2),
+        ;   project its coordinates through PROJ_TBL into the shape pointers and
+        ;   stroke it (.LA084).  Finally restore the saved shape bytes.
+        ;
+        ; Modifies:
+        ;   REND_BSS, the shape pointer arrays
+        ; Clobbers: A, X, Y
+        JSR VIEW_CLEAR
+        JSR SHAPE_NEXT
+        LDY #$00
+.L9DD3
+        LDA ($E4),Y
+        STA REND_BSS,Y
+        BMI .L9DE1
+        LDA #$00
+        STA ($E4),Y
+        INY
+        BNE .L9DD3
+.L9DE1
+        LDA #$01
+        LDY #$04
+        JSR PLACE_SHAPE
+        LDA #$13
+        STA DST_X
+.L9DED
+        LDA #$09
+        STA DST_Y
+.L9DF2
+        JSR CELL_LOOKUP
+        CMP #$02
+        BNE .L9E13
+        LDY #$04
+        LDX DST_X
+        LDA PROJ_TBL,X
+        STA (ZP_SH1),Y
+        LDA PROJ_TBL+20,X
+        STA (ZP_SH2),Y
+        LDX DST_Y
+        LDA PROJ_TBL+40,X
+        STA (ZP_SH3),Y
+        JSR ANIM_SETUP
+.L9E13
+        DEC DST_Y
+        BNE .L9DF2
+        DEC DST_X
+        BNE .L9DED
+        LDY #$00
+.L9E1F
+        LDA REND_BSS,Y
+        STA ($E4),Y
+        BMI .L9E29
+        INY
+        BNE .L9E1F
+.L9E29
+        LDA #$00
+        LDY #$04
+        JSR PLACE_SHAPE
+        RTS
+@ %def CRAFT_REDRAW
+
+[[REND_BSS]] is the renderer's scratch area, stored zeroed on disk; the redraw
+code saves and restores shape bytes through it.
+
+<<tm rend bss>>=
+        ORG $9E31
+REND_BSS
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 00000000
+@ %def REND_BSS
+
+<<tm rend helpers>>=
+        ORG $9E45
+NEGATE_SIGN
+        SUBROUTINE
+        ; Renderer setup/clear helpers and the shape-pointer advance.
+        ;
+        ; Behavior:
+        ;   NEGATE_SIGN returns a sign token ($01 / $81 / 0) for a value.
+        ;   .L9E50 fills the $B400/$B500 row-coordinate scratch tables; .L9E6C
+        ;   writes one byte into the active shape array (or fills it); .L9E95
+        ;   resolves a shape's data pointer from SHAPE_TBL2; SHAPE_NEXT copies
+        ;   the working NPC array (00D6) to/from the $B600 backing store and
+        ;   advances the shape pointer to the next vertex list.
+        ;
+        ; Modifies:
+        ;   $B400/$B500 tables, the shape pointer arrays, 00D6 scratch
+        ; Clobbers: A, X, Y
+        TAY
+        BMI .L9E4D
+        BEQ .L9E4F
+        LDA #$01
+        RTS
+.L9E4D
+        LDA #$81
+.L9E4F
+        RTS
+SCENE_CLEAR
+        LDX #$00
+        LDY #$00
+        STY $28
+.L9E56
+        LDA $28
+        STA SCENE_BUF,Y
+        TXA
+        STA SCENE_BUF2,Y
+        INX
+        CPX #$07
+        BCC .L9E68
+        LDX #$00
+        INC $28
+.L9E68
+        INY
+        BNE .L9E56
+        RTS
+PLACE_SHAPE
+        STA SCENE_T0
+        STY SCENE_T1
+        JSR SHAPE_NEXT
+        LDA SCENE_T0
+        LDY SCENE_T1
+        CPY #$FF
+        BEQ .L9E84
+        STA ($E4),Y
+        JMP COPY_SCENE_ROW
+.L9E84
+        LDY #$00
+.L9E86
+        LDA ($E4),Y
+        BMI .L9E92
+        LDA SCENE_T0
+        STA ($E4),Y
+        INY
+        BNE .L9E86
+.L9E92
+        JMP COPY_SCENE_ROW
+SETUP_SHAPE
+        ASL
+        TAX
+        LDA SHAPE_TBL2,X
+        STA $D2
+        INX
+        LDA SHAPE_TBL2,X
+        STA $D3
+        LDY #$00
+        LDA ($D2),Y
+        CLC
+        ADC $D2
+        STA $D4
+        INY
+        LDA ($D2),Y
+        ADC $D3
+        STA $D5
+        RTS
+SHAPE_TBL2
+        HEX 7ca4
+SHAPE_NEXT
+        LDY #$00
+.L9EB7
+        LDA $00D6,Y
+        STA SCENE_ARR,Y
+        LDA ($D4),Y
+        CLC
+        ADC $D2
+        STA $00D6,Y
+        INY
+        LDA $00D6,Y
+        STA SCENE_ARR,Y
+        LDA ($D4),Y
+        ADC $D3
+        STA $00D6,Y
+        INY
+        CPY #$26
+        BNE .L9EB7
+        RTS
+COPY_SCENE_ROW
+        LDY #$25
+.L9EDB
+        LDA SCENE_ARR,Y
+        STA $00D6,Y
+        DEY
+        BPL .L9EDB
+        RTS
+@ %def NEGATE_SIGN SCENE_CLEAR PLACE_SHAPE SETUP_SHAPE SHAPE_NEXT COPY_SCENE_ROW
+@ %def SHAPE_TBL2
+
+The vector-shape stepper is the core of the renderer: it walks a shape's
+list of $(dx, dy, \mathrm{pen})$ vertices from a self-modified pointer and
+strokes line segments into the hi-res page through the row-pointer tables. It is
+what actually draws the craft, the wizard, and the gem.
+
+<<tm shape step>>=
+        ORG $9EE5
+SHAPE_STEP
+        SUBROUTINE
+        ; The vector-shape stepper and hi-res line stroker.
+        ;
+        ; Behavior:
+        ;   Walk a shape's (dx,dy,pen) vertex list from the self-modified
+        ;   pointer ($B2), set up the per-row HGR pointers ($B8/$BB from the
+        ;   $1200/$12C0 row tables), and plot each segment of the figure into
+        ;   the hi-res page, honouring the pen byte (draw / skip / colour).
+        ;   This is the stroker that renders the craft, Mondain, and the gem;
+        ;   it dispatches the actual pixel work through BLIT_VEC.
+        ;
+        ; Clobbers: A, X, Y
+        BIT $B0
+        BPL .L9EF4
+        LDY #$06
+        LDA ($B2),Y
+        STA $B0
+        INY
+        LDA ($B2),Y
+        STA $B1
+.L9EF4
+        LDY #$00
+        LDA ($B2),Y
+        CLC
+        ADC $B1
+        STA $B5
+        LDA ($B2),Y
+        AND #$01
+        STA $A005
+        INY
+        LDA ($B2),Y
+        CLC
+        ADC $B0
+        STA $B4
+        DEC $B4
+        LDA #$FF
+        STA $BD
+        INY
+        LDA ($B2),Y
+        ROR
+        BCC .L9F1A
+        INC $BD
+.L9F1A
+        LDA #$FF
+        STA ZP_C5
+        LDA #$09
+        STA .L9FF8
+        INY
+        LDA ($B2),Y
+        STA $9FF9
+        BEQ .L9F44
+        BMI .L9F32
+        LDA #$29
+        STA .L9FF8
+.L9F32
+        LDA #$80
+        STA $9F9D
+        STA $9FCB
+        LDA #$08
+        STA $9FA1
+        STA $9FCF
+        BPL .L9F54
+.L9F44
+        LDA #$01
+        STA $9F9D
+        STA $9FCB
+        LDA #$00
+        STA $9FA1
+        STA $9FCF
+.L9F54
+        CLC
+        LDA #$08
+        ADC $B2
+        STA $BE
+        LDA #$00
+        ADC $B3
+        STA $BF
+        INY
+        CLC
+        LDA ($B2),Y
+        ADC $B2
+        STA $C1
+        INY
+        LDA ($B2),Y
+        ADC $B3
+        STA $C2
+        LDA $B4
+        STA $BC
+        LDY #$00
+        STY $C0
+        STY ZP_C4
+.L9F7A
+        LDX $B1
+.L9F7C
+        LDA HGR_ROW_HI,X
+        STA $B9
+        LDA HGR_ROW_LO,X
+        STA $B8
+        BIT ZP_C5
+        BPL .L9FBC
+        BIT $BD
+        BMI .L9F90
+        INC ZP_C5
+.L9F90
+        LDY $C0
+        BNE .L9FB6
+        LDA ($BE),Y
+        INC $BE
+        BNE .L9F9C
+        INC $BF
+.L9F9C
+        CMP #$01
+        BCS .L9FE8
+        BCC .L9FA2
+.L9FA2
+        LDA ($BE),Y
+        INC $BE
+        BNE .L9FAA
+        INC $BF
+.L9FAA
+        STA $C0
+        LDA ($BE),Y
+        STA $BA
+        INC $BE
+        BNE .L9FB6
+        INC $BF
+.L9FB6
+        DEC $C0
+        LDA $BA
+        BNE .L9FE8
+.L9FBC
+        DEC ZP_C5
+        LDY ZP_C4
+        BNE .L9FE4
+        LDA ($C1),Y
+        INC $C1
+        BNE .L9FCA
+        INC $C2
+.L9FCA
+        CMP #$01
+        BCS .L9FE8
+        BCC .L9FD0
+.L9FD0
+        LDA ($C1),Y
+        INC $C1
+        BNE .L9FD8
+        INC $C2
+.L9FD8
+        STA ZP_C4
+        LDA ($C1),Y
+        STA $BB
+        INC $C1
+        BNE .L9FE4
+        INC $C2
+.L9FE4
+        DEC ZP_C4
+        LDA $BB
+.L9FE8
+        CPX #$C0
+        BCS .L9FFC
+        LDY $BC
+        CPY #$28
+        BCS .L9FFC
+        CMP #$80
+        BNE .L9FF8
+        LDA #$00
+.L9FF8
+        ORA #$00
+        STA ($B8),Y
+.L9FFC
+        INX
+        CPX $B5
+        BEQ .LA004
+        JMP .L9F7C
+.LA004
+        LDA #$00
+        BEQ .LA00A
+        DEC ZP_C5
+.LA00A
+        DEC $BC
+        BMI .LA017
+        LDY $BC
+        CPY $B0
+        BCC .LA017
+        JMP .L9F7A
+.LA017
+        RTS
+PLOT_VERTEX
+        STY SCENE_T0
+        STX SCENE_T1
+        JSR SHAPE_NEXT
+        LDY SCENE_T0
+        LDA ZP_C5
+        STA (ZP_SH1),Y
+        LDA ZP_C6
+        STA (ZP_SH2),Y
+        LDA SCENE_T1
+        STA (ZP_SH3),Y
+        JMP COPY_SCENE_ROW
+PLOT_VERTEX2
+        STA SCENE_T0
+        STY SCENE_T1
+        STX CRAFT_GFX+1
+        JSR SHAPE_NEXT
+        LDY CRAFT_GFX+1
+        LDA SCENE_T0
+        CMP #$FF
+        BEQ .LA04C
+        STA (ZP_SH4),Y
+.LA04C
+        LDA (ZP_SH0),Y
+        LDX SCENE_T1
+        BEQ .LA05D
+        CPX #$FF
+        BEQ .LA05A
+        TXA
+        BNE .LA05D
+.LA05A
+        SEC
+        SBC (ZP_SH4),Y
+.LA05D
+        STA CRAFT_GFX
+        LDA #$01
+        STA ($E4),Y
+.LA064
+        JSR ANIM_SETUP
+        LDA CRAFT_GFX+5
+        BNE .LA064
+        DEC CRAFT_GFX
+        BNE .LA064
+        LDY CRAFT_GFX+1
+        LDA #$00
+        STA ($E4),Y
+        JMP COPY_SCENE_ROW
+ANIM_FRAME
+        JSR SHAPE_NEXT
+        JSR ANIM_SETUP
+        JMP COPY_SCENE_ROW
+ANIM_SETUP
+        LDA #$FF
+        STA CRAFT_GFX+2
+        STA CRAFT_GFX+5
+.LA08C
+        INC CRAFT_GFX+2
+        LDY CRAFT_GFX+2
+        LDA ($E4),Y
+        BEQ .LA08C
+        BPL .LA099
+        RTS
+.LA099
+        JSR .LA09F
+        JMP .LA08C
+.LA09F
+        LDA ($F4),Y
+        CLC
+        ADC $D2
+        STA $BF
+        LDA ($F6),Y
+        ADC $D3
+        STA $C0
+        LDA (ZP_SH1),Y
+        STA ZP_C3
+        LDA (ZP_SH2),Y
+        STA ZP_C4
+        LDA (ZP_SH4),Y
+        TAY
+        LDA ($BF),Y
+        STA CRAFT_GFX+4
+        TAY
+        LDA ($DA),Y
+        TAX
+        BPL .LA0D6
+        AND #$3F
+        STA $B9
+        SEC
+        LDA ZP_C3
+        SBC ($D8),Y
+        STA ZP_C3
+        LDA ZP_C4
+        SBC $B9
+        STA ZP_C4
+        JMP .LA0E7
+.LA0D6
+        AND #$3F
+        STA $B9
+        CLC
+        LDA ZP_C3
+        ADC ($D8),Y
+        STA ZP_C3
+        LDA ZP_C4
+        ADC $B9
+        STA ZP_C4
+.LA0E7
+        LDY CRAFT_GFX+2
+        TXA
+        AND #$40
+        BEQ .LA0FA
+        LDA (ZP_SH3),Y
+        LDY CRAFT_GFX+4
+        SEC
+        SBC ($DC),Y
+        JMP .LA102
+.LA0FA
+        LDA (ZP_SH3),Y
+        LDY CRAFT_GFX+4
+        CLC
+        ADC ($DC),Y
+.LA102
+        STA $B1
+        LDA ZP_C3
+        TAX
+        LDA ZP_C4
+        BEQ .LA117
+        LDA SCENE_BUF+4,X
+        CLC
+        ADC #$24
+        LDY SCENE_BUF2+4,X
+        JMP .LA11D
+.LA117
+        LDA SCENE_BUF,X
+        LDY SCENE_BUF2,X
+.LA11D
+        STA ZP_C5
+        STA $B0
+        STY ZP_C6
+        LDY CRAFT_GFX+4
+        LDA ($D6),Y
+        CMP #$FF
+        BEQ .LA158
+        CLC
+        ADC ZP_C6
+        STA CRAFT_GFX+3
+        TAY
+        LDA ($F8),Y
+        CLC
+        ADC $D2
+        STA $B2
+        LDA ($FA),Y
+        ADC $D3
+        STA $B3
+        CLC
+        LDA $B2
+        ADC #$02
+        STA $C1
+        LDA $B3
+        ADC #$00
+        STA $C2
+        LDY #$00
+        LDA ($B2),Y
+        STA $B4
+        INY
+        LDA ($B2),Y
+        STA $B5
+.LA158
+        LDY CRAFT_GFX+4
+        LDA ($DE),Y
+        ASL
+        TAX
+        LDA BLIT_VEC,X
+        STA $A16C
+        LDA BLIT_VEC+1,X
+        STA $A16D
+        JMP STALE_BLITVEC
+@ %def SHAPE_STEP PLOT_VERTEX PLOT_VERTEX2 ANIM_FRAME ANIM_SETUP
+
+[[BLIT_VEC]] is the three-entry jump table the stepper indexes by a shape's pen
+mode to choose which blitter draws the next segment.
+
+<<tm blit vec>>=
+        ORG $A16E
+BLIT_VEC
+        HEX 74a1b8a1bea1
+@ %def BLIT_VEC
+
+<<tm blit>>=
+        ORG $A174
+        LDX #$00
+BLIT_LINE
+        SUBROUTINE
+        ; The three line/segment blitters BLIT_VEC selects among.
+        ;
+        ; Behavior:
+        ;   .LA176 copies a run of bytes along a scan line (plot), .LA1C0 XOR-
+        ;   merges a run (erase/flash), and the third entry advances to the
+        ;   next vertex.  Each walks the HGR row pointers ($1200/$12C0 tables)
+        ;   and writes into the hi-res page byte by byte; the shared tail
+        ;   (.LA206) steps the run counters and fetches the next pen command.
+        ;
+        ; Clobbers: A, X, Y
+        LDY $B1
+        CPY #$C0
+        BCC .LA18C
+        LDA $B4
+        CLC
+        ADC $C1
+        STA $C1
+        LDA #$00
+        ADC $C2
+        STA $C2
+        JMP .LA1AF
+.LA18C
+        LDA HGR_ROW_LO,Y
+        STA $B2
+        LDA HGR_ROW_HI,Y
+        STA $B3
+        LDA $B4
+        STA $B8
+        LDY $B0
+.LA19C
+        CPY #$28
+        BCS .LA1A4
+        LDA ($C1,X)
+        STA ($B2),Y
+.LA1A4
+        INC $C1
+        BNE .LA1AA
+        INC $C2
+.LA1AA
+        INY
+        DEC $B8
+        BNE .LA19C
+.LA1AF
+        INC $B1
+        DEC $B5
+        BNE BLIT_LINE
+        JMP .LA206
+        JSR SHAPE_STEP
+        JMP .LA206
+        LDX #$00
+.LA1C0
+        LDY $B1
+        CPY #$C0
+        BCC .LA1D6
+        LDA $B4
+        CLC
+        ADC $C1
+        STA $C1
+        LDA #$00
+        ADC $C2
+        STA $C2
+        JMP .LA1FD
+.LA1D6
+        LDA HGR_ROW_LO,Y
+        STA $B2
+        LDA HGR_ROW_HI,Y
+        STA $B3
+        LDA $B4
+        STA $B8
+        LDY $B0
+.LA1E6
+        CPY #$28
+        BCS .LA1F2
+        LDA ($C1,X)
+        AND #$7F
+        EOR ($B2),Y
+        STA ($B2),Y
+.LA1F2
+        INC $C1
+        BNE .LA1F8
+        INC $C2
+.LA1F8
+        INY
+        DEC $B8
+        BNE .LA1E6
+.LA1FD
+        INC $B1
+        DEC $B5
+        BNE .LA1C0
+        JMP .LA206
+.LA206
+        LDY CRAFT_GFX+2
+        LDA ($F0),Y
+        BNE .LA211
+        LDA ($F2),Y
+        BEQ .LA224
+.LA211
+        LDA ($F0),Y
+        BNE .LA21C
+        SEC
+        LDA ($F2),Y
+        SBC #$01
+        STA ($F2),Y
+.LA21C
+        SEC
+        LDA ($F0),Y
+        SBC #$01
+        STA ($F0),Y
+        RTS
+.LA224
+        LDA #$01
+        CLC
+        ADC (ZP_SH4),Y
+        CMP (ZP_SH0),Y
+        BCC .LA22F
+        LDA #$00
+.LA22F
+        STA (ZP_SH4),Y
+        TAY
+        LDA ($BF),Y
+        STA CRAFT_GFX+4
+        TAY
+        LDA ($E0),Y
+        TAX
+        LDA ($E2),Y
+        LDY CRAFT_GFX+2
+        STA ($F2),Y
+        TXA
+        STA ($F0),Y
+        CPY CRAFT_GFX+1
+        BNE .LA24D
+        INC CRAFT_GFX+5
+.LA24D
+        RTS
+        STX $B0
+        STY $B1
+        STA SCENE_T0
+        JSR SHAPE_NEXT
+        LDY SCENE_T0
+        LDA ($F8),Y
+        CLC
+        ADC $D2
+        STA $B2
+        LDA ($FA),Y
+        ADC $D3
+        STA $B3
+        JSR SHAPE_STEP
+        JMP COPY_SCENE_ROW
+COORD_SUB
+        SEC
+        LDA ZP_M4
+        SBC ZP_MCNT
+        BCS .LA27E
+        STA SCENE_T0
+        SEC
+        LDA #$00
+        SBC SCENE_T0
+.LA27E
+        LDY #$00
+        STY ZP_C3
+        STY ZP_C4
+        TAY
+        TAX
+        INX
+.LA287
+        DEX
+        BEQ .LA296
+        TYA
+        CLC
+        ADC ZP_C3
+        STA ZP_C3
+        BCC .LA287
+        INC ZP_C4
+        BCS .LA287
+.LA296
+        SEC
+        LDA ZP_M5
+        SBC ZP_MREM
+        BCS .LA2A6
+        STA SCENE_T0
+        SEC
+        LDA #$00
+        SBC SCENE_T0
+.LA2A6
+        LDY #$00
+        STY $B9
+        STY $BA
+        TAY
+        TAX
+        INX
+.LA2AF
+        DEX
+        BEQ .LA2BE
+        TYA
+        CLC
+        ADC $B9
+        STA $B9
+        BCC .LA2AF
+        INC $BA
+        BCS .LA2AF
+.LA2BE
+        CLC
+        LDA $B9
+        ADC ZP_C3
+        STA ZP_C3
+        LDA $BA
+        ADC ZP_C4
+        STA ZP_C4
+        BCC .LA2D2
+        LDA #$FF
+        STA ZP_C3
+        RTS
+.LA2D2
+        LDY #$01
+        STY $B9
+        DEY
+        STY $BA
+.LA2D9
+        SEC
+        LDA ZP_C3
+        TAX
+        SBC $B9
+        STA ZP_C3
+        LDA ZP_C4
+        SBC $BA
+        STA ZP_C4
+        BCC .LA2F6
+        INY
+        LDA $B9
+        ADC #$01
+        STA $B9
+        BCC .LA2D9
+        INC $BA
+        BCS .LA2D9
+.LA2F6
+        STY ZP_C3
+        TYA
+        STX ZP_C4
+        RTS
+@ %def BLIT_LINE COORD_SUB
+
+[[CELL_STATE]] is the interior grid itself --- one byte per cell recording what
+occupies it (empty, Mondain, the gem, or a force field) --- and [[CELL_COL]]
+the per-row base offsets into it.
+
+<<tm cell state>>=
+        ORG $A2FC
+CELL_STATE
+        HEX 0101010101010101
+        HEX 0101010101010101
+        HEX 0101010101010000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0001010000000000
+        HEX 0000000000000202
+        HEX 0200020202000101
+        HEX 0000000000020202
+        HEX 0202000200000000
+        HEX 0002000101000000
+        HEX 0000000000000000
+        HEX 0200000000000200
+        HEX 0101000000000000
+        HEX 0000000000000000
+        HEX 0000000000010100
+        HEX 0000000000000000
+        HEX 0000020000000000
+        HEX 0200010100000000
+        HEX 0002020202020002
+        HEX 0000000000020001
+        HEX 0100000000000000
+        HEX 0000000002020200
+        HEX 0202020001010000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0001010101010101
+        HEX 0101010101010101
+        HEX 01010101010101
+CELL_COL
+        HEX 00152a3f54697e93
+        HEX a8bdd2
+@ %def CELL_STATE CELL_COL
+
+<<tm cell helpers>>=
+        ORG $A3EE
+CELL_INDEX
+        SUBROUTINE
+        ; Cell-state read/write helper (a hi-res address descrambler).
+        ;
+        ; Behavior:
+        ;   Walk the hi-res page applying the BITMASK_TBL pixel masks: shift the
+        ;   16-bit address (ZP_PTR) with an EOR #$B4 feedback (a Galois LFSR
+        ;   walk of the page), derive the byte address (ZP_M0/M1) and pixel
+        ;   column, and AND the mask into each touched byte.  Used to clear or
+        ;   stipple the interior backdrop.
+        ;
+        ; Modifies:
+        ;   ZP_PTR, ZP_M0/M1, the hi-res page
+        ; Clobbers: A, X, Y
+        LDY #$FF
+        STY ZP_PTR
+        STY ZP_PTR+1
+        INY
+        STY ZP_M5
+        STY ZP_MCNT
+.LA3F9
+        LSR ZP_PTR+1
+        ROR ZP_PTR
+        BCC .LA405
+        LDA ZP_PTR+1
+        EOR #$B4
+        STA ZP_PTR+1
+.LA405
+        LDA ZP_PTR
+        STA ZP_M0
+        LDA ZP_PTR+1
+        AND #$1F
+        CLC
+        ADC #$20
+        STA ZP_M1
+        LDA ZP_PTR+1
+        AND #$E0
+        ROL
+        ROL
+        ROL
+        ROL
+        TAX
+        LDA BITMASK_TBL,X
+        AND (ZP_M0),Y
+        STA (ZP_M0),Y
+        INC ZP_M5
+        BNE .LA3F9
+        INC ZP_MCNT
+        BNE .LA3F9
+        STY HGR1
+        RTS
+BITMASK_TBL
+        HEX ffbfdfeff7fbfdfe
+@ %def CELL_INDEX BITMASK_TBL
+
+<<tm popup text>>=
+        ORG $A436
+POPUP_TEXT
+        SUBROUTINE
+        ; Popup-text trampolines and the gem-socket marker drawer.
+        ;
+        ; Behavior:
+        ;   .LA436 frames a popup then prints inline text; .LA43C saves the
+        ;   window, clears the view, and prints inline text without a frame --
+        ;   both fall into MSG_PRINT so callers pass zero-terminated text in
+        ;   line.  .LA44B draws one colored gem socket: set the color and
+        ;   stroke three short lines from base X to make a small filled hole.
+        ;
+        ; Clobbers: A, X, Y
+        JSR POPUP_FRAME
+        JMP .LA445
+POPUP_TEXT_NF
+        JSR WIN_SAVE
+        JSR VIEW_CLEAR
+        JSR WIN_VIEW
+.LA445
+        JSR WIN_SHRINK
+        JMP MSG_PRINT
+DRAW_SOCKET
+        STX $6C
+        INX
+        INX
+        INX
+        INX
+        STX $6D
+        LDY #$21
+        STY ZP_M5
+        JSR COLOR_SET
+        JSR .LA463
+        JSR .LA463
+        JSR .LA463
+.LA463
+        LDX $6C
+        STX ZP_M4
+        LDX $6D
+        INC ZP_M5
+        LDY ZP_M5
+        JMP LINE_TO
+@ %def POPUP_TEXT POPUP_TEXT_NF DRAW_SOCKET
+
+\subsection{The shape data}
+
+[[CRAFT_GFX]] is the vector-shape graphics blob: a pool of $(dx, dy,
+\mathrm{pen})$ vertex lists, addressed by the shape stepper, that define the
+craft interior, the Mondain figure, the gem, and the socket markers. To this
+overlay it is opaque data, preserved verbatim.
+
+<<tm craft gfx>>=
+        ORG $A470
+CRAFT_GFX
+        HEX 0000000000ff0000
+        HEX 000000003e030210
+        HEX 8080808080808080
+        HEX 8080808080808080
+        HEX 8080808080808080
+        HEX 8080808080808080
+        HEX 020f8080e081e081
+        HEX e0a180a0fca6fcae
+        HEX fcf2fca2b881d081
+        HEX a083988698869c8e
+        HEX 020f8080c083c083
+        HEX c1838181f1cffbbf
+        HEX ddbbcdb3edb7e5a7
+        HEX f18ff18ff99ff99f
+        HEX 020f8080c183c183
+        HEX c1838381fdcffdbf
+        HEX cdbbc5b3e1b7e1a7
+        HEX f18ff18ff89ff89f
+        HEX 020f808080808080
+        HEX 80808080c080e081
+        HEX f083e081c0808080
+        HEX 8080808080808080
+        HEX 0210d5a8d5a8d5a0
+        HEX d5a2d5a2d5a2d5a2
+        HEX d582d48090a881aa
+        HEX 85aa95aa95aa95aa
+        HEX 95a8020f80818081
+        HEX e087b08ca894a4a4
+        HEX a4a4a2c4e2c7aef4
+        HEX ecb7ecb7e897b08c
+        HEX e087020f80808080
+        HEX 8080808080808080
+        HEX c080e081c0808080
+        HEX 8080808080808080
+        HEX 8080020f80808080
+        HEX 8080c08090828080
+        HEX c884e081c8848080
+        HEX 9082c08080808080
+        HEX 8080020f80808080
+        HEX c080908288868080
+        HEX cc88e081c48c8080
+        HEX 98849082c0808080
+        HEX 8080020f8080a081
+        HEX 8884d48890848290
+        HEX c48ce081c8888290
+        HEX 8886c4828884a081
+        HEX 8080020fa489a885
+        HEX c9a4d69a988683b0
+        HEX cc8ce081cc8c83b0
+        HEX 9886d69ac9a4a885
+        HEX a489021080808080
+        HEX 80808080808081c0
+        HEX a2a2ceb99c9cf88f
+        HEX c889a08280808080
+        HEX 8080808002108080
+        HEX 8080808080808080
+        HEX 8080a082cc999ebc
+        HEX e3e3c081a0828080
+        HEX 8080808080800210
+        HEX 8080808080808080
+        HEX 8080a082c889988c
+        HEX fc9fdebda3e281c0
+        HEX 8080808080808080
+        HEX 0210808080808080
+        HEX 80808080a082cc99
+        HEX 9ebce3e3c081a082
+        HEX 8080808080808080
+        HEX 8080020f80808080
+        HEX 8080808080808080
+        HEX 8080808080808080
+        HEX 808080809c80fe87
+        HEX ffff020f80808080
+        HEX 8080808080808080
+        HEX 808080808080c080
+        HEX 8080c080d0828080
+        HEX 8080020f00000000
+        HEX 0000000000000000
+        HEX 4000400044081002
+        HEX 5002440850020000
+        HEX 0000020f80808080
+        HEX 808080808080c080
+        HEX c1a0c0a084889082
+        HEX d48ac488d0828080
+        HEX 8080020f00000000
+        HEX 0000100210021002
+        HEX 0120440844085002
+        HEX 1122052800000000
+        HEX 0000020f80808080
+        HEX 90829082808081a0
+        HEX c1a0848884888080
+        HEX 81a0808080808080
+        HEX 8080020f00000000
+        HEX 1002000001200000
+        HEX 0000000000000120
+        HEX 0000000000000000
+        HEX 0000020f80808080
+        HEX 8080808080808080
+        HEX 8080808080808080
+        HEX 8080808080808080
+        HEX 80800224446484a4
+        HEX c6e60626466686a8
+        HEX caec0e2e4e6e8eae
+        HEX ceee000000000000
+        HEX 0000010101010101
+        HEX 0101020202020202
+        HEX 020265037d039503
+        HEX ad03c503dd03f503
+        HEX 0d04180422042c04
+        HEX 360440044a045404
+        HEX 5e0468040e032603
+        HEX 0a00010203040506
+        HEX 0708090a0b0c0d0e
+        HEX 0f10111213141516
+        HEX 1700000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 000000141e000000
+        HEX 0a0a0a0a0a0c0c0c
+        HEX 0c000a0a0a0a0a0a
+        HEX 0a00000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 000000ff01010a01
+        HEX 0101080401070000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 0000000000000000
+        HEX 00007273747e7f80
+        HEX 81898d8e04040404
+        HEX 0404040404040001
+        HEX 0202030202020203
+        HEX 0203040506070809
+        HEX 0a0b0a09080c0d0e
+        HEX 0f10111213141516
+        HEX 17
+@ %def CRAFT_GFX
 
 
 \chapter{Game data}

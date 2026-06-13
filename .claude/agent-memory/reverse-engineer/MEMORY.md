@@ -2,4 +2,5 @@
 - [dng-subsystem](dng_subsystem.md) — DNG maze generator, ray-marched wireframe renderer, vector-shape engine (rounds 13-15)
 - [twn-cas-subsystem](twn_cas_subsystem.md) — TWN/CAS town+castle: shared loader, 6-class shop system, NPC metadata format, live map buffer, pub lore, CAS quest system (rounds 17-19)
 - [spa-subsystem](spa_subsystem.md) — SPA space-combat overlay: rotation/thrust flight sim, enemy craft, the Space Ace counter (PLR_VESSELS) — DECOMPOSED round 21, byte-perfect, sprites rendered
-- [gen-subsystem](gen_subsystem.md) — GEN overlay: title menu, character generation (race/sex/class/name/attributes), player-save writer + bundled ProDOS disk formatter — scouted round 21
+- [gen-subsystem](gen_subsystem.md) — GEN overlay: title menu, character generation (race/sex/class/name/attributes), player-save writer + bundled ProDOS disk formatter + RWTS — DECOMPOSED round 22, byte-perfect
+- [tm-subsystem](tm_subsystem.md) — TM overlay: the time-machine endgame — Mondain battle, the Gem-of-Immortality win gate, NIF victory + Control-RESET, wireframe scene renderer — DECOMPOSED round 23, byte-perfect (renderer image deferred)

@@ -9,6 +9,54 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 23 (2026-06-13): TM fully decomposed, byte-perfect -- the endgame
+
+- The time-machine endgame overlay is annotated across 37 chunks (27
+  plated routines): the fixed-point math + BCD-print suite, TM_ENTRY +
+  the gem-socket setup, the launch/time-travel narration, the combat
+  scene setup, the main loop + patched-JSR dispatch, TM_ATTACK (melee
+  Mondain/gem), TM_CAST + the 11-entry spell table + magic missile +
+  the INTERFICIO-NUNC backfire, TM_GET (destroy the gem), the move
+  handlers on the interior grid, Mondain's AI (approach/melee/cast with
+  his 3 spells), TM_DEATH, the scene tick + cell helpers, the wireframe
+  SHAPE_STEP stroker + BLIT_LINE blitter + projection tables, the cell
+  grid, and CRAFT_GFX. byte-perfect (8123/8123); full doc tangles +
+  builds. PDF 962 pages, clean (0 errors).
+- THE WIN CONDITION is now pinned in code, end to end: Mondain is
+  shielded by GEM_HP=$7EF4 (16-bit, $03E8=1000). TM_ATTACK/spells drain
+  it via HIT_RESOLVE. Killing Mondain alone -> " ...or is he?" (he
+  regenerates). TM_GET on the gem cell -> "The Gem is DESTROYED!" sets
+  GEM_GONE ($95AB); THEN GEM_HP->0 -> "THOU ART VICTORIOUS!" -> TM_VICTORY
+  loads NIF, hooks Control-RESET, melts the screen into the victory
+  image. Lose -> TM_DEATH "THE UNIVERSE IS DOOMED!!". The SPA->CAS->TM
+  win loop is now fully decompiled at every link.
+- THE SCENE is a wireframe pseudo-3D craft interior on a small cell grid
+  (CELL_STATE $A2FC / CELL_COL $A3E3); SHAPE_STEP $9EE5 is a vertex/
+  filled-band stroker drawing a display list (CRAFT_GFX $A470) at
+  cell-projected positions (PROJ_TBL $9D2A). The combat is grid melee +
+  spells -- structurally unlike SPA's real-time flight.
+- Pitfalls recorded in agent memory (tm_subsystem.md + toolchain): the
+  single-scope self-test HIDES cross-chunk .L failures -- 36 helper subs
+  (62 refs) had to be promoted to globals; the REAL per-chunk tangle is
+  the only true byte-check. Two inline-text trampolines ($A436/$A43C) +
+  MLIB_BLOAD inline path. 7 CMD_* names renamed TM_* (OUT/DNG collide).
+  3 in-code BSS bytes -> 1-byte data spans. EQU-band catch-all guard.
+- Pipeline kept for reuse: .claude/scripts/tm_gen.py + tm_symmap.py +
+  tm_labels.py + tm_chapter_tm.py + tm_emit_chunks.py + tm_build_section.py
+  (clone of the gen_gen sextet).
+- All 16 targets byte-perfect. Hygiene: 0 EQU stubs, 0 raw-hex operands,
+  0 missing plates (342 routines), 0 placement violations, 1 TODO-SYM
+  (intro art, resolves with makeindata). ORG stubs 2 -> 1 (makeindata
+  only). The remaining renderer IMAGE (CRAFT_GFX) is deferred -- it is a
+  runtime-interpreted display list bound to live projection state, not a
+  static sprite gallery; unblock = emulate SHAPE_STEP+BLIT_LINE+projection
+  (see tm_subsystem.md). This is the only TM graphic outstanding.
+- Next session: makeindata (13877 bytes, the LAST overlay/data target --
+  builds the intro art AND likely generates the world map for /U1.VARS;
+  resolves ART_* semantics and the last TODO-SYM; render the four
+  continents). Then the synthesis chapters. Optionally the TM CRAFT_GFX
+  render as its own focused round (twin of DNG round 15).
+
 ### Round 22 (2026-06-13): GEN fully decomposed, byte-perfect
 
 - The new-game / title overlay is annotated across 37 chunks: the
@@ -769,14 +817,19 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       (RWTS_FORMAT + FORMAT_VOLUME). Pins the new-game path, the
       chargen attribute math, and the only raw-hardware disk code in
       the game.
-- [ ] TM overlay (8123): the time-machine endgame (TM_REVEAL pays off
-      here -- Mondain's gem, the win). NEXT. Decompose from a cloned
-      gen_gen pipeline; expect the cellular grid math visible in the
-      stub ($8AD7 entry, the 16-bit shift/multiply helpers $8A40/$8A44/
-      $89FE and the GLYPH/blit at $8A00-$8A5F).
-- [ ] makeindata: builds intro art AND (likely) generates the
-      world map for /U1.VARS -- render the four continents then;
-      resolves ART_* semantics and the one TODO-SYM.
+- [x] TM overlay (8123): DONE (Round 23, byte-perfect, 37 chunks). The
+      time-machine endgame -- Mondain battle, the Gem-of-Immortality win
+      gate (destroy the gem THEN kill Mondain -> VICTORIOUS -> NIF +
+      Control-RESET), the wireframe interior scene, the grid combat +
+      spells, Mondain's AI. Pins the entire SPA->CAS->TM win loop in code.
+- [ ] makeindata (13877): the LAST target. Builds intro art AND (likely)
+      generates the world map for /U1.VARS -- render the four continents
+      then; resolves ART_* semantics and the one TODO-SYM. NEXT.
+- [ ] TM CRAFT_GFX render (deferred, own round like DNG 15): emulate
+      SHAPE_STEP ($9EE5) + BLIT_LINE ($A176) + PROJ_TBL ($9D2A) +
+      scene-setup positions to render the craft interior / Mondain / gem.
+      Not a static sprite gallery -- a runtime display list. See
+      tm_subsystem.md for the unblock recipe.
 - [ ] Synthesis chapters (Round 6 quality bar) once the overlays are
       all decomposed: game overview, data structures, the quest/
       gem/time-machine win condition in platform-independent prose.

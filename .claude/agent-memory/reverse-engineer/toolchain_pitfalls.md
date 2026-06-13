@@ -87,3 +87,31 @@ Toolchain facts proven byte-perfect in rounds 0-2.
   jump target that is NOT an instruction start (operand-byte targets
   from relocated/data code) -- guard with `a16 in targets and a16 in
   starts`, and map targets that land in a named data span to LABEL+off.
+- THE SINGLE-SCOPE SELF-TEST HIDES CROSS-CHUNK .L FAILURES. The chapter
+  self-test (gen_chapter_*/tm_chapter_* -> /tmp/*_all.asm) emits ONE big
+  SUBROUTINE, so any .Lxxxx defined in routine A and referenced from
+  routine B resolves fine -- but the REAL tangle gives each literate chunk
+  its OWN SUBROUTINE, and dasm scopes .L per-SUBROUTINE, so cross-chunk
+  .L refs die "Unknown Mnemonic 'jsr .L9xxx'" (round 23/TM: 36 helper
+  subroutines, 62 refs). ALWAYS run the real per-chunk tangle (expand the
+  <<tm.asm>> collection keeping every SUBROUTINE) as the FINAL byte-check,
+  not just the single-scope self-test. Fix = promote every cross-chunk .L
+  target to a named global label (tm_labels.LBL). GEN had 0 cross-chunk
+  refs (each routine self-contained) so it never surfaced; multi-helper
+  overlays (TM) hit it hard.
+- A second inline-text trampoline is easy to miss: TM has BOTH POPUP_TEXT
+  ($A436 framed) and POPUP_TEXT_NF ($A43C unframed), each falling into
+  MSG_PRINT with inline text; and MLIB_BLOAD ($B703) takes an inline
+  zero-terminated PATH ("NIF",0 for the victory screen). Any inline-text
+  routine omitted from the INLINE map garbles its string as code (the
+  raw-hex-JSR tell). Enumerate every JSR-then-text site before emitting.
+- tm_build_section BANDS (the grouped-EQU emitter) must cover EVERY
+  out-of-file SYM address or the EQU silently drops and the tangle fails
+  undefined (HGR1 $2000 fell between bands). Add a catch-all "other" band.
+- In-code 1-byte BSS storage bytes (BRK fillers between routines that are
+  abs-referenced as flags/counters: TM GEM_GONE/IDLE_CNT/ANIM_CNT) each
+  need a 1-byte DATA_SPAN + DATA_LABEL, else they assemble as part of a
+  neighbouring instruction or stay raw-hex.
+- Don't EQU an absolute-addressed ZERO-PAGE operand (e.g. LDA $00D6,Y):
+  giving $00D6 a symbol lets dasm re-optimize it to 2-byte zero-page form
+  and diverge. Leave such deliberate 3-byte abs-to-zp accesses raw.
