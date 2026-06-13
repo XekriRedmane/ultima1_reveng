@@ -9,6 +9,40 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 13 (2026-06-13): DNG scouted end to end
+
+- DNG ($8956-$B098, 10051 bytes) is the first-person wireframe
+  dungeon. Entry sets DIR_STR_PTR=$A538: movement commands are
+  renamed "Forward / Turn around / Turn right / Turn left" --
+  same dispatch skeleton as OUT (table at $8E14, patched JSR
+  at $8E0B w/ STALE $FFFF operand on disk; main loop $8DE6;
+  prompt $8D99; idle tick Y=1/A=$10 = .01 food/.10 time).
+- Dispatch decoded (OUT names): 0-3 move/turn $8E95/$8E48/
+  $8E5B/$8E78, Pass $8F8C, Attack $8F96, Cast $90C5, Inform
+  $9CD2, K-limb $961B (ladders; $8C5D re-gen on level change at
+  $9728/$974D), Open $9768 ("APERTUS!" incantation at $A55D),
+  Quit $9804, Ready $9829, Unlock $9848 ("PECUNIA!" at $A567),
+  Ztats $98D1; everything else QUERY_MARK. Engine SOUND/SFX
+  toggles reused. Death $98DD -> JMP RESPAWN (engine).
+- HEADLINE: dungeons are PROCEDURALLY GENERATED, deterministic
+  per site. $8C5D seeds $A504/05 from PLR_PLACE*8 ^ PLR_OUT_X ^
+  level and PLR_OUT_Y*4 ^ PLR_CONT, copies a 121-byte (11x11?)
+  template $A619->$B099 (map lives in BSS past the file), lays
+  a grid, then strews features from the seeded RNG $A3F3
+  (helpers $A406/$A41F). Levels 1 and 10 get fixed extras
+  (ladder up / something at bottom).
+- State: $A4E8/E9 = X/Y (entry 1,1), $A4EC/ED = facing dx/dy
+  (entry 0,1), $A506 = level, $A4FC prompt flag, $A504/05 RNG
+  seed. Monsters: SIX fixed slots, not OUT's 80 records --
+  kind $A508+i, X $A50E+i, Y $A514+i (i=0..5; turn walker
+  $98EC counts $A4FE 5..0, approach logic at $9912).
+- View renderer entered via $9BED; line helpers $A3F3/$A406/
+  $A41F cluster near the geometry tables at file tail
+  ($AFxx-$B098, coordinate-list shaped). Status bar $8982
+  prints "Level N" + facing from $A4EC/ED signs.
+- Next session: decompose from this skeleton in file order;
+  expect dungeon spells 1,2,4-9 in Cast and monsters 21-45.
+
 ### Round 12 (2026-06-13): OUT fully decomposed, byte-perfect
 
 - The whole overworld overlay is annotated: entry/main loop
@@ -288,7 +322,8 @@ plus this file — never by re-deriving history.
 
 ## Work queue
 
-- [ ] DNG next (wireframe dungeons via PLOT/LINE_TO; dungeon
+- [ ] DNG next: full skeleton scouted (see Round 13). Decompose
+      in file order; dungeon
       spells 1,2,4-9 and monsters 21-45 should light up here).
       Reuse OUT's defines block as the template; watch for the
       shared-source routines (TGT_CELL_PTR, SPAWN_AT_*).
