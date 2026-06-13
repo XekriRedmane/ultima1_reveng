@@ -6762,11 +6762,15 @@ that the code alone left open: the four \emph{continent} names, the
 pillars and signposts; index order will matter to the overlays'
 location tables).
 
-A few non-string stretches are embedded among the tables ---
-[[ENGINE_TBL_A]] (small ascending numbers, plausibly per-level
-costs or limits) and [[ENGINE_TBL_B]] (168 bytes between the
-continent and place names, plausibly per-place data) --- their
-meanings are expected to fall out of the overlays.
+A few non-string stretches are embedded among the tables, and the
+OUT overlay (chapter~\ref{ch:overlays}) identified both:
+[[MON_TIER]] is the per-monster difficulty tier (one byte per
+monster, parallel to [[STR_MONSTERS]]; the tier indexes the
+overlays' hit-point/experience scale tables), and the 168 bytes
+between the continent and place names are two parallel 84-entry
+coordinate tables, [[PLACE_Y]] and [[PLACE_X]] --- the world
+position of every named place, in the same index order as
+[[STR_PLACES]].
 
 <<miu1 string region>>=
         ORG $73AF
@@ -6890,8 +6894,10 @@ STR_GEMS
         DC.B "Green Ge",$ED             ;  1: Green Gem
         DC.B "Blue Ge",$ED              ;  2: Blue Gem
         DC.B "White Ge",$ED             ;  3: White Gem
-ENGINE_TBL_A ; 46 bytes, not yet identified (cost/limit
-             ; tables, by the look of the ascending runs)
+MON_TIER ; difficulty tier 0-10 per monster (parallel to
+         ; STR_MONSTERS). The overlays scale spawn gating,
+         ; hit points and experience from TIER_HP[tier].
+         ; Entries 0-5 pair with the blank monster names.
         HEX 0a 05 04 03 02 01 04 06
         HEX 08 0a 01 02 04 06 08 02
         HEX 04 06 08 09 0a 02 02 03
@@ -6950,8 +6956,9 @@ STR_CONTINENTS
         DC.B "the Feudal Lord",$F3      ;  1: the Feudal Lords
         DC.B "the Dark Unknow",$EE      ;  2: the Dark Unknown
         DC.B "Danger and Despai",$F2    ;  3: Danger and Despair
-ENGINE_TBL_B ; 168 bytes, not yet identified (one byte
-             ; per place? resolved by the overlays)
+PLACE_Y ; world row of each of the 84 places, OR'd with the
+        ; continent in the top two bits (the PLR_CONT_BITS
+        ; encoding); 21 places per continent
         HEX 1f 14 03 02 06 24 16 35
         HEX 1e 04 2a 0f 3d 20 22 36
         HEX 15 38 1b 38 0f 5e 56 7b
@@ -6962,7 +6969,9 @@ ENGINE_TBL_B ; 168 bytes, not yet identified (one byte
         HEX 87 b0 9b 95 b7 83 89 df
         HEX d4 c3 c2 c6 e4 d6 f5 de
         HEX c4 ea cf fd e0 e2 f6 d5
-        HEX f8 db f8 cf 1e 16 3b 1a
+        HEX f8 db f8 cf
+PLACE_X ; world column of each place (top bits clear)
+        HEX 1e 16 3b 1a
         HEX 08 03 31 1d 13 26 34 2b
         HEX 1c 1d 38 0f 24 2a 08 3c
         HEX 36 1f 14 03 02 06 24 35
@@ -7060,7 +7069,7 @@ STR_PLACES ; the 84 named places of the four continents
         DC.B "Lost Friend",$F3          ; 83: Lost Friends
 @ %def STR_RACES STR_WEAPONS STR_WEAPONS_S STR_STATS STR_SPELLS
 @ %def STR_ARMOUR STR_CLASSES STR_TRANSPORT STR_COMMANDS STR_GEMS
-@ %def ENGINE_TBL_A STR_MONSTERS STR_CONTINENTS ENGINE_TBL_B
+@ %def MON_TIER STR_MONSTERS STR_CONTINENTS PLACE_Y PLACE_X
 @ %def STR_PLACES
 
 \section{The disk prompt}
@@ -7169,7 +7178,8 @@ PATH_PLAYER
         DC.B "/U1.PLAYER"               ; the character save file
 PATH_VARS
         DC.B "/U1.VARS",$00             ; the world-state save file
-        HEX 00 00                       ; (unused)
+DMG_AMT DC.B $00                        ; last damage dealt/taken
+        DC.B $00                        ; (unused)
 SAVE_PAGE_TGL
         DC.B $00                        ; ZP_PAGE_TGL save (popups)
 HILITE_IDX
@@ -7186,7 +7196,15 @@ CMD_KEYS
         HEX 20 01                       ; space (pass), ctrl-A
         DC.B "ABCDEFGHI"
         DC.B "KNOQRSTUVXZ"              ; the letter commands
-        HEX ca 01 00 00                 ; fields not yet identified
+PLR_SAVE
+        DC.W $01CA                      ; start of the block saved
+                                        ;   to /U1.PLAYER; the word
+                                        ;   is the block's own length
+PLR_CONT
+        DC.B $00                        ; continent index (0-3)
+PLR_CONT_BITS
+        DC.B $00                        ; continent << 6: the tag
+                                        ;   OR'd into Y coordinates
 PLR_SOUND
         DC.B $FF                        ; saved master-sound flag
 PLR_SFX DC.B $FF                        ; saved effects flag
@@ -7213,10 +7231,25 @@ OWNED_SPELLS
         HEX 01 03 03 03 00 03 03 03     ; spell counts (0..10)
         HEX 03 03 03
 OWNED_TRANSPORT
-        HEX 01 01 01 01 01 01 00 00     ; transport counts (0..10)
-        HEX 00 00 00
-        HEX 00 00 00 00 00 00 00 00     ; fields not yet identified
-        HEX ff ff ff ff 00              ; fields not yet identified
+        HEX 01 01 01 01 01 01 00 00     ; transport counts (0..10);
+        HEX 00 00 00                    ;   OUT recounts 1..10 from
+                                        ;   the parked-object records
+QUEST_FLAGS
+        HEX 00 00 00 00 00 00 00 00     ; 8 quest slots: 0 = never
+                                        ;   given, 1 = active, FF =
+                                        ;   done (even slots complete
+                                        ;   at the landmark sites)
+COURT_CELLS
+        HEX ff ff ff ff                 ; the 4 map cells around the
+                                        ;   last town/castle entered
+                                        ;   (N,W,E,S): terrain class
+                                        ;   going in, parked-craft
+                                        ;   codes coming out; FF =
+                                        ;   unusable
+TM_REVEAL
+        DC.B $00                        ; nonzero: scatter time
+                                        ;   machines on the next
+                                        ;   outdoor map refresh
 PLR_VESSELS
         DC.B $00                        ; captured enemy vessels
 PLR_SEX DC.B $01                        ; 0 = male, else female
@@ -7247,17 +7280,45 @@ PLR_FOOD
 PLR_EXP DC.W $0237                      ; experience (binary)
         DC.W $03E8                      ; not yet identified (1000)
         DC.W $03E8                      ; not yet identified (1000)
-        HEX 00 ff ef be 00              ; fields not yet identified
-PLR_BSS DS.B 325,$00                    ; zeroed working storage,
-                                        ;   up to the engine code
-@ %def LOC_NAME WIN_SAVE_BUF CAP_FLAG PATH_PLAYER PATH_VARS
+PLR_PLACE
+        DC.B $00                        ; index of the place the
+                                        ;   player is at/in (0-83)
+PLR_LASTMARK
+        DC.B $FF                        ; last landmark visited (its
+                                        ;   boon is not given twice
+                                        ;   in a row)
+        HEX ef be 00                    ; not yet identified ($BEEF?)
+CUR_MON DC.B $00                        ; monster index of the
+                                        ;   current fight/obstacle
+TGT_REC DC.B $00                        ; object record locked on as
+                                        ;   the attack target
+        HEX 00 00                       ; fields not yet identified
+OBJ_COUNT
+        DC.B $00                        ; live object records (max
+                                        ;   80): monsters + parked
+                                        ;   transports, kept across
+                                        ;   overlay switches
+OBJ_X   DS.B 80,$00                     ; object world column
+OBJ_YC  DS.B 80,$00                     ; object world row, OR'd
+                                        ;   with continent bits
+OBJ_TILE
+        DS.B 80,$00                     ; object map-cell byte
+OBJ_UNDER
+        DS.B 80,$00                     ; terrain cell the object
+                                        ;   covers (restored on
+                                        ;   despawn); ends at the
+                                        ;   engine code
+@ %def LOC_NAME WIN_SAVE_BUF CAP_FLAG PATH_PLAYER PATH_VARS DMG_AMT
 @ %def SAVE_PAGE_TGL HILITE_IDX PLR_OUT_X PLR_OUT_Y
 @ %def TICK_FOOD TICK_MOVE DIR_STR_PTR CMD_KEYS PLR_SOUND PLR_SFX
+@ %def PLR_SAVE PLR_CONT PLR_CONT_BITS
 @ %def OWNED_GEMS READY_SPELL READY_WEAPON READY_ARMOUR
 @ %def READY_TRANSPORT OWNED_ARMOUR OWNED_WEAPONS OWNED_SPELLS
-@ %def OWNED_TRANSPORT PLR_VESSELS PLR_SEX PLR_NAME PLR_HITS
+@ %def OWNED_TRANSPORT QUEST_FLAGS COURT_CELLS TM_REVEAL
+@ %def PLR_VESSELS PLR_SEX PLR_NAME PLR_HITS
 @ %def PLR_COIN PLR_RACE PLR_CLASS MOVE_CNT FOOD_FRAC PLR_FOOD
-@ %def PLR_EXP PLR_BSS
+@ %def PLR_EXP PLR_PLACE PLR_LASTMARK CUR_MON TGT_REC
+@ %def OBJ_COUNT OBJ_X OBJ_YC OBJ_TILE OBJ_UNDER
 
 \section{Text output}
 
@@ -7417,11 +7478,12 @@ PUTCH
 PUTCH_NL_COND
         LDA MON_CH
         CMP #$02
-        BCC .col1
+        BCC CURSOR_COL1
 PUTCH_NL_COL1
         JSR NEWLINE
-.col1   LDA #$01
-        STA MON_CH
+CURSOR_COL1                             ; (entry: column 1, no
+        LDA #$01                        ;   newline -- overlays
+        STA MON_CH                      ;   call it directly)
         RTS
 NEWLINE_ALT
         ; newline after blanking the rest of the current row
@@ -7562,7 +7624,8 @@ MSG_PRINT
         PHA
         RTS
 @ %def MSG_GETC STR_GETC MSG_PTR STR_PTR PRINT_HEX PRINT_DIGIT CHAR_OUT
-@ %def PUTCH_RTS PUTCH PUTCH_NL_COND PUTCH_NL_COL1 NEWLINE_ALT NEWLINE CR
+@ %def PUTCH_RTS PUTCH PUTCH_NL_COND PUTCH_NL_COL1 CURSOR_COL1
+@ %def NEWLINE_ALT NEWLINE CR
 @ %def WIN_SHRINK STR_NTH_CAP
 @ %def STR_FIRST STR_NTH MSG_AT MSG_PRINT
 
@@ -8065,8 +8128,10 @@ TICK_SND
         BCS .carry
         CLD
         RTS
-.carry  SED
-        SEC                             ; +1 into the higher bytes
+.carry
+MOVE_CNT_INC                            ; (entry: +1 whole move --
+        SED                             ;   OUT charges each step
+        SEC                             ;   on foot this way)
         LDX #$00
 .prop   LDA MOVE_CNT+1,X
         ADC #$00
@@ -8075,7 +8140,7 @@ TICK_SND
         BCS .prop
         CLD
         RTS
-@ %def TICK TICK_SND
+@ %def TICK TICK_SND MOVE_CNT_INC
 
 \section{The stats panel}
 
@@ -8258,7 +8323,9 @@ QUERY_MARK
         JSR FONT_DRAW
 BEEP_HUH
         LDA #$10                        ; the error blat
-.play   JSR SFX_PLAY
+.play
+SFX_PLAY_FLUSH                          ; (entry: play A, then
+        JSR SFX_PLAY                    ;   flush -- overlays use it)
         ; falls into KBD_CLEAR
 KBD_CLEAR
         ; Flush the type-ahead and sound queues and the strobe.
@@ -8268,7 +8335,7 @@ KBD_CLEAR
         STA ZP_KEY_CNT
         RTS
 @ %def PRINT_SPELL CURSOR_TO_TEXT NO_EFFECT_MSG BEEP_CMD QUERY_MARK
-@ %def BEEP_HUH KBD_CLEAR
+@ %def BEEP_HUH SFX_PLAY_FLUSH KBD_CLEAR
 
 \section{Popup frames}
 
@@ -8305,8 +8372,10 @@ POPUP_FRAME
         STA MON_WNDWDTH
         JSR CLR_WINDOW
         JSR PUTCH_NL_COL1
-        LDA #$06
-        JSR COLOR_SET                   ; blue
+POPUP_BORDER                            ; (entry: redraw the border
+        LDA #$06                        ;   in blue)
+POPUP_BORDER_A                          ; (entry: ... in color A --
+        JSR COLOR_SET                   ;   OUT flashes it white)
         JSR PAGE_SWAP                   ; draw on the visible page
         LDX #$12
         LDY #$12
@@ -8329,7 +8398,7 @@ PAGE_SWAP
         EOR ZP_PAGE_TGL
         STA ZP_PAGE_XOR
         RTS
-@ %def POPUP_FRAME PAGE_SWAP
+@ %def POPUP_FRAME POPUP_BORDER POPUP_BORDER_A PAGE_SWAP
 
 \section{The Ready command}
 
@@ -9240,678 +9309,3165 @@ OVERLAY_ENTRY
 \chapter{Mode overlays}
 
 The seven play-mode overlays all load at [[OVERLAY_ENTRY]] and are
-entered at their first byte. Each is reproduced below as a stub
-region; they are decomposed in their own rounds, largest shared
-structures first.
+entered at their first byte. They share the engine API, the player
+state block, and (visibly, from common code shapes and even
+unreferenced leftover routines) a common ancestral source file.
+\texttt{OUT} is fully decomposed below and serves as the reference
+for the conventions; the remaining six are stub regions pending
+their own rounds.
 
-\section{OUT}
+\section{OUT: the outdoors overlay}
 
-\texttt{OUT} --- outdoors (overworld) overlay, 5230 bytes at [[$8956]]. Not
-yet decomposed; reproduced as a stub region pending its own rounds.
+\texttt{OUT} is the overworld: the player walks one of four $64
+\times 64$ continents, monsters spawn and hunt, and every other game
+mode is entered from here --- towns, castles, dungeons and landmarks
+through the \emph{Enter} command, space by boarding the shuttle, the
+endgame by boarding a time machine. It is the smallest overlay
+(5230 bytes at [[$8956]]--[[$9DC3]]) and the template for reading
+the other six: a screenful of command handlers in front, the world
+machinery behind them, and packed message text at the end.
 
-<<out blob>>=
+The overlay's working vocabulary, recovered in this chapter:
+
+\begin{itemize}
+\item A map \emph{cell} is one byte at [[MAP_BASE]] +
+row$\times$64 + column. The byte is twice the \emph{cell code}; [[DRAW_MAP]] masks
+it with \texttt{\$7E} to pick a glyph pair, and the low bit is free
+for tile animation. Codes 0--7 are terrain: 0 water, 1 grass, 2
+forest, 3 mountains, 4 castle, 5 landmark, 6 town, 7 dungeon
+entrance. Codes 8--15 are parked transports (8 $+$ transport
+index, 15 = a time machine). Codes 16--44 (cell bytes
+[[$20]]--[[$58]]) are monsters: monster index = cell byte / 4 $-$ 2,
+giving the outdoor range 6--20 of [[STR_MONSTERS]].
+\item Everything that sits \emph{on top of} terrain --- monsters
+and parked transports --- is an \emph{object record}: five parallel
+80-entry arrays ([[OBJ_X]], [[OBJ_YC]], [[OBJ_TILE]],
+[[OBJ_UNDER]] in the saved player block; hit points in
+[[OBJ_HP]], up in unsaved RAM). [[OBJ_YC]] carries the continent in its top two
+bits, so records from all four continents coexist; a map rebuild
+only paints the records whose tag matches [[PLR_CONT_BITS]].
+\item The world map itself is read-only: the four continents live
+RLE-compressed above the overlay at [[MAP_PACKED]] and are
+decompressed into [[$6000]] on every continent change. Nothing the
+player does alters the stored map --- all world state is the
+object-record arrays, which travel inside the saved player block.
+\end{itemize}
+
+The overlay calls the resident library through the [[$15xx]]
+vectors and the engine API directly; everything external is
+declared here. The five working bytes past the end of the file
+([[$9DC4]]--[[$9DC8]]) are the overlay's only BSS.
+
+<<out defines>>=
+; --- resident library (STUPH) vectors and state ---
+PLAYER_TILE     EQU $1582       ; cell byte drawn at the center
+PAGE_COPY       EQU $158F       ; copy visible page to draw page
+CLR_EOL         EQU $1598       ; clear to end of line
+WIN_VIEW        EQU $15A7       ; text window := the viewport
+VIEW_CLEAR      EQU $15AA       ; clear the map viewport
+PAGE_FLIP       EQU $15AD       ; show the draw page
+DRAW_MAP        EQU $15B3       ; draw the 19x9 map viewport
+RND             EQU $15B9       ; random byte
+KEY_GET_ANIM    EQU $15C5       ; poll key, animating tiles
+SFX_PLAY        EQU $15CB       ; play sound effect A now
+SFX_QUEUE       EQU $15CE       ; queue sound effect A
+COLOR_SET       EQU $15D4       ; set hi-res drawing color
+LINE_TO         EQU $15DA       ; line from ZP_PX/Y to X/Y
+FRAME_SYNC      EQU $15E6       ; wait for the VBL beat
+VDELAY          EQU $15E9       ; delay A vertical beats
+@
+
+The engine entry points are the [[$80xx]]--[[$88xx]] cluster
+documented in the MI.U1 chapter, plus the file library:
+
+<<out defines>>=
+; --- the MI.U1 engine API ---
+DISK_PROMPT_P   EQU $7DCF       ; "Put in the Player Disk"
+PRINT_DIGIT     EQU $8058       ; print digit in A
+CHAR_OUT        EQU $8062       ; print character in A
+PUTCH_NL_COND   EQU $8078       ; newline+col1 if col >= 2
+PUTCH_NL_COL1   EQU $807E       ; newline, column 1
+CURSOR_COL1     EQU $8081       ; column 1, no newline
+WIN_SHRINK      EQU $80A1       ; pull window top below popups
+STR_NTH_CAP     EQU $80B1       ; print Nth string, capitalized
+STR_FIRST       EQU $80B6       ; print first string of table
+STR_NTH         EQU $80B8       ; print Nth string (X = index)
+MSG_PRINT       EQU $8119       ; print inline text
+BIN2BCD         EQU $81AD       ; 16-bit binary X,A -> BCD
+PRINT_NUM8      EQU $820D       ; print 8-bit number
+NUM_PAD         EQU $8249       ; leading-zero pad character
+DIV10           EQU $824A       ; A := A / 10
+RND_MOD         EQU $8254       ; A := random in 0..A-1
+PAUSE_ABORTABLE EQU $826C       ; pause, any key cuts it short
+KEY_ALIAS       EQU $827D       ; map key aliases to arrows
+GET_COMMAND     EQU $82A2       ; read+echo command, X = 2*index
+TICK            EQU $82E2       ; food -= Y/100, moves += A
+TICK_SND        EQU $82E4       ; TICK plus the move thump
+MOVE_CNT_INC    EQU $8320       ; moves += 1.00
+STATS_DRAW      EQU $8331       ; redraw the stats panel
+STATS_VALUES    EQU $836E       ; redraw the stats values
+WIN_RESTORE     EQU $83A9       ; restore the saved window
+WIN_SAVE        EQU $83B4       ; save the text window
+PRINT_SPELL     EQU $83BF       ; print the readied spell name
+NO_EFFECT_MSG   EQU $83EB       ; "Hmmmm... no effect?"
+BEEP_CMD        EQU $8403       ; command beep + flush
+QUERY_MARK      EQU $8407       ; append "?" + error blat
+BEEP_HUH        EQU $840F       ; error blat + flush
+SFX_PLAY_FLUSH  EQU $8411       ; play effect A + flush
+KBD_CLEAR       EQU $8414       ; flush key and sfx queues
+RTS_HOOK        EQU $841D       ; an engine RTS (dispatch rest
+                                ;   state -- see OUT_MAIN)
+POPUP_FRAME     EQU $841E       ; open the popup box
+POPUP_BORDER    EQU $8435       ; redraw popup border, blue
+POPUP_BORDER_A  EQU $8437       ; redraw popup border, color A
+READY_CMD       EQU $8466       ; the Ready command (key in A)
+READY_CLASSES   EQU $84C4       ; "nothing/spell:/weapon:/armour:"
+INVENTORY       EQU $85A2       ; the Ztats display
+SOUND_TOGGLE    EQU $8845       ; master sound on/off
+SFX_TOGGLE      EQU $885B       ; effects on/off
+DEATH           EQU $8870       ; the death screen
+GAME_LOAD       EQU $88FD       ; switch overlay (A = offset)
+MLIB_BSAVE_P    EQU $B724       ; file library: BSAVE, path ptr
+@
+
+<<out defines>>=
+; --- engine string tables and data ---
+STR_WEAPONS     EQU $73C8       ; 16 weapon names
+STR_WEAPONS_S   EQU $7438       ; ... short forms
+STR_STATS       EQU $748E       ; 10 stat names
+STR_TRANSPORT   EQU $757C       ; 11 transport names
+STR_COMMANDS    EQU $75CB       ; 26 command names
+MON_TIER        EQU $76A8       ; difficulty tier per monster
+STR_MONSTERS    EQU $76D6       ; 46 monster names
+STR_CONTINENTS  EQU $7831       ; 4 continent names
+PLACE_Y         EQU $786F       ; world row of the 84 places
+PLACE_X         EQU $78C3       ; world column of the 84 places
+STR_PLACES      EQU $7917       ; 84 place names
+@
+
+<<out defines>>=
+; --- the player state block ---
+PATH_PLAYER     EQU $7E38       ; "/U1.PLAYER"
+DMG_AMT         EQU $7E4B       ; last damage dealt/taken
+DIR_STR_PTR     EQU $7E51       ; movement-name table override
+CMD_KEYS        EQU $7E53       ; the 26 command keys
+PLR_SAVE        EQU $7E6D       ; start of the saved block
+PLR_CONT        EQU $7E6F       ; continent index (0-3)
+PLR_CONT_BITS   EQU $7E70       ; continent << 6
+PLR_OUT_X       EQU $7E73       ; saved outdoor position
+PLR_OUT_Y       EQU $7E74
+OWNED_GEMS      EQU $7E75       ; the four gems (R,G,B,W)
+READY_SPELL     EQU $7E79
+READY_WEAPON    EQU $7E7A
+READY_ARMOUR    EQU $7E7B
+READY_TRANSPORT EQU $7E7C
+OWNED_WEAPONS   EQU $7E83       ; weapon counts (0..15)
+OWNED_SPELLS    EQU $7E93       ; spell counts (0..10)
+OWNED_TRANSPORT EQU $7E9E       ; transport counts (0..10)
+QUEST_FLAGS     EQU $7EA9       ; 8 quest slots
+COURT_CELLS     EQU $7EB1       ; 4 cells around the last
+                                ;   town/castle entered (N,W,E,S)
+TM_REVEAL       EQU $7EB5       ; scatter time machines flag
+PLR_HITS        EQU $7EC6       ; hit points, 16-bit binary
+PLR_STR         EQU $7EC8       ; the six attribute pairs
+PLR_AGI         EQU $7ECA
+PLR_STA         EQU $7ECC
+PLR_CHA         EQU $7ECE
+PLR_WIS         EQU $7ED0
+PLR_INT         EQU $7ED2
+PLR_COIN        EQU $7ED4
+PLR_CLASS       EQU $7ED8
+FOOD_FRAC       EQU $7EE4       ; food fraction, BCD hundredths
+PLR_FOOD        EQU $7EE5       ; food, 16-bit binary
+PLR_EXP         EQU $7EE7       ; experience, 16-bit binary
+PLR_PLACE       EQU $7EED       ; index of the place the player
+                                ;   is at (FF = in the wild)
+PLR_LASTMARK    EQU $7EEE       ; last landmark visited
+CUR_MON         EQU $7EF2       ; monster of the current fight
+TGT_REC         EQU $7EF3       ; record locked as attack target
+OBJ_COUNT       EQU $7EF6       ; live object records (max 80)
+OBJ_X           EQU $7EF7       ; object world column
+OBJ_YC          EQU $7F47       ; object world row | continent
+OBJ_TILE        EQU $7F97       ; object cell byte
+OBJ_UNDER       EQU $7FE7       ; terrain cell under the object
+OBJ_HP          EQU $B600       ; object hit points; OBJ_HP+0
+                                ;   doubles as the world-state
+                                ;   "initialized" sentinel
+@
+
+Zero page: the resident library owns [[$74]]--[[$80]] (input and
+sound queues, page state); the overlay shares the engine's player
+position at [[ZP_PLR_X]]/[[ZP_PLR_Y]] and claims a scratch
+vocabulary of its own. Names follow each byte's dominant use; a
+few are aliased per context, as ever on the 6502.
+
+<<out defines>>=
+; --- zero page ---
+ZP_PLR_X        EQU $00         ; player world column (0-63)
+ZP_PLR_Y        EQU $01         ; player world row (0-63)
+ZP_TGT_X        EQU $02         ; target/probe cell column
+ZP_TGT_Y        EQU $03         ; target/probe cell row; spawn:
+                                ;   required terrain class
+ZP_STEP_X       EQU $04         ; signed step, -1/0/+1; monster
+                                ;   action: |dx| to the player
+ZP_STEP_Y       EQU $05         ; signed step / |dy|
+ZP_BOX_L        EQU $06         ; spawn exclusion box (also the
+ZP_BOX_T        EQU $07         ;   PLOT/LINE coords ZP_PX/ZP_PY
+ZP_BOX_R        EQU $08         ;   for the gem indicator)
+ZP_BOX_B        EQU $09
+ZP_DST_X        EQU $0C         ; accepted move destination
+ZP_DST_Y        EQU $0D
+MON_CH          EQU $24         ; text cursor column (Monitor CH)
+ZP_BCD          EQU $62         ; BIN2BCD result, low byte first
+ZP_RLE_SRC      EQU $28         ; map decompressor source; spawn
+                                ;   retry counter (aliased)
+ZP_RLE_DST      EQU $2A         ; map decompressor destination
+ZP_TILE_TMP     EQU $60         ; removed object's cell byte;
+                                ;   spawn placement retry counter
+ZP_TRIES        EQU $65         ; terrain-search retry counter
+ZP_CHANCE       EQU $69         ; hit-chance threshold (also
+                                ;   RND_MOD's ZP_RND_TMP)
+ZP_REC          EQU $6A         ; object record being processed
+ZP_TMP          EQU $6C         ; scratch (saved X, item index)
+ZP_TMP2         EQU $6D         ; scratch
+ZP_SGN_X        EQU $6E         ; sign of player - monster dx
+ZP_SGN_Y        EQU $6F         ; sign of ... dy
+ZP_CELL_PTR     EQU $72         ; pointer to a map row
+ZP_PAGE_XOR     EQU $7F         ; draw-page XOR (STUPH)
+ZP_PAGE_TGL     EQU $80         ; page toggle mask (STUPH)
+; --- the overlay's BSS, past the end of the file ---
+LM_SAVE         EQU $9DC4       ; landmark index being handled
+UNDER_TYPE      EQU $9DC5       ; cell code under the player
+PARK_CNT        EQU $9DC6       ; transports in the world
+MON_TCLASS      EQU $9DC7       ; moving monster's terrain class
+RANGE_CNT       EQU $9DC8       ; projectile/attack range left
+; --- map geometry ---
+MAP_BASE        EQU $6000       ; the decompressed 64x64 map
+MAP_PACKED      EQU $A900       ; the four continents, RLE
+@
+
+\section{OUT: arrival and the main loop}
+
+The engine's [[GAME_LOAD]] BLOADs the overlay and jumps to its
+first byte. Entry restores the player's outdoor position, turns
+double-buffering back on (popups and other overlays leave the game
+locked to page 1), and \emph{stashes the packed world map}: when
+the loader brought the game up, \texttt{/U1.VARS} put the four
+RLE-compressed continents at [[MAP_BASE]], and OUT immediately
+copies those 14 pages up to [[MAP_PACKED]] so the same region can
+hold the decompressed current continent. (Leaving outdoors copies
+them back --- see [[EXIT_TO]] --- so the next entry finds them at
+[[MAP_BASE]] again.)
+
+[[OBJ_HP]]+0 is the world-state sentinel: zero means no object
+records exist yet (a fresh boot or a new game), in which case
+[[MON_CLEAR]] primes it. Then the map is decompressed and, if the
+player arrived dead (hit points zero --- the engine's [[DEATH]]
+respawns by reloading OUT), control falls straight into
+resurrection.
+
+<<out entry>>=
         ORG $8956
-OUT_BLOB
-        ; STUB — not yet disassembled (outdoors (overworld) overlay)
-        HEX ad 73 7e 85 00 ad 74 7e
-        HEX 85 01 a9 60 85 80 85 7f
-        HEX 20 8f 15 a2 0e a0 00 b9
-        HEX 00 60 99 00 a9 c8 d0 f7
-        HEX ee 6f 89 ee 72 89 ca d0
-        HEX ee 8e 52 7e ad 00 b6 d0
-        HEX 03 20 91 96 20 c1 94 ad
-        HEX c6 7e 0d c7 7e f0 53 a2
-        HEX ff 9a 20 19 81 7c 0e 00
-        HEX 20 8c 9a 20 6e 83 ad c6
-        HEX 7e 0d c7 7e f0 39 ad e5
-        HEX 7e 0d e6 7e f0 31 20 6a
-        HEX 8a d0 12 a0 05 a9 50 20
-        HEX e4 82 20 b0 96 a5 24 c9
-        HEX 02 90 d8 b0 ca 20 a2 82
-        HEX b0 0f bd aa 9a 8d dd 89
-        HEX bd ab 9a 8d de 89 20 1d
-        HEX 84 20 b0 96 4c 95 89 20
-        HEX 70 88 a2 0a 20 e9 15 ca
-        HEX 10 fa 20 61 94 86 00 84
-        HEX 01 20 91 96 a9 00 ae 7c
-        HEX 7e f0 0b 8d 7c 7e bc 9e
-        HEX 7e f0 03 de 9e 7e a2 0f
-        HEX 9d 83 7e ca d0 fa 8d 7b
-        HEX 7e 8d 7a 7e 8d 79 7e 20
-        HEX 19 81 7e 41 74 74 65 6d
-        HEX 70 74 69 6e 67 20 72 65
-        HEX 73 75 72 72 65 63 74 69
-        HEX 6f 6e 21 00 ee c6 7e 20
-        HEX 5f 8a ad c6 7e c9 63 90
-        HEX f3 ee e5 7e 20 5f 8a ad
-        HEX e5 7e c9 63 90 f3 20 14
-        HEX 84 a9 0a 20 ce 15 4c 95
-        HEX 89 20 6e 83 a9 68 20 e9
-        HEX 15 4c e6 15 a2 80 20 c5
-        HEX 15 d0 03 ca d0 f8 aa 60
-        HEX a0 05 a9 50 4c e2 82 a9
-        HEX 00 85 72 a5 03 4a 66 72
-        HEX 4a 66 72 69 60 85 73 a4
-        HEX 02 60 20 19 81 3a 20 00
-        HEX 20 6a 8a 20 7d 82 a2 03
-        HEX dd 53 7e d0 2f 86 04 20
-        HEX b8 80 cb 75 a6 00 a4 01
-        HEX 86 02 84 03 a2 00 a0 00
-        HEX c6 04 30 0f c6 04 30 0e
-        HEX c6 04 30 0d ca 86 04 84
-        HEX 05 18 60 88 d0 f7 c8 d0
-        HEX f4 e8 d0 f1 ca 10 c9 20
-        HEX b6 80 c4 84 38 60 a5 02
-        HEX 18 65 04 85 02 aa a5 03
-        HEX 18 65 05 85 03 a8 20 d1
-        HEX 99 c9 03 f0 0b 20 ff 8a
-        HEX 90 06 ce c8 9d d0 df 38
-        HEX 60 ae f6 7e f0 30 ca bd
-        HEX f7 7e c5 02 d0 25 bd 47
-        HEX 7f 29 3f c5 03 d0 1c bd
-        HEX 97 7f c9 20 90 15 c9 5a
-        HEX b0 11 4a 4a 69 fe 8d f2
-        HEX 7e 86 6a 8e f3 7e 20 fa
-        HEX 98 18 60 8a d0 d0 38 60
-        HEX 20 19 81 77 69 74 68 20
-        HEX 00 ae 7a 7e 20 b8 80 38
-        HEX 74 ae 7a 7e bd b4 9d d0
-        HEX 03 4c 07 84 8d c8 9d 20
-        HEX 90 8a 90 0c 60 20 19 81
-        HEX 7e 4d 69 73 73 21 00 60
-        HEX a9 06 20 ce 15 20 dc 8a
-        HEX b0 eb a9 5e 91 72 20 b3
-        HEX 15 20 f8 98 bd 97 7f 91
-        HEX 72 ad ca 7e 18 69 80 85
-        HEX 69 20 b9 15 c5 69 90 0e
-        HEX 20 19 81 7e 4d 69 73 73
-        HEX 65 64 00 4c 84 8c ad 7a
-        HEX 7e 0a 0a 0a 6d c8 7e 20
-        HEX 54 82 4a 18 69 01 8d 4b
-        HEX 7e a9 00 8d 49 82 a6 6a
-        HEX bd 00 b6 38 ed 4b 7e f0
-        HEX 2f 90 2d 9d 00 b6 20 19
-        HEX 81 7e 48 69 74 00 20 84
-        HEX 8c a5 24 c9 15 90 03 20
-        HEX 7e 80 ad 4b 7e 20 0d 82
-        HEX 20 19 81 20 64 61 6d 61
-        HEX 67 65 00 a9 02 4c cb 15
-        HEX 20 19 81 7e 4b 69 6c 6c
-        HEX 65 64 00 20 84 8c 20 e9
-        HEX 8b ae f2 7e bc a8 76 b9
-        HEX 86 96 4a c9 02 90 03 20
-        HEX 54 82 6d e7 7e 8d e7 7e
-        HEX 90 03 ee e8 7e 98 0a 0a
-        HEX 20 54 82 18 69 0a 48 aa
-        HEX a9 00 20 ad 81 a5 62 29
-        HEX 0f f0 0c 20 71 8c 63 6f
-        HEX 70 70 65 72 21 20 00 a5
-        HEX 62 4a 4a 4a 4a f0 0c 20
-        HEX 71 8c 73 69 6c 76 65 72
-        HEX 21 20 00 a5 63 f0 09 20
-        HEX 71 8c 67 6f 6c 64 21 00
-        HEX 68 18 6d d4 7e 8d d4 7e
-        HEX 90 03 ee d5 7e 20 c1 8c
-        HEX 4c 9c 8c 48 a5 24 c9 15
-        HEX 90 03 20 7e 80 68 20 58
-        HEX 80 e6 24 4c 19 81 20 19
-        HEX 81 20 74 68 65 20 00 ae
-        HEX f2 7e 20 b8 80 d6 76 20
-        HEX 19 81 21 20 00 60 ae f3
-        HEX 7e ec f6 7e b0 1b bd 97
-        HEX 7f c9 20 90 14 c9 5a b0
-        HEX 10 20 7d 99 a2 00 8e f2
-        HEX 7e 86 6a ca 8e f3 7e 18
-        HEX 60 38 60 ad e7 7e c9 10
-        HEX ad e8 7e e9 27 90 0a a9
-        HEX 0f 8d e7 7e a9 27 8d e8
-        HEX 7e ad d4 7e c9 10 ad d5
-        HEX 7e e9 27 90 0a a9 0f 8d
-        HEX d4 7e a9 27 8d d5 7e 4c
-        HEX 6e 83 ad 7c 7e f0 1f 20
-        HEX 81 80 20 19 81 58 2d 69
-        HEX 74 20 74 68 79 20 63 72
-        HEX 61 66 74 20 66 69 72 73
-        HEX 74 21 00 4c 0f 84 20 f8
-        HEX 99 c9 10 b0 04 c9 08 b0
-        HEX 1b 20 81 80 20 19 81 6e
-        HEX 6f 74 68 69 6e 67 20 74
-        HEX 6f 20 42 6f 61 72 64 21
-        HEX 00 4c 0f 84 29 07 c9 07
-        HEX 90 02 a9 0a 8d 7c 7e 48
-        HEX 20 59 99 20 8c 9a 20 b3
-        HEX 15 68 c9 03 b0 0d 20 81
-        HEX 80 20 19 81 4d 6f 75 6e
-        HEX 74 20 00 20 83 9a ad 7c
-        HEX 7e c9 06 f0 03 b0 06 60
-        HEX a9 14 4c fa 8e ad 75 7e
-        HEX f0 13 ad 76 7e f0 0e ad
-        HEX 77 7e f0 09 ad 78 7e f0
-        HEX 04 a9 18 d0 e5 20 b4 83
-        HEX 20 aa 15 20 a7 15 85 80
-        HEX 20 a1 80 20 19 81 7c 7c
-        HEX 7c 7c 7f 03 45 6e 74 65
-        HEX 72 69 6e 67 20 74 68 65
-        HEX 20 63 72 61 66 74 2c 20
-        HEX 74 68 6f 75 20 64 6f 73
-        HEX 74 7c 7f 03 72 65 6d 61
-        HEX 72 6b 20 75 70 6f 6e 20
-        HEX 66 6f 75 72 20 68 6f 6c
-        HEX 65 73 20 6d 61 72 6b 65
-        HEX 64 3a 7c 7c 7f 0d 6f 20
-        HEX 20 6f 20 20 6f 20 20 6f
-        HEX 7c 7f 0d 52 20 20 47 20
-        HEX 20 42 20 20 57 7c 7c 00
-        HEX ad 75 7e 0d 76 7e 0d 77
-        HEX 7e 0d 78 7e d0 57 20 19
-        HEX 81 7f 02 54 68 6f 75 20
-        HEX 63 61 6e 73 74 20 6e 6f
-        HEX 74 20 64 65 74 65 72 6d
-        HEX 69 6e 65 20 68 6f 77 20
-        HEX 74 6f 7c 7f 02 6f 70 65
-        HEX 72 61 74 65 20 74 68 65
-        HEX 20 63 72 61 66 74 20 61
-        HEX 74 20 74 68 69 73 20 74
-        HEX 69 6d 65 2e 00 a9 60 85
-        HEX 80 20 ad 15 20 a9 83 20
-        HEX 6c 82 4c 6f 82 ad 75 7e
-        HEX f0 07 a2 5e a9 05 20 d5
-        HEX 8e ad 76 7e f0 07 a2 73
-        HEX a9 01 20 d5 8e ad 77 7e
-        HEX f0 07 a2 88 a9 06 20 d5
-        HEX 8e ad 78 7e f0 07 a2 9d
-        HEX a9 07 20 d5 8e 20 19 81
-        HEX 7f 05 54 68 6f 75 20 68
-        HEX 61 73 74 20 6e 6f 74 20
-        HEX 61 6c 6c 20 74 68 65 20
-        HEX 67 65 6d 73 7c 7f 04 6e
-        HEX 65 65 64 65 64 20 74 6f
-        HEX 20 6f 70 65 72 61 74 65
-        HEX 20 74 68 79 20 63 72 61
-        HEX 66 74 21 00 4c 53 8e 86
-        HEX 6c e8 e8 e8 e8 86 6d a0
-        HEX 39 84 07 20 d4 15 20 e7
-        HEX 8e 20 ed 8e 20 ed 8e a6
-        HEX 6c 86 06 a6 6d e6 07 a4
-        HEX 07 4c da 15 a6 00 a4 01
-        HEX 8e 73 7e 8c 74 7e 48 a2
-        HEX 0e a0 00 b9 00 a9 99 00
-        HEX 60 c8 d0 f7 ee 0b 8f ee
-        HEX 0e 8f ca d0 ee 68 4c fd
-        HEX 88 20 bf 83 ae 79 7e d0
-        HEX 03 4c 40 90 bd 93 7e d0
-        HEX 22 20 19 81 7e 59 6f 75
-        HEX 27 76 65 20 75 73 65 64
-        HEX 20 75 70 20 74 68 61 74
-        HEX 20 73 70 65 6c 6c 21 00
-        HEX 4c 03 84 e0 03 f0 2a e0
-        HEX 0a f0 26 de 93 7e 20 19
-        HEX 81 7e 46 61 69 6c 65 64
-        HEX 2c 20 64 75 6e 67 65 6f
-        HEX 6e 20 73 70 65 6c 6c 20
-        HEX 6f 6e 6c 79 21 00 4c 03
-        HEX 84 20 90 8a 90 03 4c 95
-        HEX 89 a9 0a 20 ce 15 ae 79
-        HEX 7e de 93 7e e0 0a a2 00
-        HEX 90 01 e8 20 b8 80 1a 90
-        HEX a2 03 8e c8 9d ca ec d8
-        HEX 7e f0 2c a9 80 18 6d d0
-        HEX 7e 85 69 20 b9 15 c5 69
-        HEX 90 1d 20 19 81 46 61 69
-        HEX 6c 65 64 21 00 20 03 84
-        HEX 4c 95 89 20 19 81 4d 69
-        HEX 73 73 21 00 4c c3 8f 20
-        HEX dc 8a b0 ef a9 5c 91 72
-        HEX 20 b3 15 20 f8 98 bd 97
-        HEX 7f 91 72 ad 79 7e c9 03
-        HEX f0 05 a9 ff 4c ac 8b ad
-        HEX d2 7e 20 54 82 e6 69 a5
-        HEX 69 ae 7a 7e e0 08 90 11
-        HEX e0 0c b0 0d 0a e0 09 f0
-        HEX 08 18 65 69 e0 08 d0 01
-        HEX 4a 4c ac 8b 7e 22 44 45
-        HEX 4c 43 49 4f 2d 45 52 45
-        HEX 2d 55 49 21 22 a0 7e 22
-        HEX 49 4e 54 45 52 46 49 43
-        HEX 49 4f 2d 4e 55 4e 43 21
-        HEX 22 a0 20 19 81 7e 22 50
-        HEX 4f 54 45 4e 54 49 53 2d
-        HEX 4c 41 55 44 49 53 21 22
-        HEX 00 a9 0a 20 ce 15 a0 0f
-        HEX ad c7 7e d0 17 cc c6 7e
-        HEX 90 12 f0 10 8c c6 7e 20
-        HEX 19 81 20 53 68 61 7a 61
-        HEX 6d 21 00 60 ad e6 7e d0
-        HEX 0c cc e5 7e 90 07 f0 05
-        HEX 8c e5 7e d0 e2 20 b9 15
-        HEX 29 03 d0 1b 20 9c 8c b0
-        HEX 16 20 19 81 7e 4d 6f 6e
-        HEX 73 74 65 72 20 72 65 6d
-        HEX 6f 76 65 64 21 00 60 4c
-        HEX eb 83 ad c6 9d c9 35 b0
-        HEX 0b 20 d1 99 c9 03 b0 04
-        HEX ee c6 9d 60 a9 ff 60 4c
-        HEX 07 84 a6 00 a4 01 8e 73
-        HEX 7e 8c 74 7e 20 f8 99 c9
-        HEX 04 90 ec c9 08 b0 e8 20
-        HEX 19 81 69 6e 67 2e 2e 2e
-        HEX 00 20 03 9a ad c5 9d c9
-        HEX 05 d0 0e ad ed 7e a2 07
-        HEX dd 9c 9d f0 3f ca 10 f8
-        HEX 60 c9 04 d0 04 a9 10 d0
-        HEX 30 c9 06 d0 2a 20 97 95
-        HEX a6 00 a4 01 88 20 b0 90
-        HEX 8d b1 7e c8 ca 20 b0 90
-        HEX 8d b2 7e e8 e8 20 b0 90
-        HEX 8d b3 7e ca c8 20 b0 90
-        HEX 8d b4 7e a9 0c d0 02 a9
-        HEX 08 4c fa 8e 8e c4 9d 20
-        HEX 1e 84 ae c4 9d 20 b8 80
-        HEX 6f 9b 20 a9 83 20 14 84
-        HEX ae c4 9d bc ac 9d 30 29
-        HEX b9 a9 7e f0 24 30 22 a9
-        HEX ff 99 a9 7e 20 19 81 7d
-        HEX 41 20 51 75 65 73 74 20
-        HEX 69 73 20 63 6f 6d 70 6c
-        HEX 65 74 65 64 21 00 20 35
-        HEX 92 ae c4 9d bd a4 9d d0
-        HEX 5d e0 04 d0 4d ec ee 7e
-        HEX f0 0c a2 00 e8 bd 83 7e
-        HEX f0 0a e0 0f 90 f6 20 eb
-        HEX 83 4c d8 91 a9 01 9d 83
-        HEX 7e 86 6c 20 19 81 7e 59
-        HEX 6f 75 20 66 69 6e 64 20
-        HEX 61 00 a6 6c e0 03 f0 04
-        HEX e0 08 d0 05 a9 6e 20 62
-        HEX 80 e6 24 a6 6c 20 b8 80
-        HEX c8 73 a9 21 20 62 80 20
-        HEX 35 92 ad c4 9d 8d ee 7e
-        HEX 4c 6c 82 4c 9c 91 ec ee
-        HEX 7e f0 f8 85 6c 0a aa bd
-        HEX c6 7e 85 6d 38 a9 63 fd
-        HEX c6 7e 90 e7 69 08 20 4a
-        HEX 82 7d c6 7e c9 63 90 02
-        HEX a9 63 9d c6 7e 38 e5 6d
-        HEX f0 d1 48 20 19 81 7d 54
-        HEX 68 6f 75 20 64 6f 73 74
-        HEX 20 67 61 69 6e 20 00 68
-        HEX 20 58 80 e6 24 a6 6c 20
-        HEX b8 80 8e 74 4c d5 91 a9
-        HEX 07 20 37 84 a9 0a 20 cb
-        HEX 15 20 45 92 20 35 84 a9
-        HEX e6 4c e9 15 ae 7c 7e e0
-        HEX 04 d0 0e 20 19 81 63 61
-        HEX 6e 6e 6f 6e 73 00 4c 78
-        HEX 92 e0 05 f0 0b 20 19 81
-        HEX 77 68 61 74 00 4c 07 84
-        HEX 20 19 81 6c 61 73 65 72
-        HEX 73 00 20 90 8a 90 0c 60
-        HEX 20 19 81 7e 4d 69 73 73
-        HEX 21 00 60 a9 0c 20 ce 15
-        HEX a9 03 8d c8 9d 20 dc 8a
-        HEX b0 e6 a9 5e 91 72 20 b3
-        HEX 15 20 f8 98 bd 97 7f 91
-        HEX 72 20 b9 15 c9 33 b0 0e
-        HEX 20 19 81 7e 4d 69 73 73
-        HEX 65 64 00 4c 84 8c ae 7c
-        HEX 7e bd 86 96 20 54 82 69
-        HEX 1e 4c ac 8b a6 00 a4 01
-        HEX 8e 73 7e 8c 74 7e 20 b4
-        HEX 83 20 24 b7 6d 7e ca 01
-        HEX 38 7e 20 cf 7d b0 f2 20
-        HEX 19 81 73 61 76 65 64 2e
-        HEX 00 4c 98 15 20 6a 8a 4c
-        HEX 66 84 ad 7c 7e d0 0c 20
-        HEX 19 81 20 77 68 61 74 00
-        HEX 4c 07 84 20 f8 99 c9 03
-        HEX 90 27 20 81 80 20 19 81
-        HEX 54 68 6f 75 20 63 61 6e
-        HEX 73 74 20 6e 6f 74 20 6c
-        HEX 65 61 76 65 20 69 74 20
-        HEX 68 65 72 65 21 00 4c 0f
-        HEX 84 a6 00 a4 01 ad 7c 7e
-        HEX c9 07 90 02 a9 07 09 08
-        HEX 20 27 99 b0 c5 a9 00 8d
-        HEX 7c 7e 60 a6 00 a4 01 18
-        HEX 60 20 51 93 88 90 10 20
-        HEX 51 93 c8 90 0a 20 51 93
-        HEX e8 90 04 20 51 93 ca 20
-        HEX 81 80 86 0c 84 0d ad 7c
-        HEX 7e c9 06 90 1c 20 19 81
-        HEX 43 61 6e 27 74 20 74 72
-        HEX 61 76 65 6c 20 6f 6e 20
-        HEX 6c 61 6e 64 21 00 4c d3
-        HEX 93 20 d1 99 aa d0 09 ad
-        HEX 7c 7e c9 03 b0 72 90 28
-        HEX a2 01 c9 03 f0 22 c9 10
-        HEX b0 28 e8 c9 02 d0 07 ad
-        HEX 7c 7e c9 05 f0 12 ae 7c
-        HEX 7e e0 03 f0 04 e0 04 d0
-        HEX 4f 20 b1 80 7c 75 a2 03
-        HEX 20 b8 80 18 9b a9 0e 4c
-        HEX 11 84 48 20 19 81 42 6c
-        HEX 6f 63 6b 65 64 20 62 79
-        HEX 20 61 00 68 38 e9 04 4a
-        HEX aa e0 0e f0 08 e0 10 f0
-        HEX 04 e0 13 d0 05 a9 6e 20
-        HEX 62 80 e6 24 e0 14 d0 03
-        HEX 20 7e 80 20 b8 80 d6 76
-        HEX a9 21 20 62 80 4c d3 93
-        HEX a6 0c a4 0d 86 00 84 01
-        HEX 20 77 94 ae 7c 7e d0 05
-        HEX 20 20 83 a2 00 bc 3e 94
-        HEX bd 48 94 ae 7c 7e e0 03
-        HEX b0 03 4c e4 82 4c e2 82
+OUT_ENTRY
+        SUBROUTINE
+        ; Restore position, stash the packed map, build the
+        ; continent, and decide: main loop or resurrection.
+        ;
+        ; Behavior:
+        ;   Restore ZP_PLR_X/Y from the save, enable page flips,
+        ;   copy the 14 packed-map pages to MAP_PACKED, prime the
+        ;   world on first entry, decompress the continent, then
+        ;   fall into OUT_MAIN -- or RESURRECT if hits are zero.
+        LDA PLR_OUT_X
+        STA ZP_PLR_X
+        LDA PLR_OUT_Y
+        STA ZP_PLR_Y
+        LDA #$60                        ; double-buffering on:
+        STA ZP_PAGE_TGL                 ;   draw on page 2 first
+        STA ZP_PAGE_XOR
+        JSR PAGE_COPY
+        LDX #$0E                        ; 14 pages
+        LDY #$00
+.stash
+STASH_SRC = *+2
+        LDA MAP_BASE,Y
+STASH_DST = *+2
+        STA MAP_PACKED,Y
+        INY
+        BNE .stash
+        INC STASH_SRC                   ; next page (self-modified)
+        INC STASH_DST
+        DEX
+        BNE .stash
+        STX DIR_STR_PTR+1               ; default direction names
+        LDA OBJ_HP                      ; world not initialized?
+        BNE .world
+        JSR MON_CLEAR                   ;   prime the sentinel
+.world  JSR MAP_REFRESH
+        LDA PLR_HITS                    ; dead on arrival? (DEATH
+        ORA PLR_HITS+1                  ;   reloads OUT to respawn)
+        BEQ RESURRECT
+@ %def OUT_ENTRY STASH_SRC STASH_DST
+
+The main loop is four steps: print the prompt, wait for a key
+(idle turns happen by themselves), dispatch the command, then let
+the world act. Dispatch is a self-modified [[JSR]]:
+[[GET_COMMAND]] returns X = twice the command index, the handler's
+address is copied from [[CMD_TBL]] into [[DISPATCH_VEC]], and the
+patched [[JSR]] calls it. (On disk the operand rests at
+[[RTS_HOOK]], an engine [[RTS]].) The stack pointer is reset every
+lap, so handlers are free to bail out with [[JMP OUT_MAIN]] from
+any depth.
+
+An idle turn --- 128 polls of [[KEY_GET_ANIM]] with no key ---
+costs $0.05$ food and $0.50$ time and still gives the monsters
+their turn, so standing still is never safe. Death is checked at
+the top of every turn for both hit points and food; either reaching
+zero ends the game ([[DEATH]] paints the skull, then reloads OUT,
+which lands in [[RESURRECT]]).
+
+<<out main loop>>=
+        ORG $8995
+OUT_MAIN
+        SUBROUTINE
+        ; The turn loop. No return; every path comes back here.
+        ;
+        ; Behavior:
+        ;   Reset the stack, prompt, poll. No key: charge an idle
+        ;   tick and run the world. A key: GET_COMMAND, patch
+        ;   DISPATCH_VEC from CMD_TBL, call the handler, run the
+        ;   world, repeat. Zero hits or food fall into DEATH.
+        LDX #$FF                        ; reset the stack: command
+        TXS                             ;   handlers JMP back here
+        JSR MSG_PRINT
+        DC.B "|",$0E,$00                ; the prompt glyph
+        JSR PLAYER_TILE_SET
+.turn   JSR STATS_VALUES
+        LDA PLR_HITS                    ; dead?
+        ORA PLR_HITS+1
+        BEQ .dead
+        LDA PLR_FOOD                    ; starved?
+        ORA PLR_FOOD+1
+        BEQ .dead
+        JSR KEY_OR_IDLE
+        BNE .cmd
+        LDY #$05                        ; idle: food -= 0.05,
+        LDA #$50                        ;   time += 0.50
+        JSR TICK_SND
+        JSR TURN_PASS
+        LDA MON_CH                      ; quiet turn: skip the
+        CMP #$02                        ;   prompt reprint
+        BCC .turn
+        BCS OUT_MAIN
+.cmd    JSR GET_COMMAND
+        BCS .world                      ; "Huh?" still costs a turn
+        LDA CMD_TBL,X                   ; patch the JSR below with
+        STA DISPATCH_VEC                ;   the handler's address
+        LDA CMD_TBL+1,X
+        STA DISPATCH_VEC+1
+DISPATCH_VEC = *+1
+        JSR RTS_HOOK                    ; (self-modified)
+.world  JSR TURN_PASS
+        JMP OUT_MAIN
+.dead   JSR DEATH
+@ %def OUT_MAIN DISPATCH_VEC
+
+\section{OUT: death and resurrection}
+
+[[DEATH]] never returns --- it reloads OUT --- so the fall-through
+from [[.dead]] above is really the entry path arriving with zero
+hit points. The price of dying outdoors: the transport being
+ridden is gone, every weapon but bare hands is gone, and the
+readied weapon, armour and spell are cleared. The player is set
+down on a random patch of open land on the current continent with
+hit points and food wound up to 99 each, one heartbeat at a time,
+on screen --- the famous slow ``Attempting resurrection!''
+
+<<out resurrection>>=
+        ORG $89E8
+RESURRECT
+        SUBROUTINE
+        ; Respawn after death: pay the penalty, find land, and
+        ; crank vitals back to 99.
+        ;
+        ; Behavior:
+        ;   Strip the ride and weapons 1-15, clear the readied
+        ;   slots, despawn monsters, place the player on random
+        ;   land, then visibly count hits and food up to 99 and
+        ;   rejoin the main loop.
+        LDX #$0A                        ; let the death knell ring
+.wait   JSR VDELAY
+        DEX
+        BPL .wait
+        JSR FIND_LAND
+        STX ZP_PLR_X                    ; respawn position
+        STY ZP_PLR_Y
+        JSR MON_CLEAR
+        LDA #$00
+        LDX READY_TRANSPORT             ; the ride is lost
+        BEQ .nomount
+        STA READY_TRANSPORT
+        LDY OWNED_TRANSPORT,X
+        BEQ .nomount
+        DEC OWNED_TRANSPORT,X
+.nomount
+        LDX #$0F                        ; weapons 1-15 are lost
+.strip  STA OWNED_WEAPONS,X             ;   (bare hands remain)
+        DEX
+        BNE .strip
+        STA READY_ARMOUR
+        STA READY_WEAPON
+        STA READY_SPELL
+        JSR MSG_PRINT
+        DC.B "~Attempting resurrection!",$00
+.hits   INC PLR_HITS                    ; wind hits up to 99,
+        JSR .beat                       ;   visibly
+        LDA PLR_HITS
+        CMP #$63
+        BCC .hits
+.food   INC PLR_FOOD                    ; then food
+        JSR .beat
+        LDA PLR_FOOD
+        CMP #$63
+        BCC .food
+        JSR KBD_CLEAR
+        LDA #$0A                        ; the triumphant ding
+        JSR SFX_QUEUE
+        JMP OUT_MAIN
+.beat   JSR STATS_VALUES                ; one tick of the crank
+        LDA #$68
+        JSR VDELAY
+        JMP FRAME_SYNC
+@ %def RESURRECT
+
+\section{OUT: reading the player}
+
+[[KEY_OR_IDLE]] is the turn timer: up to 128 animated polls
+(cursor flash, tile wobble) waiting for a keypress. Zero in A and
+X means the player let the turn pass.
+
+<<out key or idle>>=
+        ORG $8A6A
+KEY_OR_IDLE
+        SUBROUTINE
+        ; Poll for a key through one idle period.
+        ;
+        ; Behavior:
+        ;   KEY_GET_ANIM up to 128 times (cursor flash and tile
+        ;   wobble run in the poll); stop at the first key.
+        ;
+        ; Outputs:
+        ;   A, X -- the key, or 0 if the turn timed out
+        LDX #$80
+.poll   JSR KEY_GET_ANIM
+        BNE .got
+        DEX
+        BNE .poll
+.got    TAX                             ; Z reflects the key
+        RTS
+@ %def KEY_OR_IDLE
+
+\emph{Pass} (the space bar) is an idle turn by request, at the
+same price; the dispatcher returns to [[OUT_MAIN]], which runs the
+world. (This handler is reached only through [[CMD_TBL]].)
+
+<<out cmd pass>>=
+        ORG $8A76
+CMD_PASS
+        SUBROUTINE
+        ; Pass: food -= 0.05, time += 0.50, monsters move.
+        ;
+        ; Behavior:
+        ;   Tail-call TICK with the idle fare; the dispatcher's
+        ;   return path runs the monsters.
+        LDY #$05
+        LDA #$50
+        JMP TICK
+@ %def CMD_PASS
+
+A small orphan follows: a pointer builder for the target cell,
+referenced by nothing in this overlay. (The seven overlays were
+clearly built from one shared source; expect a sibling to use it
+--- noted to verify in the later overlay rounds.)
+
+<<out target row pointer>>=
+        ORG $8A7D
+TGT_CELL_PTR
+        SUBROUTINE
+        ; ZP_CELL_PTR := row ZP_TGT_Y of the map; Y := ZP_TGT_X.
+        ; Not referenced by OUT itself.
+        ;
+        ; Behavior:
+        ;   Shift ZP_TGT_Y into a row offset (row * 64), add the
+        ;   MAP_BASE page, load Y with the column.
+        LDA #$00
+        STA ZP_CELL_PTR
+        LDA ZP_TGT_Y
+        LSR                             ; row * 64 + MAP_BASE
+        ROR ZP_CELL_PTR
+        LSR
+        ROR ZP_CELL_PTR
+        ADC #$60
+        STA ZP_CELL_PTR+1
+        LDY ZP_TGT_X
+        RTS
+@ %def TGT_CELL_PTR
+
+Attack, Cast and Fire all aim the same way: [[DIR_PROMPT]] prints
+\texttt{": "}, takes one key, and accepts only the four direction
+keys (after [[KEY_ALIAS]] folds in the one-handed aliases). The
+chosen direction is echoed by name from [[STR_COMMANDS]], the
+target cursor [[ZP_TGT_X]]/[[ZP_TGT_Y]] starts on the player, and
+the signed step vector goes in [[ZP_STEP_X]]/[[ZP_STEP_Y]].
+Anything else prints ``nothing'' (the first entry of the engine's
+[[READY_CLASSES]] table) and returns carry set.
+
+<<out direction prompt>>=
+        ORG $8A90
+DIR_PROMPT
+        SUBROUTINE
+        ; Aim: read a direction key.
+        ;
+        ; Behavior:
+        ;   Print ": ", read one key through KEY_ALIAS, match it
+        ;   against the four arrow entries of CMD_KEYS. On a match
+        ;   echo the direction name and build the step vector;
+        ;   otherwise print "nothing" and fail.
+        ;
+        ; Outputs:
+        ;   C clear -- ZP_STEP_X/Y = the step (-1/0/+1 each),
+        ;     ZP_TGT_X/Y = the player's position
+        ;   C set -- not a direction; "nothing" printed
+        JSR MSG_PRINT
+        DC.B ": ",$00
+        JSR KEY_OR_IDLE
+        JSR KEY_ALIAS
+        LDX #$03
+.find   CMP CMD_KEYS,X                  ; one of the 4 arrows?
+        BNE .next
+        STX ZP_STEP_X                   ; (borrowed as scratch)
+        JSR STR_NTH                     ; echo "North".."West"
+        DC.W STR_COMMANDS
+        LDX ZP_PLR_X                    ; target := the player
+        LDY ZP_PLR_Y
+        STX ZP_TGT_X
+        STY ZP_TGT_Y
+        LDX #$00                        ; step := (0,0), then
+        LDY #$00                        ;   bend per direction
+        DEC ZP_STEP_X
+        BMI .north
+        DEC ZP_STEP_X
+        BMI .south
+        DEC ZP_STEP_X
+        BMI .east
+        DEX                             ; west: dx = -1
+.done   STX ZP_STEP_X
+        STY ZP_STEP_Y
+        CLC
+        RTS
+.north  DEY
+        BNE .done                       ; (always)
+.south  INY
+        BNE .done
+.east   INX
+        BNE .done
+.next   DEX
+        BPL .find
+        JSR STR_FIRST                   ; "nothing"
+        DC.W READY_CLASSES
+        SEC
+        RTS
+@ %def DIR_PROMPT
+
+\section{OUT: aiming and hitting things}
+
+[[PROJ_WALK]] walks the target cursor along the aimed direction,
+[[RANGE_CNT]] cells at most --- range 1 for melee weapons, 3 for
+bows and firearms (see [[WEAP_RANGE]]), 3 for ship weapons. Each
+cell is tested twice: mountains stop the shot dead, and
+[[MON_FIND]] checks the object records for a monster to hit.
+
+<<out projectile walk>>=
+        ORG $8ADC
+PROJ_WALK
+        SUBROUTINE
+        ; Walk the target cursor along the aim, RANGE_CNT cells.
+        ;
+        ; Inputs:
+        ;   ZP_TGT_X/Y, ZP_STEP_X/Y -- from DIR_PROMPT
+        ;   RANGE_CNT -- cells of reach
+        ;
+        ; Behavior:
+        ;   Add the step to the target cursor; stop on mountains
+        ;   (CELL_TYPE 3), a monster (MON_FIND), or when RANGE_CNT
+        ;   runs out.
+        ;
+        ; Outputs:
+        ;   C clear -- monster found: ZP_REC/TGT_REC/CUR_MON set,
+        ;     ZP_CELL_PTR/Y point at its cell
+        ;   C set -- nothing in range (or a mountain in the way)
+        LDA ZP_TGT_X
+        CLC
+        ADC ZP_STEP_X
+        STA ZP_TGT_X
+        TAX
+        LDA ZP_TGT_Y
+        CLC
+        ADC ZP_STEP_Y
+        STA ZP_TGT_Y
+        TAY
+        JSR CELL_TYPE
+        CMP #$03                        ; mountains block it
+        BEQ .out
+        JSR MON_FIND
+        BCC .out                        ; hit something
+        DEC RANGE_CNT
+        BNE PROJ_WALK
+        SEC
+.out    RTS
+@ %def PROJ_WALK
+
+The monster lookup translates a cell byte back to a monster index
+(cell bytes [[$20]]--[[$59]]; index = byte/4 $-$ 2) and locks the
+record as the current target.
+
+<<out monster at cell>>=
+        ORG $8AFF
+MON_FIND
+        SUBROUTINE
+        ; Find a monster record at cell (ZP_TGT_X, ZP_TGT_Y).
+        ;
+        ; Behavior:
+        ;   Scan the record arrays for matching coordinates with a
+        ;   monster cell byte ($20-$59); decode the byte to a
+        ;   monster index and lock the target.
+        ;
+        ; Outputs:
+        ;   C clear -- found: ZP_REC and TGT_REC = the record,
+        ;     CUR_MON = the monster index, ZP_CELL_PTR/Y = cell
+        ;   C set -- no monster there
+        LDX OBJ_COUNT
+        BEQ .none
+.scan   DEX
+        LDA OBJ_X,X
+        CMP ZP_TGT_X
+        BNE .next
+        LDA OBJ_YC,X
+        AND #$3F
+        CMP ZP_TGT_Y
+        BNE .next
+        LDA OBJ_TILE,X
+        CMP #$20                        ; monsters only
+        BCC .next
+        CMP #$5A
+        BCS .next
+        LSR                             ; cell byte -> monster
+        LSR                             ;   index (byte/4 - 2)
+        ADC #$FE
+        STA CUR_MON
+        STX ZP_REC
+        STX TGT_REC
+        JSR OBJ_PTR_X
+        CLC
+        RTS
+.next   TXA
+        BNE .scan
+.none   SEC
+        RTS
+@ %def MON_FIND
+
+\section{OUT: the Attack command}
+
+\emph{Attack} fights with the readied weapon. Its reach comes from
+[[WEAP_RANGE]] --- 1 for most arms, 3 for bows and the
+Space-Age guns, 0 for things that cannot swing at all (rope \&
+spikes, and the magic weapons, which fight through \emph{Cast}
+instead). The to-hit roll is agility-based: hit if
+$\mathrm{rnd} < \mathrm{agility} + 128$. Damage is a random pick
+from $8\times\mathrm{weapon} + \mathrm{strength}$, halved, plus
+one.
+
+The little tile dance around [[DRAW_MAP]] is the attack flash: the
+target's cell is overwritten with the splash tile (cell byte
+[[$5E]]), one frame is drawn, and the monster's own tile is put
+back.
+
+<<out cmd attack>>=
+        ORG $8B36
+CMD_ATTACK
+        SUBROUTINE
+        ; Attack with the readied weapon.
+        ;
+        ; Behavior:
+        ;   Print the weapon, fetch its reach from WEAP_RANGE (zero
+        ;   cannot attack), aim via DIR_PROMPT, walk the shot, flash
+        ;   the splash tile, roll rnd < agility + 128 to hit, and
+        ;   fall into MON_HIT with rnd(8*weapon + strength)/2 + 1.
+        JSR MSG_PRINT
+        DC.B "with ",$00
+        LDX READY_WEAPON
+        JSR STR_NTH                     ; short weapon name
+        DC.W STR_WEAPONS_S
+        LDX READY_WEAPON
+        LDA WEAP_RANGE,X
+        BNE .armed
+        JMP QUERY_MARK                  ; can't attack with that
+.armed  STA RANGE_CNT
+        JSR DIR_PROMPT
+        BCC .aimed
+        RTS
+MISS_MSG
+        JSR MSG_PRINT
+        DC.B "~Miss!",$00
+        RTS
+.aimed  LDA #$06                        ; the swing sound
+        JSR SFX_QUEUE
+        JSR PROJ_WALK
+        BCS MISS_MSG
+        LDA #$5E                        ; flash the splash tile
+        STA (ZP_CELL_PTR),Y             ;   over the target
+        JSR DRAW_MAP
+        JSR OBJ_PTR
+        LDA OBJ_TILE,X                  ; put the monster back
+        STA (ZP_CELL_PTR),Y
+        LDA PLR_AGI                     ; hit if rnd < agi + 128
+        CLC
+        ADC #$80
+        STA ZP_CHANCE
+        JSR RND
+        CMP ZP_CHANCE
+        BCC .hit
+        JSR MSG_PRINT
+        DC.B "~Missed",$00
+        JMP PRINT_THE_MON
+.hit    LDA READY_WEAPON                ; damage: rnd(8*weapon
+        ASL                             ;   + strength)/2 + 1
+        ASL
+        ASL
+        ADC PLR_STR
+        JSR RND_MOD
+        LSR
+        CLC
+        ADC #$01
+@ %def CMD_ATTACK MISS_MSG
+
+\section{OUT: damage, loot and experience}
+
+All three player attacks --- weapon, Magic Missile, ship guns ---
+funnel into [[MON_HIT]] with the damage in A. A monster that
+survives reports the number; one that dies pays out experience and
+coin on the spot.
+
+The payouts both scale from the monster's tier:
+experience += $\mathrm{TIER\_HP}[\mathrm{tier}]/2$ (randomized
+once it is 2 or more), and the coin purse gains
+$\mathrm{rnd}(4\times\mathrm{tier}) + 10$, announced in the
+period flavor --- the binary amount is converted with [[BIN2BCD]]
+and read out digit by digit as \emph{copper}, \emph{silver} and
+\emph{gold} pieces (ones, tens, hundreds).
+
+<<out monster damage>>=
+        ORG $8BAC
+MON_HIT
+        SUBROUTINE
+        ; Apply A damage to the target monster.
+        ;
+        ; Inputs:
+        ;   A -- damage; ZP_REC/CUR_MON -- the target
+        ;
+        ; Behavior:
+        ;   Subtract from OBJ_HP. Survives: print "Hit <n>
+        ;   damage". Dies: print "Killed", remove the record,
+        ;   award experience and coin, clamp both at 9999.
+        STA DMG_AMT
+        LDA #$00
+        STA NUM_PAD
+        LDX ZP_REC
+        LDA OBJ_HP,X
+        SEC
+        SBC DMG_AMT
+        BEQ .killed
+        BCC .killed
+        STA OBJ_HP,X
+        JSR MSG_PRINT
+        DC.B "~Hit",$00
+        JSR PRINT_THE_MON
+        LDA MON_CH                      ; keep the number on the
+        CMP #$15                        ;   line
+        BCC .num
+        JSR PUTCH_NL_COL1
+.num    LDA DMG_AMT
+        JSR PRINT_NUM8
+        JSR MSG_PRINT
+        DC.B " damage",$00
+.sfx    LDA #$02                        ; the hit crunch
+        JMP SFX_PLAY
+.killed JSR MSG_PRINT
+        DC.B "~Killed",$00
+        JSR PRINT_THE_MON
+        JSR .sfx
+        LDX CUR_MON                     ; exp += TIER_HP[tier]/2,
+        LDY MON_TIER,X                  ;   randomized when >= 2
+        LDA TIER_HP,Y
+        LSR
+        CMP #$02
+        BCC .exp
+        JSR RND_MOD
+.exp    ADC PLR_EXP
+        STA PLR_EXP
+        BCC .coin
+        INC PLR_EXP+1
+.coin   TYA                             ; coin: rnd(4*tier) + 10
+        ASL
+        ASL
+        JSR RND_MOD
+        CLC
+        ADC #$0A
+        PHA
+        TAX
+        LDA #$00
+        JSR BIN2BCD
+        LDA ZP_BCD                      ; ones -> "copper!"
+        AND #$0F
+        BEQ .silver
+        JSR COIN_DIGIT
+        DC.B "copper! ",$00
+.silver LDA ZP_BCD                      ; tens -> "silver!"
+        LSR
+        LSR
+        LSR
+        LSR
+        BEQ .gold
+        JSR COIN_DIGIT
+        DC.B "silver! ",$00
+.gold   LDA ZP_BCD+1                    ; hundreds -> "gold!"
+        BEQ .add
+        JSR COIN_DIGIT
+        DC.B "gold!",$00
+.add    PLA
+        CLC
+        ADC PLR_COIN
+        STA PLR_COIN
+        BCC .clamp
+        INC PLR_COIN+1
+.clamp  JSR SCORE_CLAMP
+        JMP TGT_REMOVE
+COIN_DIGIT
+        ; Print the digit in A, then the caller's inline text.
+        PHA
+        LDA MON_CH
+        CMP #$15
+        BCC .col
+        JSR PUTCH_NL_COL1
+.col    PLA
+        JSR PRINT_DIGIT
+        INC MON_CH
+        JMP MSG_PRINT
+PRINT_THE_MON
+        ; Print " the <monster>! " for the current fight.
+        JSR MSG_PRINT
+        DC.B " the ",$00
+        LDX CUR_MON
+        JSR STR_NTH
+        DC.W STR_MONSTERS
+        JSR MSG_PRINT
+        DC.B "! ",$00
+        RTS
+@ %def MON_HIT COIN_DIGIT PRINT_THE_MON
+
+[[TGT_REMOVE]] retires the target record --- after a kill, and
+also for Prayer's ``Monster removed!'' miracle. [[SCORE_CLAMP]]
+caps experience and coin at 9999 so the four-digit stats panel
+never overflows.
+
+<<out loot bookkeeping>>=
+        ORG $8C9C
+TGT_REMOVE
+        SUBROUTINE
+        ; Remove the locked target record, if it is a monster.
+        ;
+        ; Behavior:
+        ;   If TGT_REC still indexes a live monster record, remove
+        ;   it and clear the lock.
+        ;
+        ; Outputs:
+        ;   C clear -- removed (TGT_REC cleared to FF)
+        ;   C set -- no valid monster target
+        LDX TGT_REC
+        CPX OBJ_COUNT
+        BCS .no
+        LDA OBJ_TILE,X
+        CMP #$20
+        BCC .no
+        CMP #$5A
+        BCS .no
+        JSR OBJ_REMOVE
+        LDX #$00
+        STX CUR_MON
+        STX ZP_REC
+        DEX
+        STX TGT_REC                     ; TGT_REC <- #$FF
+        CLC
+        RTS
+.no     SEC
+        RTS
+SCORE_CLAMP
+        SUBROUTINE
+        ; Clamp PLR_EXP and PLR_COIN to 9999; repaint the stats.
+        ;
+        ; Behavior:
+        ;   Two 16-bit compares against 10000; anything over is
+        ;   rewritten as 9999. Tail-calls STATS_VALUES.
+        LDA PLR_EXP                     ; 16-bit compare vs 10000
+        CMP #$10
+        LDA PLR_EXP+1
+        SBC #$27
+        BCC .coin
+        LDA #$0F                        ; exp <- #$270F (9999)
+        STA PLR_EXP
+        LDA #$27
+        STA PLR_EXP+1
+.coin   LDA PLR_COIN
+        CMP #$10
+        LDA PLR_COIN+1
+        SBC #$27
+        BCC .done
+        LDA #$0F                        ; coin <- #$270F
+        STA PLR_COIN
+        LDA #$27
+        STA PLR_COIN+1
+.done   JMP STATS_VALUES
+@ %def TGT_REMOVE SCORE_CLAMP
+
+\section{OUT: the Board command and the time machine}
+
+\emph{Board} mounts whatever transport is parked underfoot (cell
+codes 8--15). The parked object record is removed from the world,
+[[READY_TRANSPORT]] takes its index, and the player tile changes.
+Code 15 is special twice over: it boards as transport 10 --- the
+\emph{time machine} --- and launches the endgame sequence, but
+only for a player holding all four gems. Boarding the shuttle
+(transport 6) switches to the space overlay immediately.
+
+<<out cmd board>>=
+        ORG $8CF0
+CMD_BOARD
+        SUBROUTINE
+        ; Board the transport parked under the player.
+        ;
+        ; Behavior:
+        ;   Refuse if already riding or nothing parked here. Take
+        ;   the cell code as the transport (15 boards as the time
+        ;   machine), remove the parked record, retile the player.
+        ;   The shuttle exits to SPA; the time machine to TM_BOARD.
+        LDA READY_TRANSPORT
+        BEQ .afoot
+        JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "X-it thy craft first!",$00
+        JMP BEEP_HUH
+.afoot  JSR CELL_HERE
+        CMP #$10                        ; parked craft here?
+        BCS .none                       ;   (codes 8-15)
+        CMP #$08
+        BCS .board
+.none   JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "nothing to Board!",$00
+        JMP BEEP_HUH
+.board  AND #$07
+        CMP #$07                        ; code 15: the time
+        BCC .mount                      ;   machine is index 10
+        LDA #$0A
+.mount  STA READY_TRANSPORT
+        PHA
+        JSR OBJ_FIND_REMOVE             ; unpark the record
+        JSR PLAYER_TILE_SET
+        JSR DRAW_MAP
+        PLA
+        CMP #$03
+        BCS .name                       ; animals get "Mount"
+        JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "Mount ",$00
+.name   JSR TRANSPORT_NAME
+        LDA READY_TRANSPORT
+        CMP #$06                        ; the shuttle: to space
+        BEQ .space
+        BCS TM_BOARD                    ; 7+: the time machine
+        RTS
+.space  LDA #$14                        ; LOC_NAME offset of SPA
+TM_GO   JMP EXIT_TO
+@ %def CMD_BOARD TM_GO
+
+Boarding a time machine is the endgame gate. With all four gems
+in hand it simply jumps to the \texttt{TM} overlay (offset
+[[$18]]). Otherwise the game opens a popup sketching the four
+gem holes --- \texttt{R G B W} --- and lights a colored marker
+over each gem the player owns, so the craft itself reports the
+quest progress. The marker colors are hi-res palette indexes:
+orange, green, blue, white.
+
+<<out time machine check>>=
+        ORG $8D73
+TM_BOARD
+        SUBROUTINE
+        ; The time machine: all four gems, or a hint popup.
+        ;
+        ; Behavior:
+        ;   All four gems: EXIT_TO the TM overlay. Otherwise draw
+        ;   the four-holes popup, mark each owned gem with a colored
+        ;   dash, explain what is missing, and put the screen back.
+        LDA OWNED_GEMS
+        BEQ .show
+        LDA OWNED_GEMS+1
+        BEQ .show
+        LDA OWNED_GEMS+2
+        BEQ .show
+        LDA OWNED_GEMS+3
+        BEQ .show
+        LDA #$18                        ; LOC_NAME offset of TM
+        BNE TM_GO                       ; (always)
+.show   JSR WIN_SAVE                    ; popup over the viewport
+        JSR VIEW_CLEAR
+        JSR WIN_VIEW
+        STA ZP_PAGE_TGL                 ; page flips off
+        JSR WIN_SHRINK
+        JSR MSG_PRINT
+        DC.B "||||",$7F,$03,"Entering the craft, thou dost|",$7F
+        DC.B $03,"remark upon four holes marked:||",$7F,$0D
+        DC.B "o  o  o  o|",$7F,$0D,"R  G  B  W||",$00
+        LDA OWNED_GEMS                  ; any gem at all?
+        ORA OWNED_GEMS+1
+        ORA OWNED_GEMS+2
+        ORA OWNED_GEMS+3
+        BNE .marks
+        JSR MSG_PRINT
+        DC.B $7F,$02,"Thou canst not determine how to|",$7F,$02
+        DC.B "operate the craft at this time.",$00
+.close  LDA #$60                        ; page flips back on
+        STA ZP_PAGE_TGL
+        JSR PAGE_FLIP
+        JSR WIN_RESTORE
+        JSR PAUSE_ABORTABLE
+        JMP PAUSE_ABORTABLE+3           ; skip its KBD_CLEAR: any
+                                        ;   key already buffered
+                                        ;   cuts the pause short
+.marks  LDA OWNED_GEMS                  ; red gem: orange mark
+        BEQ .green
+        LDX #$5E
+        LDA #$05
+        JSR GEM_MARK
+.green  LDA OWNED_GEMS+1
+        BEQ .blue
+        LDX #$73
+        LDA #$01                        ; (hi-res green)
+        JSR GEM_MARK
+.blue   LDA OWNED_GEMS+2
+        BEQ .white
+        LDX #$88
+        LDA #$06
+        JSR GEM_MARK
+.white  LDA OWNED_GEMS+3
+        BEQ .msg
+        LDX #$9D
+        LDA #$07
+        JSR GEM_MARK
+.msg    JSR MSG_PRINT
+        DC.B $7F,$05,"Thou hast not all the gems|",$7F,$04
+        DC.B "needed to operate thy craft!",$00
+        JMP .close
+@ %def TM_BOARD
+
+Each marker is six short strokes: three double-width horizontal
+lines drawn twice ([[GEM_MARK]] recurses into its own tail to
+repeat the row pattern), making a chunky colored dash above the
+gem hole.
+
+<<out gem indicator>>=
+        ORG $8ED5
+GEM_MARK
+        SUBROUTINE
+        ; Draw one gem marker.
+        ;
+        ; Inputs:
+        ;   X -- left pixel column; A -- hi-res color index
+        ;
+        ; Behavior:
+        ;   Set the color, then draw six 4-pixel horizontal strokes
+        ;   on consecutive rows from row 58 down (the JSR ladder
+        ;   runs the tail 2+2+2 times).
+        STX ZP_TMP
+        INX
+        INX
+        INX
+        INX
+        STX ZP_TMP2                     ; right edge = left + 4
+        LDY #$39
+        STY ZP_BOX_T                    ; ZP_PY <- #$39 (row 57)
+        JSR COLOR_SET
+        JSR .two                        ; 2 + 2 + 2 rows of dash
+.two    JSR .one
+        JSR .one
+.one    LDX ZP_TMP
+        STX ZP_BOX_L                    ; ZP_PX <- left edge
+        LDX ZP_TMP2
+        INC ZP_BOX_T                    ; next row down
+        LDY ZP_BOX_T
+        JMP LINE_TO
+@ %def GEM_MARK
+
+\section{OUT: leaving the map}
+
+Every exit from the outdoors funnels through [[EXIT_TO]]: store
+the position for the next visit, put the packed world map back at
+[[MAP_BASE]] (undoing the entry stash, so the next overlay --- or
+the next OUT entry --- finds it where \texttt{/U1.VARS} loaded
+it), and hand the [[LOC_NAME]] offset to [[GAME_LOAD]].
+
+<<out exit to>>=
+        ORG $8EFA
+EXIT_TO
+        SUBROUTINE
+        ; Leave OUT for the overlay at LOC_NAME offset A.
+        ;
+        ; Behavior:
+        ;   Save the position, copy the 14 packed-map pages from
+        ;   MAP_PACKED back to MAP_BASE (self-modified page bytes),
+        ;   and tail-call GAME_LOAD.
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        STX PLR_OUT_X
+        STY PLR_OUT_Y
+        PHA
+        LDX #$0E                        ; the packed map goes
+        LDY #$00                        ;   back to MAP_BASE
+.unstash
+UNSTASH_SRC = *+2
+        LDA MAP_PACKED,Y
+UNSTASH_DST = *+2
+        STA MAP_BASE,Y
+        INY
+        BNE .unstash
+        INC UNSTASH_SRC                 ; (self-modified)
+        INC UNSTASH_DST
+        DEX
+        BNE .unstash
+        PLA
+        JMP GAME_LOAD
+@ %def EXIT_TO UNSTASH_SRC UNSTASH_DST
+
+\section{OUT: the Cast command and Prayer}
+
+Outdoors, magic is thin: only \emph{Magic Missile} (spell 3) and
+\emph{Kill} (spell 10) may be cast, and trying anything else
+wastes the scroll --- ``Failed, dungeon spell only!'' decrements
+the count all the same. With no spell readied, the character
+falls back on \emph{Prayer} (spell 0), which is free.
+
+A cast shouts its incantation (the [[INCANT]] table), then runs
+like a ranged attack with reach 3. Non-wizards fail outright when
+$\mathrm{rnd} \geq \mathrm{wisdom} + 128$ (class 2 never rolls).
+Magic Missile's damage is $\mathrm{rnd}(\mathrm{intelligence})+1$,
+multiplied by the readied \emph{magic} weapon: $\times1.5$ holding
+the amulet, $\times2$ the wand, $\times3$ the staff or triangle.
+Kill does flat 255 damage --- sudden death to anything outdoors.
+
+<<out cmd cast>>=
+        ORG $8F1F
+CMD_CAST
+        SUBROUTINE
+        ; Cast the readied spell (outdoors: 3, 10, or Prayer).
+        ;
+        ; Behavior:
+        ;   Filter: Prayer when nothing readied; only spells 3 and
+        ;   10 work outdoors (others are consumed for nothing). Aim,
+        ;   shout the incantation, roll wisdom to cast, walk the
+        ;   shot, and hand MON_HIT the damage.
+        JSR PRINT_SPELL
+        LDX READY_SPELL
+        BNE .have
+        JMP PRAYER                      ; spell 0: Prayer
+.have   LDA OWNED_SPELLS,X
+        BNE .stocked
+        JSR MSG_PRINT
+        DC.B "~You've used up that spell!",$00
+        JMP BEEP_CMD
+.stocked
+        CPX #$03                        ; Magic Missile
+        BEQ .castable
+        CPX #$0A                        ; Kill
+        BEQ .castable
+        DEC OWNED_SPELLS,X              ; wasted anyway!
+        JSR MSG_PRINT
+        DC.B "~Failed, dungeon spell only!",$00
+        JMP BEEP_CMD
+.castable
+        JSR DIR_PROMPT
+        BCC .aimed
+        JMP OUT_MAIN
+.aimed  LDA #$0A
+        JSR SFX_QUEUE
+        LDX READY_SPELL
+        DEC OWNED_SPELLS,X
+        CPX #$0A                        ; pick the incantation:
+        LDX #$00                        ;   0 = Missile, 1 = Kill
+        BCC .shout
+        INX
+.shout  JSR STR_NTH
+        DC.W INCANT
+        LDX #$03                        ; reach 3
+        STX RANGE_CNT
+        DEX
+        CPX PLR_CLASS                   ; class 2 cannot fail
+        BEQ .sure
+        LDA #$80                        ; else rnd < wis + 128
+        CLC
+        ADC PLR_WIS
+        STA ZP_CHANCE
+        JSR RND
+        CMP ZP_CHANCE
+        BCC .sure
+        JSR MSG_PRINT
+        DC.B "Failed!",$00
+.bail   JSR BEEP_CMD
+        JMP OUT_MAIN
+.miss   JSR MSG_PRINT
+        DC.B "Miss!",$00
+        JMP .bail
+.sure   JSR PROJ_WALK
+        BCS .miss
+        LDA #$5C                        ; the missile splash
+        STA (ZP_CELL_PTR),Y
+        JSR DRAW_MAP
+        JSR OBJ_PTR
+        LDA OBJ_TILE,X
+        STA (ZP_CELL_PTR),Y
+        LDA READY_SPELL
+        CMP #$03
+        BEQ .missile
+        LDA #$FF                        ; Kill: flat 255
+        JMP MON_HIT
+.missile
+        LDA PLR_INT                     ; rnd(int) + 1 ...
+        JSR RND_MOD
+        INC ZP_CHANCE
+        LDA ZP_CHANCE
+        LDX READY_WEAPON                ; ... scaled by the magic
+        CPX #$08                        ;   weapon in hand
+        BCC .deal
+        CPX #$0C
+        BCS .deal
+        ASL                             ; x2
+        CPX #$09                        ; the wand stops here
+        BEQ .deal
+        CLC
+        ADC ZP_CHANCE                   ; x3: staff, triangle
+        CPX #$08
+        BNE .deal
+        LSR                             ; the amulet: x1.5
+.deal   JMP MON_HIT
+@ %def CMD_CAST
+
+The incantations are pure flavor --- dog-Latin shouted before the
+bolt flies.
+
+<<out incantations>>=
+        ORG $901A
+INCANT  ; the spoken spells: Magic Missile, then Kill
+        DC.B "~",$22,"DELCIO-ERE-UI!",$22,$A0
+        DC.B "~",$22,"INTERFICIO-NUNC!",$22,$A0
+@ %def INCANT
+
+Prayer is the catch-all miracle for a character with nothing
+readied: it tops up whichever vital is desperate (hit points
+below 15, then food below 15, each restored \emph{to} 15 with a
+``Shazam!''), and failing that, one time in four it spirits away
+the monster last fought. Otherwise --- ``Hmmmm... no effect?''
+
+<<out prayer>>=
+        ORG $9040
+PRAYER
+        SUBROUTINE
+        ; Spell 0: free, feeble, occasionally a miracle.
+        ;
+        ; Behavior:
+        ;   Shout, then: hits below 15 are raised to 15; else food
+        ;   likewise; else 1 chance in 4 to TGT_REMOVE the current
+        ;   monster; else no effect.
+        JSR MSG_PRINT
+        DC.B "~",$22,"POTENTIS-LAUDIS!",$22,$00
+        LDA #$0A
+        JSR SFX_QUEUE
+        LDY #$0F
+        LDA PLR_HITS+1                  ; hits below 15?
+        BNE .food
+        CPY PLR_HITS
+        BCC .food
+        BEQ .food
+        STY PLR_HITS                    ; PLR_HITS <- #$0F
+.shazam JSR MSG_PRINT
+        DC.B " Shazam!",$00
+        RTS
+.food   LDA PLR_FOOD+1                  ; food below 15?
+        BNE .banish
+        CPY PLR_FOOD
+        BCC .banish
+        BEQ .banish
+        STY PLR_FOOD                    ; PLR_FOOD <- #$0F
+        BNE .shazam                     ; (always)
+.banish JSR RND                         ; 1 in 4: banish the
+        AND #$03                        ;   current target
+        BNE .nope
+        JSR TGT_REMOVE
+        BCS .nope
+        JSR MSG_PRINT
+        DC.B "~Monster removed!",$00
+        RTS
+.nope   JMP NO_EFFECT_MSG
+@ %def PRAYER
+
+\section{OUT: the Enter command}
+
+[[CELL_PROBE]] is Enter's little scout, used when walking into a
+town or castle: it reports whether a neighboring cell could hold
+a parked transport. The answer is the cell's terrain code (0--2)
+if it is open ground and the world's parking lot is not full, or
+[[$FF]]. The town/castle overlay later writes a transport cell
+code over the answer for every craft the player should find
+waiting on the way out --- which [[MAP_REFRESH]] then turns back
+into object records. (How the in-town side fills these slots is
+confirmed in the TWN/CAS rounds.)
+
+<<out cell probe>>=
+        ORG $90B0
+CELL_PROBE
+        SUBROUTINE
+        ; Can cell (X, Y) hold a parked craft?
+        ;
+        ; Behavior:
+        ;   Refuse when PARK_CNT has hit 53 or the cell is not
+        ;   open terrain; otherwise count it and return its code.
+        ;
+        ; Outputs:
+        ;   A -- the terrain code (0-2), or FF if blocked/full
+        LDA PARK_CNT
+        CMP #$35                        ; 53 craft world-wide max
+        BCS .no
+        JSR CELL_TYPE
+        CMP #$03                        ; open terrain only
+        BCS .no
+        INC PARK_CNT
+        RTS
+.no     LDA #$FF
+        RTS
+@ %def CELL_PROBE
+
+\emph{Enter} works on the four enterable terrain codes. Towns
+(code 6) and castles (code 4) switch overlays after some
+bookkeeping: the transport census refreshes [[OWNED_TRANSPORT]]
+so shops and kings know what the player has, and the four cells
+around a town are probed into [[COURT_CELLS]]. Dungeon mouths
+(code 7) just load \texttt{DNG}. Code 5 is a \emph{landmark} ---
+the per-continent pair of special sites handled below. Everything
+else gets a ``?''.
+
+<<out cmd enter>>=
+        ORG $90C5
+ENTER_HUH
+        ; Enter: nothing enterable underfoot.
+        JMP QUERY_MARK
+CMD_ENTER
+        SUBROUTINE
+        ; Enter the place under the player.
+        ;
+        ; Behavior:
+        ;   Save the position. Landmarks (code 5) match PLR_PLACE
+        ;   against LM_PLACE and run LANDMARK. Castles load CAS;
+        ;   towns run the census, probe the four COURT_CELLS, and
+        ;   load TWN; dungeon mouths load DNG.
+        LDX ZP_PLR_X                    ; remember where, for the
+        LDY ZP_PLR_Y                    ;   return trip
+        STX PLR_OUT_X
+        STY PLR_OUT_Y
+        JSR CELL_HERE
+        CMP #$04                        ; enterable: codes 4-7
+        BCC ENTER_HUH
+        CMP #$08
+        BCS ENTER_HUH
+        JSR MSG_PRINT                   ; complete the echo:
+        DC.B "ing...",$00               ;   "Entering..."
+        JSR CMD_INFORM                  ; name the place
+        LDA UNDER_TYPE
+        CMP #$05                        ; a landmark?
+        BNE .place
+        LDA PLR_PLACE                   ; only the 8 known sites
+        LDX #$07                        ;   respond
+.known  CMP LM_PLACE,X
+        BEQ LANDMARK
+        DEX
+        BPL .known
+        RTS
+.place  CMP #$04
+        BNE .town
+        LDA #$10                        ; a castle: load CAS
+        BNE .exit                       ; (always)
+.town   CMP #$06
+        BNE .dungeon
+        JSR CENSUS                      ; count the fleet for the
+        LDX ZP_PLR_X                    ;   shops, and probe the
+        LDY ZP_PLR_Y                    ;   courtyard for parking
+        DEY
+        JSR CELL_PROBE
+        STA COURT_CELLS                 ; north
+        INY
+        DEX
+        JSR CELL_PROBE
+        STA COURT_CELLS+1               ; west
+        INX
+        INX
+        JSR CELL_PROBE
+        STA COURT_CELLS+2               ; east
+        DEX
+        INY
+        JSR CELL_PROBE
+        STA COURT_CELLS+3               ; south
+        LDA #$0C                        ; a town: load TWN
+        BNE .exit                       ; (always)
+.dungeon
+        LDA #$08                        ; load DNG
+.exit   JMP EXIT_TO
+@ %def ENTER_HUH CMD_ENTER
+
+\section{OUT: landmarks and their boons}
+
+Each continent hides two landmarks (local places 2 and 3 --- see
+[[LM_PLACE]]): a signpost, a grave, a pillar, the Ozymandias
+pedestal, the Tower of Knowledge. Entering one opens a popup with
+its inscription from [[STR_SIGNS]] --- Sosaria's epigraphy runs
+from Shelley to schoolboy Latin --- and then grants the boon:
+
+\begin{itemize}
+\item If the site closes one of the even-numbered [[QUEST_FLAGS]]
+slots and that quest is active (the flag is 1), it completes ---
+``A Quest is completed!'' with a border flash. (The kings assign
+these quests in the castle overlay.)
+\item Sites with a stat index in [[LM_STAT]] raise that attribute
+toward its cap: gain $\lceil(99-\mathrm{stat})/10\rceil$, to a
+maximum of 99. The Tower of Knowledge raises intelligence, the
+pedestal wisdom, the grave stamina.
+\item The Signpost (site 4) hands over the first weapon the
+player lacks --- ``You find a great sword!''.
+\end{itemize}
+
+A landmark goes dormant after a visit ([[PLR_LASTMARK]]) until
+some other landmark is used, so the boons cannot be farmed by
+standing in place.
+
+<<out landmarks>>=
+        ORG $913A
+LANDMARK
+        SUBROUTINE
+        ; Show landmark X's inscription and grant its boon.
+        ;
+        ; Behavior:
+        ;   Popup the inscription. Complete the LM_QUEST slot if
+        ;   that quest is active. Then the boon: raise the LM_STAT
+        ;   attribute by a tenth of what is missing to 99, or (the
+        ;   Signpost) grant the first unowned weapon. PLR_LASTMARK
+        ;   blocks repeat visits.
+        STX LM_SAVE
+        JSR POPUP_FRAME
+        LDX LM_SAVE
+        JSR STR_NTH                     ; the inscription
+        DC.W STR_SIGNS
+        JSR WIN_RESTORE
+        JSR KBD_CLEAR
+        LDX LM_SAVE
+        LDY LM_QUEST,X                  ; closes a quest slot?
+        BMI .boon
+        LDA QUEST_FLAGS,Y               ; active quests only
+        BEQ .boon
+        BMI .boon
+        LDA #$FF                        ; QUEST_FLAGS[Y] <- done
+        STA QUEST_FLAGS,Y
+        JSR MSG_PRINT
+        DC.B "}A Quest is completed!",$00
+        JSR LM_JINGLE
+.boon   LDX LM_SAVE
+        LDA LM_STAT,X
+        BNE .stat
+        CPX #$04                        ; only the Signpost has
+        BNE .done                       ;   a non-stat boon
+        CPX PLR_LASTMARK                ; not twice in a row
+        BEQ .dud
+        LDX #$00
+.scan   INX                             ; first weapon not owned
+        LDA OWNED_WEAPONS,X
+        BEQ .give
+        CPX #$0F
+        BCC .scan
+.dud    JSR NO_EFFECT_MSG
+        JMP .done
+.give   LDA #$01
+        STA OWNED_WEAPONS,X
+        STX ZP_TMP
+        JSR MSG_PRINT
+        DC.B "~You find a",$00
+        LDX ZP_TMP
+        CPX #$03                        ; "an" axe / amulet
+        BEQ .an
+        CPX #$08
+        BNE .name
+.an     LDA #$6E                        ; 'n'
+        JSR CHAR_OUT
+.name   INC MON_CH
+        LDX ZP_TMP
+        JSR STR_NTH
+        DC.W STR_WEAPONS
+        LDA #$21                        ; '!'
+        JSR CHAR_OUT
+.ding   JSR LM_JINGLE
+.done   LDA LM_SAVE                     ; the site goes dormant
+        STA PLR_LASTMARK
+        JMP PAUSE_ABORTABLE
+.dud2   JMP .dud
+.stat   CPX PLR_LASTMARK                ; not twice in a row
+        BEQ .dud2
+        STA ZP_TMP                      ; the stat index
+        ASL
+        TAX
+        LDA PLR_HITS,X                  ; (stats are word pairs
+        STA ZP_TMP2                     ;   from PLR_HITS)
+        SEC
+        LDA #$63
+        SBC PLR_HITS,X
+        BCC .dud2                       ; already past 99
+        ADC #$08                        ; gain (99-stat+9)/10
+        JSR DIV10
+        ADC PLR_HITS,X
+        CMP #$63
+        BCC .raise
+        LDA #$63                        ; cap at 99
+.raise  STA PLR_HITS,X
+        SEC
+        SBC ZP_TMP2
+        BEQ .dud2                       ; nothing gained
+        PHA
+        JSR MSG_PRINT
+        DC.B "}Thou dost gain ",$00
+        PLA
+        JSR PRINT_DIGIT
+        INC MON_CH
+        LDX ZP_TMP
+        JSR STR_NTH
+        DC.W STR_STATS
+        JMP .ding
+LM_JINGLE
+        ; Flash the popup border white and ring the ding.
+        LDA #$07                        ; white
+        JSR POPUP_BORDER_A
+        LDA #$0A
+        JSR SFX_PLAY
+        JSR .pause
+        JSR POPUP_BORDER                ; back to blue
+.pause  LDA #$E6
+        JMP VDELAY
+@ %def LANDMARK LM_JINGLE
+
+\section{OUT: the Fire command}
+
+\emph{Fire} is the mounted weapon: cannons from a frigate, lasers
+from an aircar, ``what?'' from anything else. The shot aims like
+an attack with reach 3, misses flat one time in five, and deals
+$\mathrm{rnd}(\mathrm{TIER\_HP}[\mathrm{transport}]) + 30$ ---
+the same 0--100 scale table doing double duty, giving cannons
+rnd(40) and lasers rnd(50).
+
+<<out cmd fire>>=
+        ORG $924A
+CMD_FIRE
+        SUBROUTINE
+        ; Fire the transport's weapon.
+        ;
+        ; Behavior:
+        ;   Cannons from a frigate, lasers from an aircar. Aim and
+        ;   walk the shot 3 cells; miss flat 51/256; damage is
+        ;   rnd(TIER_HP[transport]) + 30 into MON_HIT.
+        LDX READY_TRANSPORT
+        CPX #$04                        ; frigate?
+        BNE .notship
+        JSR MSG_PRINT
+        DC.B "cannons",$00
+        JMP .aim
+.notship
+        CPX #$05                        ; aircar?
+        BEQ .lasers
+        JSR MSG_PRINT
+        DC.B "what",$00
+        JMP QUERY_MARK
+.lasers JSR MSG_PRINT
+        DC.B "lasers",$00
+.aim    JSR DIR_PROMPT
+        BCC .aimed
+        RTS
+.miss   JSR MSG_PRINT
+        DC.B "~Miss!",$00
+        RTS
+.aimed  LDA #$0C                        ; the report
+        JSR SFX_QUEUE
+        LDA #$03                        ; reach 3
+        STA RANGE_CNT
+        JSR PROJ_WALK
+        BCS .miss
+        LDA #$5E                        ; splash the target
+        STA (ZP_CELL_PTR),Y
+        JSR DRAW_MAP
+        JSR OBJ_PTR
+        LDA OBJ_TILE,X
+        STA (ZP_CELL_PTR),Y
+        JSR RND
+        CMP #$33                        ; flat 20% miss
+        BCS .hit
+        JSR MSG_PRINT
+        DC.B "~Missed",$00
+        JMP PRINT_THE_MON
+.hit    LDX READY_TRANSPORT             ; rnd(TIER_HP[transport])
+        LDA TIER_HP,X                   ;   + 30 damage
+        JSR RND_MOD
+        ADC #$1E
+        JMP MON_HIT
+@ %def CMD_FIRE
+
+\section{OUT: saving, readying, dismounting}
+
+\emph{Quit} is a misnomer kept from the command list: it saves
+the game and plays on. The whole player block --- vitals,
+inventory, position, quest flags \emph{and} the object records
+--- is one [[MLIB_BSAVE_P]] of 458 bytes to \texttt{/U1.PLAYER}.
+Nothing else needs saving: the world map proper is immutable
+(\texttt{/U1.VARS} is written once by \texttt{MAKE.INDATA}), so
+the records are the entire mutable world.
+
+<<out cmd quit>>=
+        ORG $92CA
+CMD_QUIT
+        SUBROUTINE
+        ; Quit-(saving game...): write /U1.PLAYER, keep playing.
+        ;
+        ; Behavior:
+        ;   Store the position and MLIB_BSAVE_P the 458-byte block
+        ;   at PLR_SAVE to /U1.PLAYER, retrying through the disk
+        ;   prompt; report "saved."
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        STX PLR_OUT_X
+        STY PLR_OUT_Y
+        JSR WIN_SAVE
+.retry  JSR MLIB_BSAVE_P
+        DC.W PLR_SAVE                   ; the saved block,
+        DC.W $01CA                      ;   458 bytes
+        DC.W PATH_PLAYER
+        JSR DISK_PROMPT_P               ; wrong disk? ask, retry
+        BCS .retry
+        JSR MSG_PRINT
+        DC.B "saved.",$00
+        JMP CLR_EOL
+@ %def CMD_QUIT
+
+\emph{Ready} just forwards to the engine: wait for the
+W/A/S selector key, then [[READY_CMD]] runs its menus.
+
+<<out cmd ready>>=
+        ORG $92F2
+CMD_READY
+        ; Ready Weapon/Armour/Spell: the engine does the work.
+        JSR KEY_OR_IDLE
+        JMP READY_CMD
+@ %def CMD_READY
+
+\emph{X-it} parks the current transport on the spot as a fresh
+object record --- which is exactly how it will be found again,
+by Board, by the census, by anyone. Dismounting is only allowed
+on open terrain (codes 0--2; a frigate is left \emph{on} its
+water cell, with the player standing on the same cell until the
+next move). Transports 7 and up park as cell code 15, a time
+machine.
+
+<<out cmd exit transport>>=
+        ORG $92F8
+CMD_XIT
+        SUBROUTINE
+        ; X-it: park the transport here.
+        ;
+        ; Behavior:
+        ;   Allowed on open terrain only: spawn a record with cell
+        ;   code transport + 8 (15 for index 7 and up) and go on
+        ;   foot.
+        LDA READY_TRANSPORT
+        BNE .have
+        JSR MSG_PRINT
+        DC.B " what",$00
+        JMP QUERY_MARK
+.have   JSR CELL_HERE
+        CMP #$03                        ; open terrain only
+        BCC .park
+.cant   JSR CURSOR_COL1
+        JSR MSG_PRINT
+        DC.B "Thou canst not leave it here!",$00
+        JMP BEEP_HUH
+.park   LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        LDA READY_TRANSPORT
+        CMP #$07                        ; 7+ parks as a time
+        BCC .code                       ;   machine (code 15)
+        LDA #$07
+.code   ORA #$08                        ; transport cell code
+        JSR OBJ_SPAWN
+        BCS .cant                       ; record table full
+        LDA #$00
+        STA READY_TRANSPORT
+        RTS
+@ %def CMD_XIT
+
+\section{OUT: moving across the world}
+
+The four direction commands share one tiny prologue --- fetch the
+position, clear carry --- and bend one coordinate each before
+falling into the shared mover. (The [[BCC]]s are branch-always:
+nothing between [[POS_LOAD]]'s [[CLC]] and the branch touches
+carry.)
+
+<<out direction commands>>=
+        ORG $9351
+POS_LOAD
+        ; X/Y := the player's position; C clear.
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        CLC
+        RTS
+CMD_NORTH
+        ; the four movement commands
+        JSR POS_LOAD
+        DEY
+        BCC MOVE_STEP                   ; (always)
+CMD_SOUTH
+        JSR POS_LOAD
+        INY
+        BCC MOVE_STEP
+CMD_EAST
+        JSR POS_LOAD
+        INX
+        BCC MOVE_STEP
+CMD_WEST
+        JSR POS_LOAD
+        DEX
+@ %def POS_LOAD CMD_NORTH CMD_SOUTH CMD_EAST CMD_WEST
+
+The mover is the terrain rulebook. Water needs a raft or frigate;
+mountains stop everyone; aircars cannot put down in forest; rafts
+and frigates beach on any land (``Frigates like water!''); cell
+codes 16 and up are something alive --- ``Blocked by an orc!''.
+A craft of index 6 or more (the shuttle, a boarded time machine)
+does not surface-travel at all.
+
+<<out move step>>=
+        ORG $936D
+MOVE_STEP
+        SUBROUTINE
+        ; Try to step the player to (X, Y).
+        ;
+        ; Behavior:
+        ;   Read the destination cell and apply the rulebook; legal
+        ;   steps branch to MOVE_DO, refusals print their string
+        ;   from STR_BLOCKED (or name the blocking monster) and
+        ;   play the bump.
+        JSR CURSOR_COL1
+        STX ZP_DST_X
+        STY ZP_DST_Y
+        LDA READY_TRANSPORT
+        CMP #$06
+        BCC .terrain
+        JSR MSG_PRINT
+        DC.B "Can't travel on land!",$00
+        JMP .blat
+.terrain
+        JSR CELL_TYPE
+        TAX
+        BNE .notwater
+        LDA READY_TRANSPORT             ; water: raft or frigate
+        CMP #$03
+        BCS MOVE_DO
+        BCC .say                        ; (X=0: the water string)
+.notwater
+        LDX #$01
+        CMP #$03                        ; mountains
+        BEQ .say
+        CMP #$10                        ; someone in the way
+        BCS .blocked
+        INX
+        CMP #$02                        ; forest:
+        BNE .craft
+        LDA READY_TRANSPORT             ;   no aircar landings
+        CMP #$05
+        BEQ .say
+.craft  LDX READY_TRANSPORT             ; water craft beach on
+        CPX #$03                        ;   any land
+        BEQ .beach
+        CPX #$04
+        BNE MOVE_DO
+.beach  JSR STR_NTH_CAP                 ; "Raft"/"Frigate"
+        DC.W STR_TRANSPORT
+        LDX #$03                        ;   + "s like water!"
+.say    JSR STR_NTH
+        DC.W STR_BLOCKED
+.blat   LDA #$0E                        ; the bump sound
+        JMP SFX_PLAY_FLUSH
+.blocked
+        PHA
+        JSR MSG_PRINT
+        DC.B "Blocked by a",$00
+        PLA
+        SEC                             ; cell code -> monster
+        SBC #$04                        ;   index
+        LSR
+        TAX
+        CPX #$0E                        ; "an": evil trent,
+        BEQ .an                         ;   orc, evil ranger
+        CPX #$10
+        BEQ .an
+        CPX #$13
+        BNE .mname
+.an     LDA #$6E                        ; 'n'
+        JSR CHAR_OUT
+.mname  INC MON_CH
+        CPX #$14                        ; the warlock's name
+        BNE .pr                         ;   needs its own line
+        JSR PUTCH_NL_COL1
+.pr     JSR STR_NTH
+        DC.W STR_MONSTERS
+        LDA #$21                        ; '!'
+        JSR CHAR_OUT
+        JMP .blat
+@ %def MOVE_STEP
+
+A legal step commits the position, lets [[EDGE_CROSS]] handle
+walking off the continent, and charges the fare from the
+per-transport tables: faster mounts eat less food \emph{and} less
+time per step. A step on foot is exactly $1.00$ on the move
+counter (via [[MOVE_CNT_INC]]) and half a ration of food; a
+shuttle step is $0.14$ time and nothing to eat. Land transports
+thump ([[TICK_SND]]); boats and aircraft glide silently.
+
+<<out move commit>>=
+        ORG $9416
+MOVE_DO
+        SUBROUTINE
+        ; Commit the step to (ZP_DST_X, ZP_DST_Y); charge fare.
+        ;
+        ; Behavior:
+        ;   Store the new position, let EDGE_CROSS handle leaving
+        ;   the continent, then TICK the per-transport food and time
+        ;   fare (a foot step adds its 1.00 via MOVE_CNT_INC).
+        LDX ZP_DST_X
+        LDY ZP_DST_Y
+        STX ZP_PLR_X
+        STY ZP_PLR_Y
+        JSR EDGE_CROSS
+        LDX READY_TRANSPORT
+        BNE .fare
+        JSR MOVE_CNT_INC                ; on foot: a whole move
+        LDX #$00
+.fare   LDY FOOD_TBL,X
+        LDA TIME_TBL,X
+        LDX READY_TRANSPORT
+        CPX #$03
+        BCS .quiet                      ; craft glide silently
+        JMP TICK_SND
+.quiet  JMP TICK
+@ %def MOVE_DO
+
+<<out tick tables>>=
+        ORG $943E
+FOOD_TBL ; food per step, BCD hundredths, by transport
         HEX 50 43 36 29 21 14 07 00
-        HEX 00 00 00 86 71 57 43 29
-        HEX 14 00 00 00 00 a9 00 85
-        HEX 65 20 c5 99 f0 04 c6 65
-        HEX d0 f7 60 a9 00 85 65 20
-        HEX c5 99 f0 08 c9 08 b0 04
-        HEX c9 03 d0 04 c6 65 d0 ef
-        HEX 60 a5 00 30 06 c9 4a 90
-        HEX 08 b0 15 c9 f6 b0 02 90
-        HEX 18 a5 01 30 06 c9 4a 90
-        HEX 06 b0 17 c9 f6 90 1f 60
-        HEX ee 6f 7e a9 f6 85 00 d0
-        HEX 1f ce 6f 7e a9 48 85 00
-        HEX d0 16 ce 6f 7e ce 6f 7e
-        HEX a9 fb 85 01 d0 0a ee 6f
-        HEX 7e ee 6f 7e a9 43 85 01
-        HEX 20 91 96 ad 6f 7e 29 03
-        HEX 8d 6f 7e 0a aa bd 00 a9
-        HEX 69 00 85 28 bd 01 a9 69
-        HEX a9 85 29 a9 00 85 2a a9
-        HEX 60 85 2b a0 00 b1 28 f0
-        HEX 1c 4a 4a 4a aa b1 28 29
-        HEX 07 0a 91 2a e6 2a d0 02
-        HEX e6 2b ca d0 f5 e6 28 d0
-        HEX e4 e6 29 d0 e0 ad 6f 7e
-        HEX 4a 6a 6a 8d 70 7e ae f6
-        HEX 7e f0 1b ca bd 47 7f 29
-        HEX c0 cd 70 7e d0 0d 20 fa
-        HEX 98 b1 72 9d e7 7f bd 97
-        HEX 7f 91 72 8a d0 e5 86 65
-        HEX a6 00 a4 01 88 ad b1 7e
-        HEX 20 11 99 a6 00 a4 01 ca
-        HEX ad b2 7e 20 11 99 a6 00
-        HEX a4 01 e8 ad b3 7e 20 11
-        HEX 99 a6 00 a4 01 c8 ad b4
-        HEX 7e 20 11 99 a2 03 a9 ff
-        HEX 9d b1 7e ca 10 fa 20 97
-        HEX 95 ad b5 7e f0 25 ad a8
-        HEX 7e c9 07 b0 1e 20 b9 15
-        HEX 29 07 a8 c8 20 b9 15 29
-        HEX 07 aa e8 20 d1 99 c9 02
-        HEX f0 04 c6 65 d0 e7 a9 0f
-        HEX 20 27 99 a9 00 8d b5 7e
-        HEX 60 a9 00 a2 0a 9d 9e 7e
-        HEX ca d0 fa 8d c6 9d ae 7c
-        HEX 7e f0 06 fe 9e 7e ee c6
-        HEX 9d ac f6 7e f0 1d 88 b9
-        HEX 97 7f c9 20 b0 12 c9 12
-        HEX 90 0e ee c6 9d 4a c9 0f
-        HEX 90 02 a9 12 aa fe 96 7e
-        HEX 98 d0 e3 60 ad f6 7e c9
-        HEX 41 b0 2f 20 b9 15 c9 0c
-        HEX 90 0b 29 3f cd e8 7e b0
-        HEX 21 29 07 d0 1d 85 28 20
-        HEX b9 15 29 07 f0 14 0a 85
-        HEX 02 a9 0f 20 54 82 aa bd
-        HEX ae 76 c5 02 90 05 c6 28
-        HEX d0 ef 60 a0 00 e0 04 90
-        HEX 08 a0 02 e0 09 90 02 a0
-        HEX 01 84 03 8e f2 7e 8a 0a
-        HEX 69 10 85 02 a5 00 e9 09
-        HEX 10 02 a9 00 85 06 a5 00
-        HEX 69 09 85 08 a5 01 e9 04
-        HEX 10 02 a9 00 85 07 a5 01
-        HEX 69 04 85 09 20 c5 99 c5
-        HEX 03 d0 f9 e4 06 90 11 e4
-        HEX 08 b0 0d c4 07 90 09 c4
-        HEX 09 b0 05 c6 60 d0 e5 60
-        HEX a5 02 20 27 99 b0 20 ad
-        HEX e8 7e ae f2 7e bc ae 76
-        HEX 79 86 96 4a c9 05 90 09
-        HEX 48 20 54 82 68 38 65 69
-        HEX 6a ae f6 7e 9d ff b5 60
+        HEX 00 00
+TIME_TBL ; time per step, BCD hundredths (foot adds its whole
+         ; 1.00 through MOVE_CNT_INC instead)
+        HEX 00 86 71 57 43 29 14 00
+        HEX 00 00 00
+@ %def FOOD_TBL TIME_TBL
+
+\section{OUT: continent edges}
+
+Two terrain scouts pick random cells until they find the right
+kind (or give up after 256 draws): open water for spawning craft,
+open land for respawning the dead. ``Land'' is anything except
+water, mountains, and occupied cells --- a resurrection can
+deposit the player on a town's doorstep.
+
+<<out random terrain finders>>=
+        ORG $9453
+FIND_WATER
+        SUBROUTINE
+        ; X/Y := a random water cell.
+        ;
+        ; Behavior:
+        ;   Draw random cells until CELL_TYPE returns water, up to
+        ;   256 times.
+        LDA #$00
+        STA ZP_TRIES
+.try    JSR CELL_RAND
+        BEQ .got
+        DEC ZP_TRIES
+        BNE .try
+.got    RTS
+FIND_LAND
+        SUBROUTINE
+        ; X/Y := a random open land cell.
+        ;
+        ; Behavior:
+        ;   Draw random cells until one is neither water, nor
+        ;   mountains, nor occupied (code 8+), up to 256 times.
+        LDA #$00
+        STA ZP_TRIES
+.try    JSR CELL_RAND
+        BEQ .next                       ; water
+        CMP #$08                        ; occupied
+        BCS .next
+        CMP #$03                        ; mountains
+        BNE .got
+.next   DEC ZP_TRIES
+        BNE .try
+.got    RTS
+@ %def FIND_WATER FIND_LAND
+
+Each continent floats in a 10-cell ocean margin: coordinates run
+$-10\dots73$ around the $0\dots63$ map, and anything off the map
+proper reads as water (see [[CELL_TYPE]]). Sailing past the
+margin switches continents --- east/west neighbors differ in bit
+0 of [[PLR_CONT]], north/south in bit 1, a $2\times2$ torus ---
+and re-enters from the opposite margin, monsters cleared, map
+rebuilt.
+
+<<out edge crossing>>=
+        ORG $9477
+EDGE_CROSS
+        SUBROUTINE
+        ; Cross to the neighbor continent past the ocean margin.
+        ;
+        ; Behavior:
+        ;   Coordinates inside -10..73 return. Beyond that: adjust
+        ;   PLR_CONT (x: +/-1, y: +/-2), re-enter from the opposite
+        ;   margin, clear the monsters, and fall into MAP_REFRESH.
+        LDA ZP_PLR_X
+        BMI .xneg
+        CMP #$4A
+        BCC .ycheck
+        BCS .east
+.xneg   CMP #$F6
+        BCS .ycheck
+        BCC .west                       ; (always)
+.ycheck LDA ZP_PLR_Y
+        BMI .yneg
+        CMP #$4A
+        BCC .in
+        BCS .south
+.yneg   CMP #$F6
+        BCC .north
+.in     RTS
+.east   INC PLR_CONT
+        LDA #$F6                        ; enter at west margin
+        STA ZP_PLR_X
+        BNE .reload                     ; (always)
+.west   DEC PLR_CONT
+        LDA #$48
+        STA ZP_PLR_X
+        BNE .reload
+.south  DEC PLR_CONT
+        DEC PLR_CONT
+        LDA #$FB
+        STA ZP_PLR_Y
+        BNE .reload
+.north  INC PLR_CONT
+        INC PLR_CONT
+        LDA #$43
+        STA ZP_PLR_Y
+.reload JSR MON_CLEAR
+        ; falls into MAP_REFRESH
+@ %def EDGE_CROSS
+
+\section{OUT: rebuilding the map}
+
+[[MAP_REFRESH]] turns the stored world into the live one. The
+packed map opens with four pointer words (offsets relative to
+[[MAP_PACKED]] itself); each continent is a run-length stream of
+\emph{count$\times$8 $+$ terrain-code} bytes, zero-terminated,
+expanding to exactly 4096 cells. On top of the fresh terrain go,
+in order: every object record tagged for this continent, any
+transports owed to the player from the last town visit
+([[COURT_CELLS]]), and --- once the endgame flag [[TM_REVEAL]] is
+raised and while fewer than 7 exist --- a time machine, tucked
+into forest near the continent's northwest corner.
+
+<<out map refresh>>=
+        ORG $94C1
+MAP_REFRESH
+        SUBROUTINE
+        ; Decompress continent PLR_CONT to MAP_BASE and restock.
+        ;
+        ; Behavior:
+        ;   Expand the continent's RLE stream to MAP_BASE, derive
+        ;   PLR_CONT_BITS, paint this continent's records, respawn
+        ;   COURT_CELLS craft, recount the census, and scatter a
+        ;   time machine when TM_REVEAL is up.
+        LDA PLR_CONT
+        AND #$03                        ; the world is a 2x2
+        STA PLR_CONT                    ;   torus of continents
+        ASL
+        TAX
+        LDA MAP_PACKED,X                ; src := MAP_PACKED +
+        ADC #$00                        ;   table[continent]
+        STA ZP_RLE_SRC
+        LDA MAP_PACKED+1,X
+        ADC #$A9
+        STA ZP_RLE_SRC+1
+        LDA #$00
+        STA ZP_RLE_DST
+        LDA #$60                        ; dst := MAP_BASE
+        STA ZP_RLE_DST+1
+        LDY #$00
+.unit   LDA (ZP_RLE_SRC),Y              ; run byte: length*8 +
+        BEQ .objects                    ;   terrain code; 0 ends
+        LSR
+        LSR
+        LSR
+        TAX
+        LDA (ZP_RLE_SRC),Y
+        AND #$07
+        ASL                             ; cell byte = code * 2
+.fill   STA (ZP_RLE_DST),Y
+        INC ZP_RLE_DST
+        BNE .nc
+        INC ZP_RLE_DST+1
+.nc     DEX
+        BNE .fill
+        INC ZP_RLE_SRC
+        BNE .unit
+        INC ZP_RLE_SRC+1
+        BNE .unit                       ; (always)
+.objects
+        LDA PLR_CONT
+        LSR                             ; continent index into
+        ROR                             ;   the top two bits
+        ROR
+        STA PLR_CONT_BITS
+        LDX OBJ_COUNT                   ; paint this continent's
+        BEQ .court                      ;   records onto the map
+.rec    DEX
+        LDA OBJ_YC,X
+        AND #$C0
+        CMP PLR_CONT_BITS
+        BNE .skip
+        JSR OBJ_PTR_X
+        LDA (ZP_CELL_PTR),Y             ; remember the terrain,
+        STA OBJ_UNDER,X
+        LDA OBJ_TILE,X                  ;   show the object
+        STA (ZP_CELL_PTR),Y
+.skip   TXA
+        BNE .rec
+.court  STX ZP_TRIES                    ; 0: 256 tries below
+        LDX ZP_PLR_X                    ; respawn craft parked
+        LDY ZP_PLR_Y                    ;   around the courtyard
+        DEY
+        LDA COURT_CELLS
+        JSR OBJ_PLACE_T                 ; north
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        DEX
+        LDA COURT_CELLS+1
+        JSR OBJ_PLACE_T                 ; west
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        INX
+        LDA COURT_CELLS+2
+        JSR OBJ_PLACE_T                 ; east
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        INY
+        LDA COURT_CELLS+3
+        JSR OBJ_PLACE_T                 ; south
+        LDX #$03
+        LDA #$FF
+.clr    STA COURT_CELLS,X               ; consume the slots
+        DEX
+        BPL .clr
+        JSR CENSUS
+        LDA TM_REVEAL                   ; scatter a time machine?
+        BEQ .done
+        LDA OWNED_TRANSPORT+10          ; at most 7 in the world
+        CMP #$07
+        BCS .done
+.seek   JSR RND                         ; in the northwest
+        AND #$07                        ;   corner, in forest
+        TAY
+        INY
+        JSR RND
+        AND #$07
+        TAX
+        INX
+        JSR CELL_TYPE
+        CMP #$02
+        BEQ .drop
+        DEC ZP_TRIES
+        BNE .seek
+.drop   LDA #$0F                        ; park a time machine
+        JSR OBJ_SPAWN
+.done   LDA #$00
+        STA TM_REVEAL
+        RTS
+@ %def MAP_REFRESH
+
+\section{OUT: the transport census}
+
+[[OWNED_TRANSPORT]] is never edited piecemeal: whenever it
+matters (entering a town, after a map rebuild), the census
+recounts slots 1--10 from the ground truth --- the transport
+being ridden plus every parked record. [[PARK_CNT]] tallies the
+world-wide fleet for [[CELL_PROBE]]'s 53-craft cap.
+
+<<out transport census>>=
+        ORG $9597
+CENSUS
+        SUBROUTINE
+        ; Recount OWNED_TRANSPORT 1-10 and PARK_CNT.
+        ;
+        ; Behavior:
+        ;   Clear slots 1-10, count the ridden transport, then scan
+        ;   the records for parked-craft bytes ($12-$1E) and bump
+        ;   the matching slot (15 counts as a time machine).
+        LDA #$00
+        LDX #$0A
+.clr    STA OWNED_TRANSPORT,X
+        DEX
+        BNE .clr
+        STA PARK_CNT
+        LDX READY_TRANSPORT
+        BEQ .world
+        INC OWNED_TRANSPORT,X
+        INC PARK_CNT
+.world  LDY OBJ_COUNT
+        BEQ .done
+.scan   DEY
+        LDA OBJ_TILE,Y
+        CMP #$20
+        BCS .next
+        CMP #$12                        ; parked craft: cell
+        BCC .next                       ;   bytes $12-$1E
+        INC PARK_CNT
+        LSR                             ; byte -> cell code;
+        CMP #$0F                        ;   code 15 counts as a
+        BCC .own                        ;   time machine
+        LDA #$12
+.own    TAX
+        INC OWNED_TRANSPORT-8,X         ; code - 8 = transport
+.next   TYA
+        BNE .scan
+.done   RTS
+@ %def CENSUS
+
+\section{OUT: monster spawning}
+
+Each world turn may add one monster. The gate is tuned to the
+player: a flat 12-in-256 floor, plus a roll that passes more
+often at higher experience. The \emph{kind} is drawn against a
+difficulty bar of $2\times\mathrm{rnd}(1..7)$: a candidate among
+the fifteen outdoor monsters is accepted only if its
+[[MON_TIER]] is under the bar, so balrons stay rare while orcs
+are everywhere. Sea monsters (relative 0--3) spawn on water,
+the forest dwellers (4--8) in woods, the rest on grass ---
+always outside the visible viewport, never on the player.
+
+Hit points scale with both the player and the kind:
+$(\mathrm{exp}_{hi} + \mathrm{TIER\_HP}[\mathrm{tier}])/2$,
+randomized above 4. [[TIER_HP]] is just $10\times$tier --- the
+same scale the kill code pays out as experience.
+
+<<out monster spawner>>=
+        ORG $95D2
+MON_SPAWN
+        SUBROUTINE
+        ; Maybe spawn one monster, off-screen, on its terrain.
+        ;
+        ; Behavior:
+        ;   Gate the turn's spawn roll, draw a kind under the
+        ;   difficulty bar, pick a matching-terrain cell outside
+        ;   the viewport box, OBJ_SPAWN it, and give it
+        ;   (exp-high + TIER_HP[tier])/2 hit points.
+        LDA OBJ_COUNT
+        CMP #$41                        ; keep slots for craft
+        BCS .rts
+        JSR RND
+        CMP #$0C                        ; 12/256: spawn for sure
+        BCC .roll
+        AND #$3F                        ; otherwise gate on the
+        CMP PLR_EXP+1                   ;   player's progress
+        BCS .rts
+        AND #$07
+        BNE .rts
+.roll   STA ZP_RLE_SRC                  ; (scratch) retry count
+        JSR RND
+        AND #$07
+        BEQ .rts
+        ASL
+        STA ZP_TGT_X                    ; difficulty bar: 2..14
+.pick   LDA #$0F                        ; draw one of the 15
+        JSR RND_MOD                     ;   outdoor monsters
+        TAX
+        LDA MON_TIER+6,X
+        CMP ZP_TGT_X                    ; tier under the bar?
+        BCC .kind
+        DEC ZP_RLE_SRC
+        BNE .pick
+.rts    RTS
+.kind   LDY #$00                        ; terrain class by kind:
+        CPX #$04                        ;   0-3 sea monsters,
+        BCC .cls                        ;   4-8 forest dwellers,
+        LDY #$02                        ;   9-14 grass roamers
+        CPX #$09
+        BCC .cls
+        LDY #$01
+.cls    STY ZP_TGT_Y                    ; the required terrain
+        STX CUR_MON                     ; (relative index, only
+        TXA                             ;   while spawning)
+        ASL
+        ADC #$10
+        STA ZP_TGT_X                    ; cell code = 16 + 2*kind
+        LDA ZP_PLR_X                    ; exclusion box around
+        SBC #$09                        ;   the visible viewport
+        BPL .l
+        LDA #$00
+.l      STA ZP_BOX_L
+        LDA ZP_PLR_X
+        ADC #$09
+        STA ZP_BOX_R
+        LDA ZP_PLR_Y
+        SBC #$04
+        BPL .t
+        LDA #$00
+.t      STA ZP_BOX_T
+        LDA ZP_PLR_Y
+        ADC #$04
+        STA ZP_BOX_B
+.find   JSR CELL_RAND                   ; a random cell of the
+        CMP ZP_TGT_Y                    ;   right terrain,
+        BNE .find
+        CPX ZP_BOX_L                    ;   outside the box
+        BCC .ok
+        CPX ZP_BOX_R
+        BCS .ok
+        CPY ZP_BOX_T
+        BCC .ok
+        CPY ZP_BOX_B
+        BCS .ok
+        DEC ZP_TILE_TMP                 ; (free-running counter)
+        BNE .find
+        RTS
+.ok     LDA ZP_TGT_X
+        JSR OBJ_SPAWN
+        BCS .full
+        LDA PLR_EXP+1                   ; hit points scale with
+        LDX CUR_MON                     ;   progress and tier
+        LDY MON_TIER+6,X
+        ADC TIER_HP,Y
+        LSR
+        CMP #$05
+        BCC .weak
+        PHA                             ; randomize: (hp +
+        JSR RND_MOD                     ;   rnd(hp) + 1) / 2
+        PLA
+        SEC
+        ADC ZP_CHANCE
+        ROR
+.weak   LDX OBJ_COUNT
+        STA OBJ_HP-1,X
+.full   RTS
+TIER_HP ; the 0-100 scale: TIER_HP[tier] = 10 * tier
         HEX 00 0a 14 1e 28 32 3c 46
-        HEX 50 5a 64 ae f6 7e f0 12
-        HEX ca bd 97 7f c9 20 90 07
-        HEX c9 5a b0 03 20 7d 99 8a
-        HEX d0 ee 8e f2 7e ca 8e 00
-        HEX b6 60 20 d2 95 ae f6 7e
-        HEX f0 15 ca 86 6a bd 97 7f
-        HEX c9 20 90 07 c9 5a b0 03
-        HEX 20 bf 97 a6 6a d0 eb 60
+        HEX 50 5a 64
+@ %def MON_SPAWN TIER_HP
+
+\section{OUT: the monsters' turn}
+
+[[MON_CLEAR]] sweeps every monster record away --- crossing a
+continent edge, respawning, or initializing a fresh world ---
+while parked transports persist. Its parting [[DEX]] writes
+[[$FF]] into [[OBJ_HP]]+0, the sentinel [[OUT_ENTRY]] checks to
+know the world has been set up at least once.
+
+<<out monster despawn>>=
+        ORG $9691
+MON_CLEAR
+        SUBROUTINE
+        ; Remove all monster records; prime the world sentinel.
+        ;
+        ; Behavior:
+        ;   OBJ_REMOVE every record with a monster cell byte;
+        ;   leave craft. CUR_MON <- 0 and the sentinel <- $FF.
+        LDX OBJ_COUNT
+        BEQ .prime
+.scan   DEX
+        LDA OBJ_TILE,X
+        CMP #$20
+        BCC .skip
+        CMP #$5A
+        BCS .skip
+        JSR OBJ_REMOVE
+.skip   TXA
+        BNE .scan
+.prime  STX CUR_MON                     ; CUR_MON <- #$00
+        DEX
+        STX OBJ_HP                      ; sentinel <- #$FF
+        RTS
+@ %def MON_CLEAR
+
+After every player action --- including idle and failed ones ---
+each monster record gets to act.
+
+<<out monsters turn>>=
+        ORG $96B0
+TURN_PASS
+        SUBROUTINE
+        ; The world's half of the turn: maybe spawn, then every
+        ; monster acts once.
+        ;
+        ; Behavior:
+        ;   MON_SPAWN once, then MON_ACT for each record holding
+        ;   a monster, last to first.
+        JSR MON_SPAWN
+        LDX OBJ_COUNT
+        BEQ MON_DONE
+.each   DEX
+        STX ZP_REC
+        LDA OBJ_TILE,X
+        CMP #$20
+        BCC .skip
+        CMP #$5A
+        BCS .skip
+        JSR MON_ACT
+.skip   LDX ZP_REC
+        BNE .each
+MON_DONE
+        RTS
+@ %def TURN_PASS MON_DONE
+
+A monster on the move first rolls against [[AGGR_TBL]], indexed
+by the \emph{player's} transport: on foot the world is calm (any
+roll acts... downward --- entry 0 means monsters always move),
+while a frigate or aircar stirs up almost everything. Then it
+classifies itself (sea / land / forest-capable), takes one step
+toward the player --- preferring a random axis so pursuit
+wiggles --- and walks only on terrain its class allows: sea
+monsters stay wet, land monsters may slip into forest, the two
+forest natives roam both.
+
+<<out monster roam>>=
+        ORG $96CE
+AGGR_TBL ; act threshold (rnd >= this) per player transport
         HEX 00 80 aa 00 80 c0 e6 e6
-        HEX e6 e6 e6 20 b9 15 ae 7c
-        HEX 7e dd ce 96 90 e9 a6 6a
-        HEX bd 97 7f a0 00 c9 30 90
-        HEX 0c a0 01 c9 38 f0 04 c9
-        HEX 40 d0 02 a0 02 8c c7 9d
-        HEX a9 00 85 04 85 05 bd f7
-        HEX 7e 85 02 a5 00 30 0a c5
-        HEX 02 90 06 f0 06 e6 04 b0
-        HEX 02 c6 04 bd 47 7f 29 3f
-        HEX 85 03 a5 01 30 0a c5 03
-        HEX 90 06 f0 06 e6 05 b0 02
-        HEX c6 05 20 b9 15 30 05 20
-        HEX 6f 97 90 12 a6 02 a5 03
-        HEX 18 65 05 a8 20 77 97 90
-        HEX 05 20 6f 97 b0 22 20 f8
-        HEX 98 bd e7 7f 91 72 a5 0c
-        HEX 9d f7 7e a5 0d 0d 70 7e
-        HEX 9d 47 7f 20 fa 98 b1 72
-        HEX 9d e7 7f bd 97 7f 91 72
-        HEX 60 a4 03 a5 02 18 65 04
-        HEX aa e0 40 b0 29 c0 40 b0
-        HEX 25 e4 00 d0 04 c4 01 f0
-        HEX 1d 20 d1 99 c9 08 b0 06
-        HEX c9 04 90 02 a9 01 cd c7
-        HEX 9d f0 0d c9 02 d0 07 ad
-        HEX c7 9d c9 01 f0 02 38 60
-        HEX 86 0c 84 0d 18 60 a8 f0
-        HEX 0f 30 03 a0 01 60 a0 ff
-        HEX 8d bd 97 a9 00 38 e9 00
-        HEX 60 a6 6a bd f7 7e 85 02
-        HEX 38 e5 00 20 ac 97 84 6e
-        HEX 85 04 bd 47 7f 29 3f 85
-        HEX 03 38 e5 01 20 ac 97 84
-        HEX 6f 85 05 a8 a5 04 f0 0b
-        HEX c0 00 f0 06 c4 04 d0 1e
-        HEX c8 c9 a8 c0 02 90 3b c0
-        HEX 04 b0 13 bd 97 7f c9 28
-        HEX f0 0f c9 2c f0 0b c9 38
-        HEX f0 07 c9 58 f0 03 4c d9
-        HEX 96 a9 02 8d c8 9d 38 a5
-        HEX 02 e5 6e aa 38 a5 03 e5
-        HEX 6f a8 86 02 84 03 20 d1
-        HEX 99 c9 03 f0 e1 ce c8 9d
-        HEX d0 e4 20 78 80 a6 6a 8e
-        HEX f3 7e bd 97 7f 4a 4a 69
-        HEX fe 8d f2 7e aa 20 b1 80
-        HEX d6 76 20 19 81 20 61 74
-        HEX 74 61 63 6b 73 21 20 00
-        HEX a9 04 20 ce 15 a9 5e 8d
-        HEX 82 15 20 b3 15 ad cc 7e
-        HEX 4a 85 69 ad 7b 7e 0a 0a
-        HEX 0a 65 69 85 69 38 a9 c8
-        HEX e5 69 85 69 20 b9 15 c5
-        HEX 69 90 17 a5 24 c9 17 90
-        HEX 03 20 7e 80 20 19 81 4d
-        HEX 69 73 73 65 64 21 00 4c
-        HEX f2 98 a5 24 c9 1a 90 03
-        HEX 20 7e 80 20 19 81 48 69
-        HEX 74 21 20 00 a5 24 c9 15
-        HEX 90 03 20 7e 80 ae f2 7e
-        HEX bd a8 76 0a 20 54 82 18
-        HEX 69 01 8d 4b 7e 20 0d 82
-        HEX 20 19 81 20 64 61 6d 61
-        HEX 67 65 00 ad c6 7e 38 ed
-        HEX 4b 7e 8d c6 7e ad c7 7e
-        HEX e9 00 10 05 a9 00 8d c6
-        HEX 7e 8d c7 7e 20 6e 83 a9
-        HEX 02 20 cb 15 20 8c 9a 4c
-        HEX b3 15 a6 6a a9 00 85 72
-        HEX bd 47 7f 29 3f 4a 66 72
-        HEX 4a 66 72 69 60 85 73 bc
-        HEX f7 7e 60 c9 08 90 43 c9
-        HEX 10 90 0e 60 48 20 53 94
-        HEX 68 4c 27 99 48 20 61 94
-        HEX 68 e0 40 b0 2d c0 40 b0
-        HEX 29 86 6c ae f6 7e e0 50
-        HEX b0 20 0a 9d 97 7f 48 98
-        HEX 0d 70 7e 9d 47 7f a5 6c
-        HEX 9d f7 7e 20 fa 98 b1 72
-        HEX 9d e7 7f 68 91 72 ee f6
-        HEX 7e 18 60 a6 00 a4 01 e0
-        HEX 40 b0 f7 c0 40 b0 f3 86
-        HEX 6c 98 0d 70 7e ae f6 7e
-        HEX ca 30 e7 dd 47 7f d0 f8
-        HEX bc f7 7e c4 6c d0 f1 bd
-        HEX 47 7f 29 c0 cd 70 7e d0
-        HEX 08 20 fa 98 bd e7 7f 91
-        HEX 72 bd 97 7f 85 60 86 6c
-        HEX ce f6 7e d0 20 60 bd f8
-        HEX 7e 9d f7 7e bd 48 7f 9d
-        HEX 47 7f bd 98 7f 9d 97 7f
-        HEX bd e8 7f 9d e7 7f bd 01
-        HEX b6 9d 00 b6 e8 ec f6 7e
-        HEX 90 dc a6 6c a5 60 60 20
-        HEX b9 15 29 3f a8 20 b9 15
-        HEX 29 3f aa a9 00 c0 40 b0
-        HEX 1f e0 40 b0 1b 98 8d f5
-        HEX 99 4a 85 73 a9 00 6a 46
-        HEX 73 6a 85 72 a5 73 69 60
-        HEX 85 73 8a a8 b1 72 a0 00
-        HEX 4a 60 a6 00 a4 01 20 d1
-        HEX 99 8d c5 9d 60 20 78 80
-        HEX 20 f8 99 c9 03 f0 21 c9
-        HEX 08 90 1f a5 01 0d 70 7e
-        HEX ae f6 7e dd 46 7f d0 0d
-        HEX bc f6 7e c4 00 d0 06 bd
-        HEX e6 7f 4a 10 05 ca d0 eb
-        HEX a9 01 8d c5 9d c9 04 b0
-        HEX 15 aa 20 b8 80 de 9a ae
-        HEX c5 9d ca d0 08 ae 6f 7e
-        HEX 20 b8 80 31 78 60 c9 06
-        HEX d0 10 20 19 81 74 68 65
-        HEX 20 63 69 74 79 20 6f 66
-        HEX 20 00 ad 70 7e 05 01 a2
-        HEX 53 dd 6f 78 d0 07 bc c3
-        HEX 78 c4 00 f0 07 ca 10 f1
-        HEX 8e ed 7e 60 8e ed 7e 20
-        HEX b8 80 17 79 60 ae 7c 7e
-        HEX 20 b8 80 7c 75 60 ad 7c
-        HEX 7e c9 0b 90 05 a9 00 8d
-        HEX 7c 7e c9 07 90 07 a9 0a
-        HEX 8d 7c 7e a9 07 09 08 0a
-        HEX 8d 82 15 60 57 93 5d 93
-        HEX 63 93 69 93 76 8a 45 88
-        HEX 36 8b f0 8c 1f 8f 07 84
-        HEX c8 90 4a 92 07 84 07 84
-        HEX 03 9a 07 84 5b 88 07 84
-        HEX ca 92 f2 92 07 84 07 84
-        HEX 07 84 07 84 f8 92 a2 85
-        HEX 59 6f 75 20 61 72 65 20
-        HEX 61 74 20 73 65 e1 59 6f
-        HEX 75 20 61 72 65 20 69 6e
-        HEX 20 74 68 65 20 6c 61 6e
-        HEX 64 73 7e 6f 66 a0 59 6f
-        HEX 75 20 61 72 65 20 69 6e
-        HEX 20 74 68 65 20 77 6f 6f
-        HEX 64 f3 59 6f 75 20 63 61
-        HEX 6e 27 74 20 77 61 6c 6b
-        HEX 20 6f 6e 20 77 61 74 65
-        HEX 72 a1 4d 6f 75 6e 74 61
-        HEX 69 6e 73 20 61 72 65 20
-        HEX 69 6d 70 61 73 73 61 62
-        HEX 6c 65 a1 41 69 72 63 61
-        HEX 72 73 20 63 61 6e 27 74
-        HEX 20 70 61 73 73 20 77 6f
-        HEX 6f 64 73 a1 73 20 6c 69
-        HEX 6b 65 20 77 61 74 65 72
-        HEX a1 7e 7e 7e 7f 07 54 68
-        HEX 65 20 73 69 67 6e 20 72
-        HEX 65 61 64 73 3a 7e 7e 7f
-        HEX 04 22 47 4f 20 45 41 53
-        HEX 54 20 54 4f 20 47 4f 20
-        HEX 45 41 53 54 21 a2 7e 7e
-        HEX 7e 7f 05 54 68 65 20 67
-        HEX 72 61 76 65 20 69 73 20
-        HEX 6d 61 72 6b 65 64 3a 7e
-        HEX 7e 7f 09 22 56 41 45 20
-        HEX 56 49 43 54 49 53 a2 7e
-        HEX 7e 7e 7f 07 54 68 65 20
-        HEX 73 69 67 6e 20 72 65 61
-        HEX 64 73 3a 7e 7e 7f 06 22
-        HEX 4f 4d 4e 49 41 20 4d 55
-        HEX 54 41 4e 54 55 52 21 a2
-        HEX 7e 7e 7f 07 54 68 65 20
-        HEX 73 69 67 6e 20 72 65 61
-        HEX 64 73 3a 7e 7e 7f 07 22
-        HEX 55 4c 54 49 4d 41 20 54
-        HEX 48 55 4c 45 21 22 7e 7e
-        HEX 7f 02 54 68 65 20 73 6b
-        HEX 79 20 67 72 6f 77 73 20
-        HEX 64 61 72 6b 2c 20 61 6e
-        HEX 64 20 61 7e 7f 02 73 74
-        HEX 72 6f 6e 67 20 6d 61 67
-        HEX 69 63 20 65 6e 67 75 6c
-        HEX 66 73 20 79 6f 75 a1 7e
-        HEX 7e 7e 7f 08 41 20 73 69
-        HEX 67 6e 20 72 65 61 64 73
-        HEX 3a 7e 7e 7f 02 22 46 4f
-        HEX 52 54 45 53 20 46 4f 52
-        HEX 54 55 4e 41 20 41 44 49
-        HEX 55 56 41 54 21 a2 7f 08
-        HEX 4f 6e 20 61 20 70 65 64
-        HEX 65 73 74 61 6c 2c 7e 7f
-        HEX 05 74 68 65 73 65 20 77
-        HEX 6f 72 64 73 20 61 70 70
-        HEX 65 61 72 3a 7e 7e 7f 03
-        HEX 22 4d 59 20 4e 41 4d 45
-        HEX 20 49 53 20 4f 5a 59 4d
-        HEX 41 4e 44 49 41 53 2c 7e
-        HEX 7f 08 4b 49 4e 47 20 4f
-        HEX 46 20 4b 49 4e 47 53 3a
-        HEX 7e 7f 06 4c 4f 4f 4b 20
-        HEX 4f 4e 20 4d 59 20 57 4f
-        HEX 52 4b 53 2c 7e 7f 03 59
-        HEX 45 20 4d 49 47 48 54 59
-        HEX 2c 20 41 4e 44 20 44 45
-        HEX 53 50 41 49 52 21 22 7e
-        HEX 7e 7f 03 4e 6f 74 68 69
-        HEX 6e 67 20 62 65 73 69 64
-        HEX 65 20 72 65 6d 61 69 6e
-        HEX 73 2e 7e 7f 02 59 6f 75
-        HEX 20 66 65 65 6c 20 61 20
-        HEX 73 74 72 61 6e 67 65 20
-        HEX 66 6f 72 63 65 a1 7e 7e
-        HEX 7e 7e 7f 03 59 6f 75 20
-        HEX 66 65 65 6c 20 61 20 73
-        HEX 74 72 6f 6e 67 20 6d 61
-        HEX 67 69 63 7e 7f 07 73 75
-        HEX 72 72 6f 75 6e 64 69 6e
-        HEX 67 20 79 6f 75 a1 7e 7e
-        HEX 7e 7f 04 59 6f 75 20 68
-        HEX 65 61 72 20 73 6f 6d 65
-        HEX 6f 6e 65 20 73 61 79 2c
-        HEX 7e 7e 20 22 54 55 52 52
-        HEX 49 53 2d 53 43 49 45 4e
-        HEX 54 49 41 2d 4d 41 47 4e
-        HEX 4f 50 45 52 45 a2 42 41
-        HEX 2d 2c 18 17 03 02 00 03
-        HEX 04 03 00 05 02 06 ff 06
-        HEX ff 04 ff 02 ff 00 01 01
-        HEX 01 01 00 01 01 03 00 00
-        HEX 00 01 03 01 03 03
-@ %def OUT_BLOB
+        HEX e6 e6 e6
+MON_ROAM
+        SUBROUTINE
+        ; Step monster ZP_REC toward the player, terrain rules
+        ; permitting.
+        ;
+        ; Behavior:
+        ;   Roll AGGR_TBL[player transport] to act at all; classify
+        ;   the monster from its cell byte; build the signed step
+        ;   toward the player; try a random-first axis order; legal
+        ;   cells move the record and repaint both map cells.
+        JSR RND
+        LDX READY_TRANSPORT
+        CMP AGGR_TBL,X
+        BCC MON_DONE                    ; sitting this one out
+        LDX ZP_REC
+        LDA OBJ_TILE,X
+        LDY #$00                        ; class 0: sea
+        CMP #$30
+        BCC .cls
+        LDY #$01                        ; class 1: land
+        CMP #$38                        ; the archer and the
+        BEQ .wood                       ;   trent: forest too
+        CMP #$40
+        BNE .cls
+.wood   LDY #$02
+.cls    STY MON_TCLASS
+        LDA #$00
+        STA ZP_STEP_X
+        STA ZP_STEP_Y
+        LDA OBJ_X,X
+        STA ZP_TGT_X
+        LDA ZP_PLR_X                    ; x step: toward the
+        BMI .xless                      ;   player (negative =
+        CMP ZP_TGT_X                    ;   margin = far west)
+        BCC .xless
+        BEQ .ystep
+        INC ZP_STEP_X
+        BCS .ystep                      ; (always)
+.xless  DEC ZP_STEP_X
+.ystep  LDA OBJ_YC,X
+        AND #$3F
+        STA ZP_TGT_Y
+        LDA ZP_PLR_Y
+        BMI .yless
+        CMP ZP_TGT_Y
+        BCC .yless
+        BEQ .go
+        INC ZP_STEP_Y
+        BCS .go                         ; (always)
+.yless  DEC ZP_STEP_Y
+.go     JSR RND                         ; prefer a random axis,
+        BMI .ymajor                     ;   so pursuit wiggles
+        JSR .tryx
+        BCC .commit
+.ymajor LDX ZP_TGT_X
+        LDA ZP_TGT_Y
+        CLC
+        ADC ZP_STEP_Y
+        TAY
+        JSR .check
+        BCC .commit
+        JSR .tryx
+        BCS .stay
+.commit JSR OBJ_PTR                     ; lift the tile, put the
+        LDA OBJ_UNDER,X                 ;   terrain back ...
+        STA (ZP_CELL_PTR),Y
+        LDA ZP_DST_X
+        STA OBJ_X,X
+        LDA ZP_DST_Y
+        ORA PLR_CONT_BITS
+        STA OBJ_YC,X
+        JSR OBJ_PTR_X                   ; ... and set it down on
+        LDA (ZP_CELL_PTR),Y             ;   the new cell
+        STA OBJ_UNDER,X
+        LDA OBJ_TILE,X
+        STA (ZP_CELL_PTR),Y
+.stay   RTS
+.tryx   LDY ZP_TGT_Y
+        LDA ZP_TGT_X
+        CLC
+        ADC ZP_STEP_X
+        TAX
+.check  CPX #$40                        ; a legal cell?
+        BCS .no
+        CPY #$40
+        BCS .no
+        CPX ZP_PLR_X                    ; not onto the player
+        BNE .cell
+        CPY ZP_PLR_Y
+        BEQ .no
+.cell   JSR CELL_TYPE
+        CMP #$08                        ; (8+: an object; never
+        BCS .terr                       ;   matches a class)
+        CMP #$04
+        BCC .terr
+        LDA #$01                        ; places read as grass
+.terr   CMP MON_TCLASS
+        BEQ .yes
+        CMP #$02                        ; land monsters may
+        BNE .no                         ;   slip into forest
+        LDA MON_TCLASS
+        CMP #$01
+        BEQ .yes
+.no     SEC
+        RTS
+.yes    STX ZP_DST_X
+        STY ZP_DST_Y
+        CLC
+        RTS
+@ %def AGGR_TBL MON_ROAM
+
+\section{OUT: monster attacks}
+
+A sign/magnitude helper for the pursuit geometry; the negation
+runs through a self-modified subtrahend.
+
+<<out sign helper>>=
+        ORG $97AC
+SIGN_ABS
+        SUBROUTINE
+        ; A (signed) -> Y := sign (FF/0/1), A := |A|.
+        ;
+        ; Behavior:
+        ;   Positive: Y=1. Zero: Y=0. Negative: Y=$FF and A is
+        ;   negated through the self-modified SBC immediate.
+        TAY
+        BEQ .zero
+        BMI .neg
+        LDY #$01
+        RTS
+.neg    LDY #$FF
+        STA SGN_NEG                     ; negate: 0 - A through
+        LDA #$00                        ;   the immediate below
+        SEC
+SGN_NEG = *+1
+        SBC #$00
+.zero   RTS
+@ %def SIGN_ABS SGN_NEG
+
+The decision tree for one monster: orthogonally adjacent ---
+strike. At distance 2--3 (along an axis or the diagonal), the
+four \emph{shooters} --- dragon turtle, pirate ship, hidden
+archer, wandering warlock --- trace a line of sight toward the
+player (mountains block it) and strike from afar. Anything else
+walks. The distance lives in Y; note the [[DC.B $C9]] trick
+hiding a [[TAY]] inside a dummy [[CMP]] for the
+\emph{dy${}={}$0} case.
+
+<<out monster action>>=
+        ORG $97BF
+MON_ACT
+        SUBROUTINE
+        ; Monster ZP_REC acts: melee, ranged attack, or walk.
+        ;
+        ; Behavior:
+        ;   Distance along the pursuit axis in Y (diagonals count
+        ;   +1). Under 2: melee. 2-3: the four shooter kinds trace
+        ;   line-of-sight (mountains block) and strike from afar.
+        ;   Anything else: MON_ROAM.
+        LDX ZP_REC
+        LDA OBJ_X,X
+        STA ZP_TGT_X
+        SEC
+        SBC ZP_PLR_X
+        JSR SIGN_ABS
+        STY ZP_SGN_X
+        STA ZP_STEP_X                   ; here: |dx|
+        LDA OBJ_YC,X
+        AND #$3F
+        STA ZP_TGT_Y
+        SEC
+        SBC ZP_PLR_Y
+        JSR SIGN_ABS
+        STY ZP_SGN_Y
+        STA ZP_STEP_Y                   ; here: |dy|
+        TAY
+        LDA ZP_STEP_X
+        BEQ .dist                       ; dx=0: distance = |dy|
+        CPY #$00
+        BEQ .takex                      ; dy=0: distance = |dx|
+        CPY ZP_STEP_X
+        BNE .walk                       ; off-diagonal: walk
+        INY                             ; diagonal: |dy| + 1
+        DC.B $C9                        ; CMP #imm hides the TAY
+.takex  TAY
+.dist   CPY #$02
+        BCC MON_MELEE                   ; adjacent: strike
+        CPY #$04
+        BCS .walk                       ; too far: walk
+        LDA OBJ_TILE,X                  ; 2-3 away: the four
+        CMP #$28                        ;   shooters fire --
+        BEQ .ranged                     ;   dragon turtle,
+        CMP #$2C                        ;   pirate ship,
+        BEQ .ranged                     ;   hidden archer,
+        CMP #$38                        ;   wandering warlock
+        BEQ .ranged
+        CMP #$58
+        BEQ .ranged
+.walk   JMP MON_ROAM
+.ranged LDA #$02
+        STA RANGE_CNT
+.los    SEC                             ; trace the shot toward
+        LDA ZP_TGT_X                    ;   the player
+        SBC ZP_SGN_X
+        TAX
+        SEC
+        LDA ZP_TGT_Y
+        SBC ZP_SGN_Y
+        TAY
+        STX ZP_TGT_X
+        STY ZP_TGT_Y
+        JSR CELL_TYPE
+        CMP #$03                        ; mountains block it
+        BEQ .walk
+        DEC RANGE_CNT
+        BNE .los
+        ; in range: falls into MON_MELEE
+@ %def MON_ACT
+
+The strike itself: the player's tile flashes to the splash
+glyph for a frame, defense is $8\times\mathrm{armour} +
+\mathrm{stamina}/2$ subtracted from a flat 200-in-256 chance,
+and damage is $\mathrm{rnd}(2\times\mathrm{tier})+1$ off the
+16-bit hit points, floor zero (the main loop notices the death).
+The attacker also locks itself in as [[TGT_REC]], so a bare
+\emph{Attack} answers back.
+
+<<out monster melee>>=
+        ORG $9830
+MON_MELEE
+        SUBROUTINE
+        ; Monster ZP_REC strikes the player.
+        ;
+        ; Behavior:
+        ;   Announce, rattle, flash the player tile; hit when
+        ;   rnd < 200 - 8*armour - stamina/2; subtract
+        ;   rnd(2*tier) + 1 from the 16-bit hits, floored at 0.
+        JSR PUTCH_NL_COND
+        LDX ZP_REC
+        STX TGT_REC                     ; auto-target the attacker
+        LDA OBJ_TILE,X
+        LSR                             ; cell byte -> monster
+        LSR
+        ADC #$FE
+        STA CUR_MON
+        TAX
+        JSR STR_NTH_CAP
+        DC.W STR_MONSTERS
+        JSR MSG_PRINT
+        DC.B " attacks! ",$00
+        LDA #$04                        ; the menace rattle
+        JSR SFX_QUEUE
+        LDA #$5E                        ; flash the player tile
+        STA PLAYER_TILE
+        JSR DRAW_MAP
+        LDA PLR_STA                     ; defense: stamina/2
+        LSR                             ;   + 8 * armour
+        STA ZP_CHANCE
+        LDA READY_ARMOUR
+        ASL
+        ASL
+        ASL
+        ADC ZP_CHANCE
+        STA ZP_CHANCE
+        SEC
+        LDA #$C8                        ; hit if rnd < 200 -
+        SBC ZP_CHANCE                   ;   defense
+        STA ZP_CHANCE
+        JSR RND
+        CMP ZP_CHANCE
+        BCC .hit
+        LDA MON_CH
+        CMP #$17
+        BCC .miss
+        JSR PUTCH_NL_COL1
+.miss   JSR MSG_PRINT
+        DC.B "Missed!",$00
+        JMP .redraw
+.hit    LDA MON_CH
+        CMP #$1A
+        BCC .say
+        JSR PUTCH_NL_COL1
+.say    JSR MSG_PRINT
+        DC.B "Hit! ",$00
+        LDA MON_CH
+        CMP #$15
+        BCC .num
+        JSR PUTCH_NL_COL1
+.num    LDX CUR_MON                     ; damage: rnd(2*tier)+1
+        LDA MON_TIER,X
+        ASL
+        JSR RND_MOD
+        CLC
+        ADC #$01
+        STA DMG_AMT
+        JSR PRINT_NUM8
+        JSR MSG_PRINT
+        DC.B " damage",$00
+        LDA PLR_HITS                    ; hits -= damage,
+        SEC                             ;   floor at zero
+        SBC DMG_AMT
+        STA PLR_HITS
+        LDA PLR_HITS+1
+        SBC #$00
+        BPL .ok
+        LDA #$00
+        STA PLR_HITS
+.ok     STA PLR_HITS+1
+        JSR STATS_VALUES
+        LDA #$02
+        JSR SFX_PLAY
+.redraw JSR PLAYER_TILE_SET
+        JMP DRAW_MAP
+@ %def MON_MELEE
+
+\section{OUT: the object records}
+
+The address arithmetic for a record's map cell:
+
+<<out object cell pointer>>=
+        ORG $98F8
+OBJ_PTR
+        SUBROUTINE
+        ; ZP_CELL_PTR/Y := record ZP_REC's map cell.
+        ;
+        ; Behavior:
+        ;   Shift the masked row into row * 64, add the MAP_BASE
+        ;   page, load Y with the record's column.
+        LDX ZP_REC
+OBJ_PTR_X
+        ; (entry: record X's cell)
+        LDA #$00
+        STA ZP_CELL_PTR
+        LDA OBJ_YC,X
+        AND #$3F
+        LSR                             ; row * 64 + MAP_BASE
+        ROR ZP_CELL_PTR
+        LSR
+        ROR ZP_CELL_PTR
+        ADC #$60
+        STA ZP_CELL_PTR+1
+        LDY OBJ_X,X
+        RTS
+@ %def OBJ_PTR OBJ_PTR_X
+
+Creation and removal keep the five arrays dense and the map in
+sync: a spawn saves the terrain it covers and paints itself; a
+removal restores the terrain (only if its continent is the live
+one) and shifts everything above it down one slot.
+
+<<out object records>>=
+        ORG $9911
+OBJ_PLACE_T
+        SUBROUTINE
+        ; Spawn A at (X, Y) only if A is a parked-craft code.
+        ;
+        ; Behavior:
+        ;   A dispatcher fan-in: craft codes (8-15) fall through
+        ;   to OBJ_SPAWN; everything else returns.
+        CMP #$08
+        BCC .rts2                       ; (the shared RTS below)
+        CMP #$10
+        BCC OBJ_SPAWN
+        RTS
+SPAWN_AT_WATER
+        ; Spawn code A at a random water cell. (This and the
+        ; land variant are unreferenced in OUT -- shared source
+        ; with the sibling overlays; verify there.)
+        PHA
+        JSR FIND_WATER
+        PLA
+        JMP OBJ_SPAWN
+SPAWN_AT_LAND
+        ; Spawn code A at a random open land cell.
+        PHA
+        JSR FIND_LAND
+        PLA
+OBJ_SPAWN
+        ; Create an object record: cell code A at (X, Y).
+        ;
+        ; Outputs:
+        ;   C clear -- spawned (terrain saved, map painted)
+        ;   C set -- off-map or the record table is full
+        CPX #$40
+        BCS .rts2
+        CPY #$40
+        BCS .rts2
+        STX ZP_TMP
+        LDX OBJ_COUNT
+        CPX #$50
+        BCS .rts2
+        ASL                             ; cell byte = code * 2
+        STA OBJ_TILE,X
+        PHA
+        TYA
+        ORA PLR_CONT_BITS
+        STA OBJ_YC,X
+        LDA ZP_TMP
+        STA OBJ_X,X
+        JSR OBJ_PTR_X
+        LDA (ZP_CELL_PTR),Y             ; remember the terrain,
+        STA OBJ_UNDER,X
+        PLA
+        STA (ZP_CELL_PTR),Y             ;   paint the object
+        INC OBJ_COUNT
+        CLC
+.rts2   RTS
+OBJ_FIND_REMOVE
+        ; Remove the record at the player's position.
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        CPX #$40
+        BCS .rts2
+        CPY #$40
+        BCS .rts2
+        STX ZP_TMP
+        TYA
+        ORA PLR_CONT_BITS
+        LDX OBJ_COUNT
+.scan   DEX
+        BMI .rts2
+        CMP OBJ_YC,X
+        BNE .scan
+        LDY OBJ_X,X
+        CPY ZP_TMP
+        BNE .scan
+        ; found: falls into OBJ_REMOVE
+OBJ_REMOVE
+        ; Remove record X: restore its terrain (if on the live
+        ; continent) and close the gap in all five arrays.
+        ;
+        ; Outputs:
+        ;   A -- the removed cell byte; X preserved
+        LDA OBJ_YC,X
+        AND #$C0
+        CMP PLR_CONT_BITS
+        BNE .gone
+        JSR OBJ_PTR_X
+        LDA OBJ_UNDER,X
+        STA (ZP_CELL_PTR),Y
+.gone   LDA OBJ_TILE,X
+        STA ZP_TILE_TMP
+        STX ZP_TMP
+        DEC OBJ_COUNT
+        BNE .test
+        RTS
+.shift  LDA OBJ_X+1,X                   ; compact all five
+        STA OBJ_X,X                     ;   arrays down a slot
+        LDA OBJ_YC+1,X
+        STA OBJ_YC,X
+        LDA OBJ_TILE+1,X
+        STA OBJ_TILE,X
+        LDA OBJ_UNDER+1,X
+        STA OBJ_UNDER,X
+        LDA OBJ_HP+1,X
+        STA OBJ_HP,X
+        INX
+.test   CPX OBJ_COUNT
+        BCC .shift
+        LDX ZP_TMP
+        LDA ZP_TILE_TMP
+        RTS
+@ %def OBJ_PLACE_T SPAWN_AT_WATER SPAWN_AT_LAND OBJ_SPAWN
+@ %def OBJ_FIND_REMOVE OBJ_REMOVE
+
+\section{OUT: reading the map}
+
+The cell reader is the one place that knows the map's address
+math (row${}\times{}$64, the 10-cell margin reading as water).
+The row coordinate survives in Y by way of a self-modified
+[[LDY]] immediate.
+
+<<out cell helpers>>=
+        ORG $99C5
+CELL_RAND
+        SUBROUTINE
+        ; A := cell code of a random cell; X/Y say where.
+        ;
+        ; Behavior:
+        ;   Two random draws masked to 0-63, then CELL_TYPE.
+        JSR RND
+        AND #$3F
+        TAY
+        JSR RND
+        AND #$3F
+        TAX
+CELL_TYPE
+        ; A := cell code at (X, Y); off-map reads as water (0).
+        ; Leaves ZP_CELL_PTR on the row, X/Y untouched.
+        LDA #$00
+        CPY #$40
+        BCS .half
+        CPX #$40
+        BCS .half
+        TYA
+        STA CT_ROW                      ; park the row in the
+        LSR                             ;   LDY immediate below
+        STA ZP_CELL_PTR+1
+        LDA #$00
+        ROR
+        LSR ZP_CELL_PTR+1
+        ROR
+        STA ZP_CELL_PTR
+        LDA ZP_CELL_PTR+1
+        ADC #$60                        ; + MAP_BASE
+        STA ZP_CELL_PTR+1
+        TXA
+        TAY
+        LDA (ZP_CELL_PTR),Y
+CT_ROW = *+1
+        LDY #$00                        ; (self-modified)
+.half   LSR                             ; cell byte -> code
+        RTS
+CELL_HERE
+        ; A := cell code under the player; also in UNDER_TYPE.
+        LDX ZP_PLR_X
+        LDY ZP_PLR_Y
+        JSR CELL_TYPE
+        STA UNDER_TYPE
+        RTS
+@ %def CELL_RAND CELL_TYPE CT_ROW CELL_HERE
+
+\section{OUT: the Inform command}
+
+\emph{Inform and search} names the ground underfoot: the sea,
+the woods, ``the lands of'' with the continent's name, or ---
+standing on a place --- the place itself, found by matching the
+player's coordinates against [[PLACE_X]]/[[PLACE_Y]]. The match
+also sets [[PLR_PLACE]], which is how \emph{Enter} knows which
+landmark responds. Standing on one's own parked craft, the
+terrain \emph{under} the record is reported instead.
+
+<<out cmd inform>>=
+        ORG $9A03
+CMD_INFORM
+        SUBROUTINE
+        ; Say where the player stands; track PLR_PLACE.
+        ;
+        ; Behavior:
+        ;   Map the cell underfoot to a report: terrain strings
+        ;   (with the continent name for open land), or match the
+        ;   position against PLACE_X/PLACE_Y and print the place
+        ;   name, updating PLR_PLACE.
+        JSR PUTCH_NL_COND
+        JSR CELL_HERE
+        CMP #$03                        ; mountains read as
+        BEQ .lands                      ;   "the lands of"
+        CMP #$08
+        BCC .basic
+        LDA ZP_PLR_Y                    ; on an object: report
+        ORA PLR_CONT_BITS               ;   the terrain under
+        LDX OBJ_COUNT                   ;   its record
+.scan   CMP OBJ_YC-1,X
+        BNE .next
+        LDY OBJ_X-1,X
+        CPY ZP_PLR_X
+        BNE .next
+        LDA OBJ_UNDER-1,X
+        LSR
+        BPL .basic                      ; (always)
+.next   DEX
+        BNE .scan
+.lands  LDA #$01
+.basic  STA UNDER_TYPE
+        CMP #$04
+        BCS .place
+        TAX                             ; 0-2: sea/lands/woods
+        JSR STR_NTH
+        DC.W STR_YOUARE
+        LDX UNDER_TYPE
+        DEX
+        BNE .rts
+        LDX PLR_CONT                    ; "the lands of" takes
+        JSR STR_NTH                     ;   the continent name
+        DC.W STR_CONTINENTS
+.rts    RTS
+.place  CMP #$06
+        BNE .lookup
+        JSR MSG_PRINT
+        DC.B "the city of ",$00
+.lookup LDA PLR_CONT_BITS               ; find the place at
+        ORA ZP_PLR_Y                    ;   this position
+        LDX #$53
+.match  CMP PLACE_Y,X
+        BNE .miss
+        LDY PLACE_X,X
+        CPY ZP_PLR_X
+        BEQ .found
+.miss   DEX
+        BPL .match
+        STX PLR_PLACE                   ; PLR_PLACE <- #$FF
+        RTS
+.found  STX PLR_PLACE
+        JSR STR_NTH
+        DC.W STR_PLACES
+        RTS
+@ %def CMD_INFORM
+
+\section{OUT: transport names and the player tile}
+
+<<out transport names>>=
+        ORG $9A83
+TRANSPORT_NAME
+        SUBROUTINE
+        ; Print the current transport's name.
+        ;
+        ; Behavior:
+        ;   STR_NTH into the transport name table.
+        LDX READY_TRANSPORT
+        JSR STR_NTH
+        DC.W STR_TRANSPORT
+        RTS
+PLAYER_TILE_SET
+        ; Player tile := (transport | 8) * 2; 7+ rides (and
+        ; shows as) a time machine; out-of-range means on foot.
+        LDA READY_TRANSPORT
+        CMP #$0B
+        BCC .seven
+        LDA #$00                        ; sanity fallback
+        STA READY_TRANSPORT
+.seven  CMP #$07
+        BCC .tile
+        LDA #$0A                        ; READY_TRANSPORT <- #$0A
+        STA READY_TRANSPORT
+        LDA #$07
+.tile   ORA #$08
+        ASL
+        STA PLAYER_TILE
+        RTS
+@ %def TRANSPORT_NAME PLAYER_TILE_SET
+
+\section{OUT: command dispatch}
+
+The 26 commands in [[CMD_KEYS]] order; the half that mean
+nothing outdoors --- doors, chests, shops --- point straight at
+[[QUERY_MARK]]. Three commands are pure engine calls: the
+sound toggles and Ztats.
+
+<<out command table>>=
+        ORG $9AAA
+CMD_TBL ; handler per command, indexed by 2 x command index
+        DC.W CMD_NORTH                  ;  0 North
+        DC.W CMD_SOUTH                  ;  1 South
+        DC.W CMD_EAST                   ;  2 East
+        DC.W CMD_WEST                   ;  3 West
+        DC.W CMD_PASS                   ;  4 Pass (space)
+        DC.W SOUND_TOGGLE               ;  5 Accelerator (ctrl-A)
+        DC.W CMD_ATTACK                 ;  6 Attack
+        DC.W CMD_BOARD                  ;  7 Board
+        DC.W CMD_CAST                   ;  8 Cast
+        DC.W QUERY_MARK                 ;  9 Drop
+        DC.W CMD_ENTER                  ; 10 Enter
+        DC.W CMD_FIRE                   ; 11 Fire
+        DC.W QUERY_MARK                 ; 12 Get
+        DC.W QUERY_MARK                 ; 13 HyperJump
+        DC.W CMD_INFORM                 ; 14 Inform and search
+        DC.W QUERY_MARK                 ; 15 K-limb
+        DC.W SFX_TOGGLE                 ; 16 Noise
+        DC.W QUERY_MARK                 ; 17 Open
+        DC.W CMD_QUIT                   ; 18 Quit (save)
+        DC.W CMD_READY                  ; 19 Ready
+        DC.W QUERY_MARK                 ; 20 Steal
+        DC.W QUERY_MARK                 ; 21 Transact
+        DC.W QUERY_MARK                 ; 22 Unlock
+        DC.W QUERY_MARK                 ; 23 View
+        DC.W CMD_XIT                    ; 24 X-it
+        DC.W INVENTORY                  ; 25 Ztats
+@ %def CMD_TBL
+
+\section{OUT: message texts}
+
+The packed string tables ([[STR_NTH]] format: the last character
+of each entry carries the high bit). [[STR_YOUARE]] feeds
+Inform, [[STR_BLOCKED]] the mover, and [[STR_SIGNS]] holds the
+eight landmark inscriptions --- Sosaria's epigraphy runs from
+Shelley's \emph{Ozymandias} to schoolboy Latin (``OMNIA
+MUTANTUR'', ``FORTES FORTUNA ADIUVAT'', ``VAE VICTIS'') to the
+sublime ``GO EAST TO GO EAST!''.
+
+<<out message tables>>=
+        ORG $9ADE
+STR_YOUARE ; Inform's terrain reports (index = cell code)
+        DC.B "You are at se",$E1
+        DC.B "You are in the lands~of",$A0
+        DC.B "You are in the wood",$F3
+STR_BLOCKED ; the mover's refusals (3 follows a transport name)
+        DC.B "You can't walk on water",$A1
+        DC.B "Mountains are impassable",$A1
+        DC.B "Aircars can't pass woods",$A1
+        DC.B "s like water",$A1
+STR_SIGNS ; the eight landmark inscriptions
+        DC.B "~~~",$7F,$07,"The sign reads:~~",$7F,$04,$22
+        DC.B "GO EAST TO GO EAST!",$A2
+        DC.B "~~~",$7F,$05,"The grave is marked:~~",$7F,$09,$22
+        DC.B "VAE VICTIS",$A2
+        DC.B "~~~",$7F,$07,"The sign reads:~~",$7F,$06,$22
+        DC.B "OMNIA MUTANTUR!",$A2
+        DC.B "~~",$7F,$07,"The sign reads:~~",$7F,$07,$22
+        DC.B "ULTIMA THULE!",$22,"~~",$7F,$02
+        DC.B "The sky grows dark, and a~",$7F,$02
+        DC.B "strong magic engulfs you",$A1
+        DC.B "~~~",$7F,$08,"A sign reads:~~",$7F,$02,$22
+        DC.B "FORTES FORTUNA ADIUVAT!",$A2
+        DC.B $7F,$08,"On a pedestal,~",$7F,$05
+        DC.B "these words appear:~~",$7F,$03,$22
+        DC.B "MY NAME IS OZYMANDIAS,~",$7F,$08,"KING OF KINGS:~"
+        DC.B $7F,$06,"LOOK ON MY WORKS,~",$7F,$03
+        DC.B "YE MIGHTY, AND DESPAIR!",$22,"~~",$7F,$03
+        DC.B "Nothing beside remains.~",$7F,$02
+        DC.B "You feel a strange force",$A1
+        DC.B "~~~~",$7F,$03,"You feel a strong magic~",$7F,$07
+        DC.B "surrounding you",$A1
+        DC.B "~~~",$7F,$04,"You hear someone say,~~ ",$22
+        DC.B "TURRIS-SCIENTIA-MAGNOPERE",$A2
+@ %def STR_YOUARE STR_BLOCKED STR_SIGNS
+
+\section{OUT: landmark and weapon tables}
+
+The landmark site list and its two boon tables, then the weapon
+reach table consulted by \emph{Attack}. Each continent's
+landmarks are its local places 2 and 3 (the [[STR_PLACES]] index
+order is 21 places per continent). The quest slots are the even
+[[QUEST_FLAGS]] entries; the odd ones are expected to belong to
+the dungeon-boss quests (verify in the castle round).
+
+<<out landmark tables>>=
+        ORG $9D9C
+LM_PLACE ; the 8 landmark sites, as STR_PLACES indexes
+        HEX 42 41 2d 2c 18 17 03 02
+LM_STAT ; the stat raised (pair index; 0 = no stat boon)
+        HEX 00 03 04 03 00 05 02 06
+LM_QUEST ; the quest slot completed here (FF = none)
+        HEX ff 06 ff 04 ff 02 ff 00
+WEAP_RANGE ; Attack reach per weapon; 0 = cannot attack.
+           ; Bows and the Space-Age guns reach 3; rope &
+           ; spikes and the cast-only magic weapons get 0.
+        HEX 01 01 01 01 00 01 01 03
+        HEX 00 00 00 01 03 01 03 03
+@ %def LM_PLACE LM_STAT LM_QUEST WEAP_RANGE
 
 <<out.asm>>=
         PROCESSOR 6502
-<<out blob>>
+<<out defines>>
+<<out entry>>
+<<out main loop>>
+<<out resurrection>>
+<<out key or idle>>
+<<out cmd pass>>
+<<out target row pointer>>
+<<out direction prompt>>
+<<out projectile walk>>
+<<out monster at cell>>
+<<out cmd attack>>
+<<out monster damage>>
+<<out loot bookkeeping>>
+<<out cmd board>>
+<<out time machine check>>
+<<out gem indicator>>
+<<out exit to>>
+<<out cmd cast>>
+<<out incantations>>
+<<out prayer>>
+<<out cell probe>>
+<<out cmd enter>>
+<<out landmarks>>
+<<out cmd fire>>
+<<out cmd quit>>
+<<out cmd ready>>
+<<out cmd exit transport>>
+<<out direction commands>>
+<<out move step>>
+<<out move commit>>
+<<out tick tables>>
+<<out random terrain finders>>
+<<out edge crossing>>
+<<out map refresh>>
+<<out transport census>>
+<<out monster spawner>>
+<<out monster despawn>>
+<<out monsters turn>>
+<<out monster roam>>
+<<out sign helper>>
+<<out monster action>>
+<<out monster melee>>
+<<out object cell pointer>>
+<<out object records>>
+<<out cell helpers>>
+<<out cmd inform>>
+<<out transport names>>
+<<out command table>>
+<<out message tables>>
+<<out landmark tables>>
 @
 
 \section{TWN}
