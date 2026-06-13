@@ -111,7 +111,12 @@ FIGURES SO FAR (label -> chapter -> page at time of writing):
   decorations.pathreplacing brace), fig:disklayout (ch:disk, /U1 files ->
   boot/load chain).
 
-25 CAMPAIGN FIGURES total after D8. ALL checklist priority families DONE
+- Round D9 (GEN, the last per-subsystem gap): fig:chargen (ch:algorithms,
+  the point-buy editor flow + race/class bonuses with no ceiling re-check),
+  fig:format (Implementation, the two-layer disk formatter: RWTS_FORMAT
+  physical GCR format then FORMAT_VOLUME ProDOS directory writer).
+
+27 CAMPAIGN FIGURES total after D9. ALL checklist priority families DONE
 (state machines, flowcharts, NPC/AI states, per-mode loops, RLE
 decompressors, boot/load flow, memory/record layouts, call graphs,
 rendering pipeline). Every warranting subsystem has >=1 figure across the
@@ -119,6 +124,6 @@ Design + Implementation parts. Remaining work is optional deepening (e.g. a
 GEN chargen-flow or disk-formatter-RWTS figure), not a gap.
 
 PDF 1013->1018(D1)->1021(D2)->1023(D3)->1026(D4)->1030(D5)->1032(D6)->
-1033(D7)->1038(D8) pages. 16/16 byte-perfect throughout. The brace
+1033(D7)->1038(D8)->1040(D9) pages. 16/16 byte-perfect throughout. The brace
 decoration (decorations.pathreplacing, already loaded line 35) is the way to
 annotate spans in blocks/memory diagrams.

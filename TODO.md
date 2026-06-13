@@ -9,6 +9,34 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round D9 (2026-06-13): GEN figures -- chargen point-buy + disk formatter
+
+- The last per-subsystem gap closed: GEN was the only major overlay without
+  a dedicated figure. Two figures:
+  * fig:chargen (ch:algorithms, in the existing "Character generation: the
+    point-buy" section) -- the editor flow: floor-init (each stat 10, pool
+    30) -> raise (pool>0 & stat<25) / lower (stat>10) loop -> space when
+    pool==0 -> apply race+class bonuses with NO ceiling re-check
+    (accent-highlighted: a Dwarf Fighter reaches 40 STR) -> derived values
+    from GAME_IMAGE -> write record.
+  * fig:format (Implementation, in the GEN disk-formatter subsection after
+    DO_FORMAT) -- the two-layer formatter: FORMAT_ENTRY (slot/drive) ->
+    Disk II check -> VOL_CHECK -> confirm -> DO_FORMAT brackets a zp save
+    around layer 1 RWTS_FORMAT (accent: hand-rolled Disk II RWTS, 35 tracks,
+    D5/AA/96 + 6&2 GCR, read-back verify, raw $C0xx) then, on success,
+    layer 2 FORMAT_VOLUME (ProDOS dir blocks + bitmap via MLI). Error codes
+    $27/$2B/else -> restart.
+- Both faithful firsthand: fig:chargen from the point-buy section + the
+  CHARGEN/editor routines; fig:format from FORMAT_ENTRY/VOL_CHECK/DO_FORMAT
+  + gen_subsystem.md (the RWTS_FORMAT + FORMAT_VOLUME two-layer structure).
+- Prose-side only; 16/16 byte-perfect; 2-pass pdflatex 0 errors / 0
+  undefined refs; both labels resolve + \ref'd. PDF 1038 -> 1040 pages.
+  fig:chargen tightened to ~11pt overfull (was 39.8) by reducing horizontal
+  node distance + loop-back offsets.
+- CAMPAIGN STATE after D9: 27 figures; the comprehensive per-subsystem goal
+  is MET (every warranting subsystem has a dedicated figure across both
+  parts). Remaining is optional deepening only.
+
 ### Round D8 (2026-06-13): Structural call/memory graphs (D8a + D8b)
 
 - The four remaining structural diagrams, in two commits:
@@ -1455,18 +1483,19 @@ Priority families (do in this rough order):
       the ray-marcher slice loop (fig:raymarch, companion to fig:dng-gen);
       the SPA/TM projected-vector + XOR-sprite path (fig:sprite). DONE round D5.
 
-Coverage by subsystem (25 figures, after D8): architecture (bootflow,
+Coverage by subsystem (27 figures, after D9): architecture (bootflow,
 mode-fsm, mode-loop, win-fsm, layers, memmap), data structures (playerblock,
-soa, tcmap), algorithms (dng-gen, npc-ai, combat), rendering (pageflip,
-tileblit, raymarch, sprite), disk/boot (disklayout), engine (gameload), OUT
-(out-loop), DNG (dng-loop), SPA (spa-loop), TWN (dispatch), TM (mondain-ai),
-makeindata (mi-decode, mi-payload). All checklist priority families are now
-DONE. Subsystems WITHOUT a dedicated figure yet (candidates if the campaign
-continues): GEN (chargen point-buy flow / disk-formatter RWTS state machine),
-the DNG ray-marcher already has fig:raymarch; CAS shares fig:dispatch+npc-ai
-with TWN; NIF is a static image (no behavior to diagram); porting chapter is
-a catalogue (tab:render-split covers it). The doc now leans heavily into
-diagrams across both parts; remaining work is optional deepening, not gaps.
+soa, tcmap), algorithms (dng-gen, npc-ai, combat, chargen), rendering
+(pageflip, tileblit, raymarch, sprite), disk/boot (disklayout), engine
+(gameload), OUT (out-loop), DNG (dng-loop), SPA (spa-loop), TWN (dispatch),
+TM (mondain-ai), GEN (chargen point-buy + format disk-formatter),
+makeindata (mi-decode, mi-payload). EVERY warranting subsystem now has >=1
+dedicated figure across the Design + Implementation parts. The only files
+without one are NIF (a static image, no behavior to diagram) and the porting
+chapter (a catalogue covered by tab:render-split). CAS shares
+fig:dispatch+fig:npc-ai with TWN (byte-identical engine). The campaign's
+comprehensive per-subsystem goal is MET; further figures would be optional
+deepening (e.g. the RWTS_FORMAT GCR-sector-write inner loop), not gaps.
 
 ## Structural
 

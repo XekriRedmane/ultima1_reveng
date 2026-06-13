@@ -1670,7 +1670,58 @@ A subtlety a faithful port must preserve: these bonuses are added with
 an attribute above the $25$ point-buy ceiling (a Dwarf Fighter can reach
 $25+5+10 = 40$ Strength). The ceiling governs only how the player
 \emph{spends points}, not the final stat. Sex is purely cosmetic and
-modifies no attribute.
+modifies no attribute. Figure~\ref{fig:chargen} shows the whole flow.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 11mm]
+  \node[dgterminal] (entry) {CHARGEN};
+  \node[dgprocess, below=of entry] (init)
+        {each stat = 10 (floor)\\POINT\_POOL = 30};
+  \node[dgio, below=of init] (key) {editor key?};
+  % raise branch (right column)
+  \node[dgdecision, right=15mm of key] (raisechk) {pool $>$ 0\\and stat $<$ 25?};
+  \node[dgprocess, below=of raisechk] (raise) {stat += 1\\pool $-$= 1};
+  % lower branch (left column)
+  \node[dgdecision, left=15mm of key] (lowerchk) {stat $>$ 10?};
+  \node[dgprocess, below=of lowerchk] (lower) {stat $-$= 1\\pool += 1};
+  % done branch (down)
+  \node[dgdecision, below=16mm of key] (done) {space:\\pool = 0?};
+  \node[dgprocess, below=of done] (bonus)
+        {apply race + class bonuses\\\scriptsize hardcoded deltas, NO ceiling re-check};
+  \node[dgprocess, dgaccentnode, below=of bonus] (over)
+        {a bonus may exceed 25\\\scriptsize (Dwarf Fighter: 40 STR)};
+  \node[dgsub, below=of over] (derived)
+        {derived values from GAME\_IMAGE\\\scriptsize HP, food, coin, world, inventory};
+  \node[dgterminal, below=of derived] (save) {write the player record};
+
+  \draw[->] (entry)--(init); \draw[->] (init)--(key);
+  \draw[->] (key) -- node[dgnote,above]{right} (raisechk);
+  \draw[->] (key) -- node[dgnote,above]{left} (lowerchk);
+  \draw[->] (key) -- node[dgnote,left]{space} (done);
+  \draw[->] (raisechk) -- node[dgnote,right]{yes} (raise);
+  \draw[->] (lowerchk) -- node[dgnote,left]{yes} (lower);
+  % raise/lower (and the "no" refusals) return up the outer columns to key
+  \draw[->] (raise.east) -- ($(raise.east)+(6mm,0)$) |- (key.east);
+  \draw[->] (raisechk.east) -- node[dgnote,above]{no} ($(raisechk.east)+(6mm,0)$) |- (key.east);
+  \draw[->] (lower.west) -- ($(lower.west)+(-6mm,0)$) |- (key.west);
+  \draw[->] (lowerchk.west) -- node[dgnote,above]{no} ($(lowerchk.west)+(-6mm,0)$) |- (key.west);
+  \draw[->] (done) -- node[dgnote,right]{no ("Huh?")} ($(done.east)+(12mm,0)$) |- (key.east);
+  \draw[->] (done) -- node[dgnote,left]{yes} (bonus);
+  \draw[->] (bonus)--(over); \draw[->] (over)--(derived);
+  \draw[->] (derived)--(save);
+\end{tikzpicture}
+\caption{Character generation's point-buy ([[CHARGEN]]). Each of the six
+  attributes starts at the floor of $10$; a shared pool of $30$ points is
+  spent under two hard limits --- a raise costs a point and is refused at
+  the ceiling of $25$, a lower returns a point and is refused at the floor.
+  The editor cannot be left until the pool is empty. Only \emph{then} are
+  the race and class bonuses applied, as hardcoded deltas with \emph{no
+  ceiling re-check} (highlighted), so a final stat can legitimately exceed
+  $25$. Hit points, food, coin, and the starting world are not derived from
+  the attributes --- they are stamped from [[GAME_IMAGE]].}
+\label{fig:chargen}
+\end{figure}
 
 \textbf{Derived starting values.} Hit points, food, coin, and the initial
 world and inventory are \emph{not} computed from the attributes. They come
@@ -30840,6 +30891,7 @@ PLR_TEMPLATE
 Everything from here serves one goal: take a blank or foreign disk and turn it
 into an empty \texttt{/U1.PLAYER} ProDOS volume the game can save to. It is a
 self-contained subsystem; nothing in normal play reaches it.
+Figure~\ref{fig:format} shows its two-layer shape.
 
 The front end picks a slot and drive, defaulting to the ProDOS last-used
 device. Digit keys edit the fields (slot 1--7, drive 1--2), return accepts,
@@ -31124,6 +31176,50 @@ DO_FORMAT
         JSR FMT_PRESS_SPACE
         JMP FORMAT_RESTART
 @ %def VOL_CHECK NO_DISKII TEST_ONLINE NON_PRODOS CONFIRM_FMT DO_FORMAT
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
+  \node[dgterminal] (entry) {FORMAT\_ENTRY\\\scriptsize pick slot \& drive};
+  \node[dgdecision, below=of entry] (diskii) {Disk II\\present?};
+  \node[dgnote, right=16mm of diskii] (nod) {"No Disk II" -> restart};
+  \node[dgprocess, below=of diskii] (chk)
+        {VOL\_CHECK\\\scriptsize ProDOS volume? show its name};
+  \node[dgdecision, below=of chk] (confirm) {confirm\\"...? (Y-N)"};
+  \node[dgnote, right=16mm of confirm] (abort) {N -> restart};
+  % the two layers inside DO_FORMAT
+  \node[dgsub, dgaccentnode, below=10mm of confirm] (rwts)
+        {layer 1: RWTS\_FORMAT\\\scriptsize hand-rolled Disk II RWTS:\\step 35 tracks; per track write 16\\D5/AA/96 addr fields + 6\&2 GCR;\\verify by read-back (raw \$C0xx)};
+  \node[dgdecision, below=of rwts] (ok) {carry set\\(error)?};
+  \node[dgnote, right=16mm of ok] (err)
+        {$27$ unable / $2B$ write-prot /\\else speed error -> restart};
+  \node[dgsub, below=of ok] (vol)
+        {layer 2: FORMAT\_VOLUME\\\scriptsize ProDOS directory writer:\\write the 4 dir blocks + bitmap\\via the MLI (WRITE\_BLOCK)};
+  \node[dgterminal, below=of vol] (done) {empty /U1.PLAYER volume};
+
+  \draw[->] (entry)--(diskii);
+  \draw[->] (diskii) -- node[dgnote,above]{no} (nod);
+  \draw[->] (diskii) -- node[dgnote,left]{yes} (chk);
+  \draw[->] (chk)--(confirm);
+  \draw[->] (confirm) -- node[dgnote,above]{N} (abort);
+  \draw[->] (confirm) -- node[dgnote,left]{Y (DO\_FORMAT:\\save zero page)} (rwts);
+  \draw[->] (rwts)--(ok);
+  \draw[->] (ok) -- node[dgnote,above]{yes} (err);
+  \draw[->] (ok) -- node[dgnote,left]{no} (vol);
+  \draw[->] (vol)--(done);
+\end{tikzpicture}
+\caption{The bundled disk formatter ([[FORMAT_ENTRY]] $\to$ [[DO_FORMAT]]),
+  the only code in the game that bypasses the file library and drives the
+  hardware directly. After choosing a slot and drive and confirming, it
+  brackets a zero-page save around two layers: layer~1, [[RWTS_FORMAT]]
+  (highlighted), is a complete hand-rolled Disk~II RWTS that steps the arm
+  across all 35 tracks and writes each as 16 sectors of D5/AA/96 address
+  fields plus 6-and-2 \textsc{gcr} data, verifying by read-back through raw
+  [[$C0xx]] soft switches; on success layer~2, [[FORMAT_VOLUME]], writes the
+  four ProDOS directory blocks and the volume bitmap through the MLI. The
+  result is an empty \texttt{/U1.PLAYER} volume the game can save to.}
+\label{fig:format}
+\end{figure}
 
 \texttt{WRITE\_VOLDIR} is the thin wrapper that calls the directory writer and,
 on any ProDOS error, prints the code in hex so a failure is at least
