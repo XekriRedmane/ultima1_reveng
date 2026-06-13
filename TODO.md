@@ -9,6 +9,47 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 16 (2026-06-13): TCMAPS decoded + rendered; TWN scouted
+
+- TCMAPS format fully decoded and the data target STRUCTURED
+  (stub -> TCMAPS_DIR + 10 named maps, byte-perfect): a 10-word
+  pointer directory at $4000, then ten 764-byte maps. Each map =
+  a 38x19 grid of MAPCHARS glyph codes (the displayed cells) +
+  42 bytes of NPC/shop metadata. Shop signs ("ARMOUR", "FOOD",
+  "WEAPONRY", "THE PUB", "MESS HALL"...) are spelled into the
+  cell grid as ASCII glyph codes. TWN draws a cell by printing
+  its byte through the MAPCHARS font (swap $B000<->$0800).
+- RENDERED all 10 maps: images/tcmaps_0..9.png + tcmaps_all.png
+  (renderer .claude/scripts/render_tcmaps.py), embedded as a
+  figure. Clearly legible towns (shops + courtyards) and a castle
+  (map 1: MESS HALL / PRISON / STABLES).
+- TWN scouted (not yet decomposed): OVERLAY_ENTRY $8956 sets
+  zp $00/01=$1311, copies a 6-byte block by PLR_SEX ($A967->
+  $A961, gendered text?), reduces PLR_PLACE mod $15 then -$0D to
+  a town/castle index ($9186), BLOADs TCMAPS@$4000 + MAPCHARS@
+  $B000, self-modifies a 3-page copy ($4004,X directory lookup ->
+  copy 768 bytes of the chosen map to $B400 the live buffer),
+  draws via $A1AE (38x19 text blit with the font-swap LA1E7),
+  then the main loop $89EC: STATS_VALUES, key-or-idle poll
+  ($8A1C, $80 timeout = idle animation $9F07/$8AEE), GET_COMMAND
+  dispatch. Per-map metadata (42 bytes) = NPC/shop table: leading
+  type codes ($FF=empty) then $01/$F4 runs (guard/shopkeeper tile
+  + position) -- decode with the TWN handler next round.
+- TWN gameplay strings confirm the town layer: combat (Blocked/
+  Missed!/Hit/Killed!/damage/Nothing), shops (Pence,Weapon,Armour
+  / "How much?" / "Thou hast not that much!"), magic (Shazam! /
+  "no effect?"). Expect buy/sell, talk-to-NPC, steal, and guard
+  combat handlers.
+- All 16 targets byte-perfect. Hygiene green: 0 EQU stubs, 0 raw-
+  hex operands, 0 missing plates (203), 0 placement violations,
+  1 TODO-SYM. ORG stubs 7 -> 6 (twn, cas, spa, gen, tm,
+  makeindata). PDF 653 pages, clean.
+- Next session: decompose TWN from this skeleton (entry/loader/
+  map-draw first, then the command handlers and the metadata
+  format), then CAS (shares the loader; castle-specific: kings,
+  COURT_CELLS, QUEST_FLAGS, TM_REVEAL). CAS will pin the quest
+  assignment.
+
 ### Round 15 (2026-06-13): DNG renderer decomposed -- DNG fully done
 
 - The four remaining DNG stubs are gone; DNG is 100% annotated,
@@ -418,9 +459,13 @@ plus this file — never by re-deriving history.
 
 - [x] DNG fully decomposed (Round 15: renderer, perspective
       tables, SHAPE_DRAW, MON_SHAPES rendered). DNG is done.
-- [ ] TWN/CAS pair: pins the TCMAPS map format, the COURT_CELLS
-      writer, QUEST_FLAGS assignment (kings), TM_REVEAL setter
-      (princess rescue?), shops vs OWNED_* arrays.
+- [ ] TWN overlay: decompose from the Round-16 scout (entry/
+      loader/map-draw, then command handlers, then the 42-byte
+      metadata NPC/shop format). TCMAPS format already decoded.
+- [ ] CAS overlay: shares TWN's loader. Castle-specific: kings,
+      COURT_CELLS writer, QUEST_FLAGS assignment, TM_REVEAL setter
+      (princess rescue?). Pins the quest assignment.
+- [ ] tcmaps: DONE (Round 16: structured + rendered).
 - [ ] makeindata: builds intro art AND (likely) generates the
       world map for /U1.VARS -- render the four continents then;
       resolves ART_* semantics and the one TODO-SYM.
