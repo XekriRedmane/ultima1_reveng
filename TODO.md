@@ -9,6 +9,32 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 32 (2026-06-13): Final polish -- Design/Implementation \part split
+
+- The Round-7-style reorganization, evaluated and DONE because it cleanly
+  improves the document with zero content churn. The five synthesis chapters
+  were ALREADY contiguous and ALREADY ahead of the implementation chapters
+  (built that way in rounds 26-30), so this was purely additive: inserted
+  \part{Design: how the game works} (label part:design) before the
+  Architecture overview, and \part{Implementation: the annotated program}
+  (label part:implementation) before the Disk-layout chapter. Each part gets
+  a short framing paragraph; added a two-part roadmap paragraph to the
+  Introduction with cross-refs both ways (Part I <-> Part II).
+- NOT ONE chapter moved and NOT ONE existing cross-reference changed -- the
+  only risk was the two new \part labels, which resolve (part:design -> I,
+  part:implementation -> II; both \ref{}s in the Introduction render "Part I"
+  / "Part II"). Both parts appear in the ToC.
+- Prose/structure-only; all 16 targets byte-perfect (16/16); hygiene fully
+  green; PDF 1013 pages (the \part title pages add ~5), 0 LaTeX errors, 0
+  genuinely-undefined references.
+- THE DOCUMENT IS NOW COMPLETE. Every measurable criterion is green, all six
+  synthesis section types exist (with the SPA + chargen algorithm sections
+  added round 31), the design/implementation structure is explicit, every
+  renderable graphic is rendered, and the two un-imaged graphics (world map,
+  TM craft interior) are on the blocked list with full evidence that they
+  cannot be faithfully produced from the materials on hand. Nothing valuable
+  is left to do.
+
 ### Round 31 (2026-06-13): Final polish -- SPA + chargen algorithm sections; TM render judged infeasible
 
 - Optional-polish pass on the functionally-done document. Two outcomes:
@@ -1122,10 +1148,11 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       Rendering pipeline (ch:rendering), Porting notes (ch:porting).
       Round 31 added the SPA flight-model and chargen point-buy sections
       to ch:algorithms (the two deepest remaining algorithm gaps).
-- [ ] (optional) Round-7-style reorganization: promote the 5 synthesis
-      chapters into a \part{Design} ahead of a \part{Implementation} for
-      the assembly chapters. ONLY if it cleanly improves the document;
-      skip if it risks the green build. This is the last optional item.
+- [x] Round-7-style reorganization: DONE Round 32. Promoted the 5 synthesis
+      chapters into \part{Design} ahead of \part{Implementation} for the
+      assembly chapters. Purely additive (the chapters were already in the
+      right order), zero content churn, both part labels resolve, both parts
+      in the ToC. THIS WAS THE LAST OPTIONAL ITEM -- the document is complete.
 
 ## Structural
 

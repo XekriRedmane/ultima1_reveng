@@ -110,6 +110,16 @@ loaded over a common overlay region as the player moves between modes.
 This architecture is visible directly in the disk's file listing and
 drives the organization of this document.
 
+This document is in two parts. Part~\ref{part:design},
+\emph{Design}, recovers how the game works in platform-independent terms
+--- architecture, data structures, algorithms, rendering, and the 6502
+idioms a port must replace --- so that the game can be reproduced without
+reading a line of assembly. Part~\ref{part:implementation},
+\emph{Implementation}, is the annotated 6502 program itself, in load
+order, every chunk of which assembles to bytes identical to the original
+disk. The design part states each mechanism; the implementation part
+proves it.
+
 \section{How the program is organized}
 
 The game runs under ProDOS, Apple's then-current operating system, and
@@ -132,6 +142,17 @@ its data lives in ordinary ProDOS files on a volume named
   engine \texttt{MI.U1} at [[$7000]] plus one mode overlay at
   [[$8956]].
 \end{enumerate}
+
+\part{Design: how the game works}
+\label{part:design}
+
+\noindent
+This first part recovers the game's design in platform-independent terms.
+It describes the architecture, the persistent data structures, the
+non-trivial algorithms, the rendering pipeline, and the 6502 idioms a port
+must replace --- everything a programmer needs to reproduce the game in any
+language, with no Apple~II assembly required. The annotated assembly that
+proves each claim, byte for byte, is Part~\ref{part:implementation}.
 
 \chapter{Architecture overview}
 \label{ch:architecture}
@@ -1293,6 +1314,18 @@ their effect:
 None of these change behaviour a player sees; they are the seams where the
 1986 program meets its host, and a port re-cuts them against a different
 host without touching the game above.
+
+\part{Implementation: the annotated program}
+\label{part:implementation}
+
+\noindent
+This second part is the evidence base for the first: the complete original
+program as literate, annotated 6502 assembly. It proceeds in load order ---
+the disk layout and boot chain, the launcher and title, the resident
+library and engine, the seven mode overlays, and the bundled game data ---
+and every chunk assembles to bytes identical to the original disk. Where a
+routine realises a mechanism described abstractly in
+Part~\ref{part:design}, the prose names it for cross-reference.
 
 \chapter{Disk layout and boot chain}
 
