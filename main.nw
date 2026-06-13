@@ -6299,7 +6299,8 @@ scanline $s$ of glyph $g$ is at [[FONT_BANK]]$ + 128s + g$. Glyphs
 pre-shifted pairs: [[FONT_DRAW]] adds one to the glyph index when
 drawing them in an odd column, so their color pixels stay aligned.
 Glyphs [[$7C]]--[[$7F]] are the four frames of the flashing cursor
-([[CURSOR_FLASH]] cycles through them).
+([[CURSOR_FLASH]] cycles through them); all 128 glyphs appear in
+index order in Figure~\ref{fig:stuph-font}.
 
 \begin{figure}[H]
 \centering
@@ -6317,7 +6318,7 @@ The map renderer pairs them: map cell code $c$ draws glyphs $c$
 $14 \times 16$ pixels. Water, plains, forest, mountains; castles,
 towers, cities and dungeon entrances; the player on foot, horse,
 cart, raft and frigate; and the overworld monsters --- all visible
-in the rendered sheet.
+in the rendered sheet (Figure~\ref{fig:stuph-tiles}).
 
 \begin{figure}[H]
 \centering
@@ -8746,7 +8747,7 @@ The 940 bytes between the entry jump and the string region are not
 by 94-scanline skull that [[DEATH]] blits over the viewport when
 the player dies (bytes with the high bit set overwrite the screen;
 the rest are ORed in, which feathers the skull's edges into the
-scene behind it).
+scene behind it). Figure~\ref{fig:miu1-death} shows the recovered image.
 
 \begin{figure}[H]
 \centering
@@ -37313,7 +37314,7 @@ first zeroes [[$9600]]--[[$B5FF]], then unpacks a high-bit-flagged
 bit~7 set is a [[(value, count)]] run) into that buffer, setting bit~7 on
 every output byte, and stops when the destination reaches page [[$B7]]. The
 result is the \textsc{Origin Systems} logo image at [[LOGO_BUF]] that the
-fizzle reveals. We keep the whole region as one labelled blob; it is data
+fizzle reveals (Figure~\ref{fig:mi-origin}). We keep the whole region as one labelled blob; it is data
 within this file (it executes only after relocation to [[$8700]]).
 Figure~\ref{fig:mi-payload} draws this second, simpler decompressor.
 
@@ -39290,7 +39291,7 @@ chapter) that the \texttt{TWN} and \texttt{CAS} overlays load over
 adds an \emph{inverse-video} capital alphabet --- the
 \texttt{TCMAPS} map data embeds ASCII letters directly in its cell
 codes to spell shop signs (\texttt{FOOD} is plainly visible in the
-map bytes) and these glyphs render them. The text positions
+map bytes) and these glyphs render them (Figure~\ref{fig:mapchars-font}). The text positions
 [[$20]]--[[$2F]] are blank because town maps never put
 punctuation on the floor.
 
@@ -40539,7 +40540,8 @@ TCMAPS_META9 ; NPC/shop table for this map
 
 \section{NIF: the ending screen}
 
-\texttt{NIF} --- \emph{fin} reversed --- is the game's victory screen:
+\texttt{NIF} --- \emph{fin} reversed --- is the game's victory screen
+(Figure~\ref{fig:nif-ending}):
 a full hi-res page of calligraphic text recounting Mondain's death and
 Lord British's reward, displayed when the player completes the game.
 The format is unusually simple: a \textbf{line-sequential raster},
