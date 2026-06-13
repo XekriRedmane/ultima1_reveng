@@ -831,6 +831,159 @@ Towns and castles use the same pursuit and melee logic on their 16-slot
 NPC table, with the kind code selecting hostile (home and attack) versus
 peaceful (wander, trade, or perform) behaviour.
 
+\chapter{The rendering pipeline}
+\label{ch:rendering}
+
+This chapter describes how the game gets pixels on the screen, and ---
+because that is where a port spends most of its surprises --- draws a sharp
+line between what is \textbf{Apple~II-specific} (and must be replaced
+wholesale) and what is \textbf{portable} (and can be carried over almost
+verbatim). The machine-specific layer is concentrated in the
+\texttt{STUPH} library (chapter~\ref{ch:stuph}), reached through its fixed
+jump vectors; the overlays and engine above it deal in tile codes,
+glyph indices, and vector shapes, none of which assume an Apple~II.
+
+\section{The Apple II hi-res screen (replace entirely)}
+
+Everything in this section a port discards and reimplements against its
+own framebuffer.
+
+\textbf{The bitmap layout is interleaved.} The Apple~II hi-res screen is
+$280 \times 192$ pixels, but consecutive scanlines are \emph{not}
+consecutive in memory: the row-to-address mapping shuffles rows so that
+line $r$ begins at a non-linear offset (the formula appears verbatim in
+the \texttt{MAKE.INDATA} decompressor and again in every blitter). A port
+writes to a flat $\mathit{width} \times \mathit{height}$ buffer and never
+thinks about this again.
+
+\textbf{Colour is an NTSC artifact.} Each byte holds seven pixels; the
+eighth bit selects one of two colour pairs, and the actual colour of an
+on-pixel depends on its column parity and its neighbours (two adjacent
+on-pixels read as white). The rendered figures throughout this document
+approximate these artifact colours. A port targets RGB directly and treats
+the palette as a fixed lookup, not an emergent property of bit positions.
+
+\textbf{Two display pages, flipped.} Pages~1 ([[$2000]]) and~2
+([[$4000]]) are two full screens; the hardware shows one while the program
+draws the other, then flips. The library implements this with a single
+zero-page value, [[ZP_PAGE_XOR]], XORed into the high byte of every screen
+address before a write ([[$00]] selects page~1, [[$60]] selects page~2);
+[[PAGE_FLIP]] shows the page just drawn and toggles that value. A port uses
+ordinary double-buffering (draw to a back buffer, present it) --- the XOR
+trick is just how you select a buffer when both live at fixed addresses.
+
+\textbf{Soft switches and cycle timing.} Mode changes (graphics vs text,
+page~1 vs page~2, hi-res on) are memory-mapped \emph{soft switches}; the
+frame rate is paced off the vertical-blank interrupt. None of this
+survives a port; the portable content is the \emph{timing} (how many
+frames an animation step lasts), not the mechanism.
+
+\section{The glyph banks (portable data)}
+
+Both the text and the tile graphics are \textbf{glyph banks} --- small
+bitmap fonts --- and these \emph{are} portable: they are just pixel data
+with a documented layout, rendered as figures in the \texttt{STUPH}
+chapter.
+
+\begin{description}
+\item[The text font] is 128 glyphs of $7 \times 8$ pixels, stored
+  plane-major (all glyphs' scanline~0, then all glyphs' scanline~1, \dots)
+  --- a storage order chosen so the blitter can walk one scanline across
+  consecutive glyphs, irrelevant to a port that simply indexes a glyph
+  array.
+\item[The outdoor tile bank] is 48 map tiles, each two glyphs wide and
+  taller, drawn through the same machinery. Terrain, towns, ships, and
+  monsters are all tiles in this bank.
+\item[The town/castle tile bank] (\texttt{MAPCHARS}) is an alternate
+  128-glyph bank loaded over the font when inside a town or castle; it
+  adds wall sections, counters, and an inverse-video alphabet so shop
+  signs can be spelled into the map grid.
+\end{description}
+
+Two animation tricks live at this layer and are worth a porter's note:
+text routines XOR an \textbf{inverse-video mask} ([[ZP_INVERSE]], [[$00]]
+or [[$7F]]) into every emitted byte, which the engine flips to flash low
+hit points and food; and several tiles animate by rotating or swapping
+their plane bytes frame to frame (the water shimmer, creature wobble). The
+first is a portable ``draw this glyph inverted'' flag; the second is
+portable two-frame animation.
+
+\section{The two rendering styles}
+
+Above the pixel layer, the seven modes split cleanly into two rendering
+styles, both portable.
+
+\subsection*{Tile viewport (outdoors, towns, castles)}
+
+The grid modes draw a fixed \textbf{$19 \times 9$ tile window} centred on
+the player ([[DRAW_MAP]]). The algorithm is entirely portable:
+
+\begin{verbatim}
+    draw_viewport(center_x, center_y):     // DRAW_MAP
+        for vy in 0 .. 8:
+            for vx in 0 .. 18:
+                cell = map[center_x + vx - 9, center_y + vy - 4]
+                blit_tile(tile_of(cell), vx, vy)
+        overlay object/NPC records whose position falls in the window
+        draw the player tile at the centre
+\end{verbatim}
+
+The map cell's value chooses the tile; object and NPC records are painted
+over the terrain at their window-relative positions; the player is always
+the centre tile. Outdoors the map is the decompressed continent; in towns
+and castles it is the live \texttt{TCMAPS} buffer
+(chapter~\ref{ch:datastructures}). This is the whole grid renderer.
+
+\subsection*{Wireframe vector (dungeons, space, the endgame)}
+
+The first-person modes store \emph{no bitmap}; they stroke lines computed
+at draw time. There are two variants:
+
+\begin{description}
+\item[The dungeon ray marcher] (chapter~\ref{ch:algorithms}) walks the
+  maze ahead and draws box edges from a perspective table, plus
+  depth-scaled monster outlines. Portable: the table is converging screen
+  coordinates per depth, the shapes are vertex lists.
+\item[The space and endgame views] project moving objects (enemy craft,
+  stars, the planet, Mondain, the gem) through fixed-point perspective and
+  stroke or blit them. Space additionally uses an XOR sprite blitter so a
+  sprite can be drawn and then erased by drawing it again --- a portable
+  idea (XOR onto the back buffer), implemented here as two unrolled passes
+  selected by a draw-mode flag.
+\end{description}
+
+The line drawing itself ([[LINE_TO]]) is a standard Bresenham-style
+stroke into the current draw page with the current colour; only its output
+target (the interleaved hi-res page) is machine-specific.
+
+\section{What a port keeps, in one table}
+
+\begin{table}[ht]
+\centering
+\caption{The rendering layer, split for porting.}
+\label{tab:render-split}
+\begin{tabular}{lll}
+\toprule
+Concern & Apple~II mechanism & Portable equivalent \\
+\midrule
+Framebuffer & interleaved hi-res pages & flat RGB buffer \\
+Colour & NTSC bit-parity artifacts & direct palette \\
+Buffering & [[ZP_PAGE_XOR]] address XOR & back buffer + present \\
+Mode/timing & soft switches, VBL pacing & engine's frame counts \\
+Fonts/tiles & plane-major glyph banks & indexed glyph arrays \\
+Inverse text & [[ZP_INVERSE]] EOR mask & ``draw inverted'' flag \\
+Tile animation & plane-byte rotation & two-frame tile cycling \\
+Grid view & [[DRAW_MAP]] $19\times9$ blit & centred tile window \\
+3-D view & perspective tables + [[LINE_TO]] & projected vector strokes \\
+Sprite erase & XOR double-pass blitter & XOR onto back buffer \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The right-hand column is the entire portable rendering specification; the
+middle column is what these chapters' assembly implements and what a port
+leaves behind.
+
 \chapter{Disk layout and boot chain}
 
 \section{Disk image format}

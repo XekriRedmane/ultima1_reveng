@@ -9,6 +9,31 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 29 (2026-06-13): Synthesis -- the Rendering pipeline chapter
+
+- Fourth synthesis chapter: \chapter{The rendering pipeline}
+  (label ch:rendering), after the Algorithm descriptions. Draws the sharp
+  Apple-II-specific-vs-portable line the synthesize skill's section 5
+  asks for: (1) the hi-res screen a port DISCARDS (interleaved scanline
+  layout, NTSC colour-artifact palette, two-page XOR double-buffer via
+  ZP_PAGE_XOR, soft switches + VBL pacing); (2) the glyph banks that ARE
+  portable (128-glyph plane-major font, 48 outdoor tiles, the MAPCHARS
+  town bank; the ZP_INVERSE EOR mask = a "draw inverted" flag; plane-byte
+  tile animation = two-frame cycling); (3) the two render styles (the
+  19x9 tile viewport DRAW_MAP, given as portable pseudocode; the two
+  wireframe variants -- the dungeon ray marcher and the SPA/TM projected
+  vector strokes + the XOR sprite blitter); (4) a one-table summary
+  mapping each Apple-II mechanism to its portable equivalent.
+- Prose-only; all 16 targets byte-perfect; hygiene green; PDF 1001 pages
+  (crossed 1000), 0 errors, 0 undefined refs.
+- NEXT synthesis gaps: Porting notes per subsystem (the 6502 idioms a
+  port must replace -- patched-JSR dispatch, self-modifying operands and
+  the state they encode, the CLC/DC.B $B0/SEC dual-entry trick, indexed
+  SMC); optionally dedicated algorithm sections for the SPA flight model
+  and chargen math. Optionally the TM CRAFT_GFX render. The 5 of 6
+  synthesize-skill section types now exist (overview, architecture, data
+  structures, algorithms, rendering); porting notes is the 6th.
+
 ### Round 28 (2026-06-13): Synthesis -- the Algorithm descriptions chapter
 
 - Third synthesis chapter: \chapter{Algorithm descriptions}
