@@ -9,6 +9,39 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 30 (2026-06-13): Synthesis -- the Porting notes chapter (all 6 types done)
+
+- Fifth synthesis chapter: \chapter{Porting notes: the 6502 idioms}
+  (label ch:porting), after the rendering pipeline. The capstone of the
+  synthesis layer -- a catalogue of every recurring 6502/Apple-II idiom,
+  what it MEANS, and its portable replacement: (1) self-modifying code
+  (patched-JSR/JMP dispatch -> function-pointer table; patched operands
+  as variables incl. the stale-on-disk STALE_FFFF sentinel; patched
+  opcodes JSR<->RTS toggling actors -> a boolean); (2) multi-entry
+  routines (the CLC/.byte $B0/SEC carry dual-entry; the .byte $2C BIT-abs
+  skip -> defaulted parameters); (3) inline-argument calling conventions
+  (JSR-then-data -> ordinary args; the disassembler trap); (4) numbers &
+  tables (binary quantities + BCD displays; precomputed squares/
+  perspective/row-addr tables -- keep table CONTENTS where they encode
+  tuning, drop them where they're just speed); little-endian 16-bit pairs
+  via label+1; (5) machine/OS dependencies (soft switches, the VBL beat +
+  the mouse-card-as-VBL trick, the file library/overlays, the hooked
+  reset vector).
+- THE SYNTHESIS LAYER NOW HAS ALL SIX synthesize-skill section types:
+  game overview + architecture (ch:architecture), data structures
+  (ch:datastructures), algorithms (ch:algorithms), rendering
+  (ch:rendering), porting notes (ch:porting). A competent programmer who
+  has never seen 6502 can reproduce/port each subsystem from these
+  chapters, using the assembly only to check edge cases.
+- Prose-only; all 16 targets byte-perfect; hygiene fully green; PDF 1005
+  pages, 0 errors, 0 undefined refs.
+- REMAINING (optional polish, the doc is functionally "done"): dedicated
+  algorithm sections for the SPA flight model + chargen point-buy math if
+  deeper treatment is wanted; the TM CRAFT_GFX render (its own focused
+  round, twin of DNG 15; recipe in tm_subsystem.md); a Round-7 pass to
+  consider promoting the five synthesis chapters into a "\part{Design}"
+  ahead of a "\part{Implementation}" for the assembly chapters.
+
 ### Round 29 (2026-06-13): Synthesis -- the Rendering pipeline chapter
 
 - Fourth synthesis chapter: \chapter{The rendering pipeline}

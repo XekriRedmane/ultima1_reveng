@@ -984,6 +984,166 @@ The right-hand column is the entire portable rendering specification; the
 middle column is what these chapters' assembly implements and what a port
 leaves behind.
 
+\chapter{Porting notes: the 6502 idioms}
+\label{ch:porting}
+
+The preceding synthesis chapters describe the game in portable terms. This
+one is the opposite: a catalogue of the \textbf{6502 and Apple~II idioms}
+that recur throughout the assembly, what each one \emph{means}, and what a
+port replaces it with. A reader translating the code will meet these
+patterns constantly; recognising them is the difference between a faithful
+port and a pile of mysteries. Each idiom below is annotated at its sites in
+the assembly chapters; here they are collected with their intent.
+
+\section{Self-modifying code}
+
+The single most important thing to understand about this codebase is that
+\textbf{it writes to its own instruction stream}, deliberately, as a normal
+technique. Three flavours appear, each encoding a different kind of state.
+
+\subsection*{Patched-JSR (and JMP) dispatch}
+
+The command dispatchers do not use an indexed jump. Instead they
+\emph{write a handler's address into the operand of a [[JSR]]
+instruction} a few bytes ahead, then execute that [[JSR]]. The call target
+is data, stored into the code. Every grid overlay does this for its command
+table; the space overlay patches a [[JMP]] in its main loop the same way.
+
+\begin{quote}
+\textbf{Port as:} a function-pointer table indexed by the command number,
+\texttt{handler = TABLE[cmd]; handler()}. The patched operand \emph{is} the
+table entry.
+\end{quote}
+
+\subsection*{Patched operands as variables}
+
+Many ``variables'' are stored \emph{inside an instruction}. A loop limit
+lives in the immediate operand of a [[CPX]]/[[CPY]]; a moving source
+pointer lives in the absolute operand of an [[LDA]]; a stream cursor is the
+operand of a [[STA]] that is incremented in place. The annotations name
+each such byte with a [[label = *+1]] (or [[*+2]]) convention so the
+patched operand has a symbol.
+
+\begin{quote}
+\textbf{Port as:} an ordinary variable. Where the assembly reads
+``[[LDA SHAPE_PTR]]'' with [[SHAPE_PTR]] being the operand of the [[LDA]]
+itself, the port has a pointer variable and an ordinary load through it.
+\end{quote}
+
+A subtle consequence for \emph{byte-exact} reproduction (not for porting):
+the value sitting in a self-modified operand \emph{on disk} is whatever it
+was last left as, often a stale or sentinel value (the recurring
+[[STALE_FFFF]] is one) that the running code overwrites before first use.
+The assembly chapters emit the stale disk value and note it; a port simply
+initialises its variable.
+
+\subsection*{Patched opcodes (toggling actors)}
+
+Occasionally a whole \emph{opcode} byte is patched, not just an operand:
+writing a [[JSR]] opcode where an [[RTS]] was (or vice versa) switches a
+routine on or off --- a called subroutine becomes an immediate return.
+This toggles optional per-frame actors without a flag test.
+
+\begin{quote}
+\textbf{Port as:} a boolean (``is this actor active?'') checked before the
+call.
+\end{quote}
+
+\section{Multi-entry routines}
+
+Several routines have two entry points that differ only in a flag, packed
+together with two tricks that exploit how the 6502 decodes the byte
+\emph{after} an opcode.
+
+\subsection*{The carry dual-entry (\texttt{CLC} / \texttt{.byte \$B0} / \texttt{SEC})}
+
+A routine wants two entries that differ only in the carry flag. It writes:
+[[CLC]] (the silent entry), then the byte [[$B0]] (a [[BCS]] opcode), then
+[[SEC]] (the second entry). Entering at the top clears carry and then the
+[[$B0]] consumes the following [[SEC]] byte as its branch \emph{operand} ---
+the [[SEC]] never executes. Entering one byte later runs [[SEC]] normally.
+Two entries, one body, distinguished by carry. (Used by [[TICK]]/%
+[[TICK_SND]] and the disk-prompt routine.)
+
+\begin{quote}
+\textbf{Port as:} two functions, or one function with a boolean parameter.
+\end{quote}
+
+\subsection*{The \texttt{BIT}-absolute skip (\texttt{.byte \$2C})}
+
+To give a routine a second entry that skips its first instruction (often
+an [[LDA \#imm]]), a [[$2C]] byte (a [[BIT]]-absolute opcode) is placed
+before it: falling in from above, the [[$2C]] turns the next two bytes
+into a harmless [[BIT]] of some address; jumping past it runs them as the
+real instruction. This is how one routine offers ``with this default
+value'' and ``with the value already in A'' entries.
+
+\begin{quote}
+\textbf{Port as:} an optional/defaulted parameter.
+\end{quote}
+
+\section{Inline-argument calling conventions}
+
+Many routines take their arguments \emph{from the bytes following the
+[[JSR]]}, not from registers or the stack. The file library's load/save
+calls are followed by a path string; the text printer is followed by the
+zero-terminated message; the menu picker is followed by several count and
+pointer bytes. The routine reads the return address off the stack, consumes
+the inline bytes, and adjusts the return address to land past them.
+
+\begin{quote}
+\textbf{Port as:} ordinary function arguments. ``[[JSR PRINT]] then the
+text bytes'' becomes \texttt{print("text")}. (Recognising these sites
+matters even for reading the disassembly: the bytes after such a call are
+\emph{data}, and a disassembler that treats them as code produces garbage
+--- a frequent trap noted throughout these chapters.)
+\end{quote}
+
+\section{Numbers and tables}
+
+\textbf{Binary quantities, BCD displays.} As the data-structure chapter
+notes, all quantities are 16-bit binary; only the two on-screen counters
+are BCD. The decimal-display path runs a double-dabble binary-to-BCD
+conversion. A port keeps integers and formats on output.
+
+\textbf{Precomputed tables instead of arithmetic.} Costs are read from a
+squares table rather than multiplied; multiplication itself is done by
+repeated addition; perspective is a coordinate table, not a projection
+calculation; the hi-res row address is sometimes a table. These are speed
+tricks for a 1\,MHz 8-bit CPU. A port computes the value directly --- but
+should preserve the \emph{table contents} where they encode tuning (the
+monster tiers, the per-transport tick costs, the attribute bonuses), since
+those are game-design data, not optimisations.
+
+\textbf{16-bit values are little-endian pairs}, low byte first, and the
+code addresses the high byte as [[label+1]]. Pointers in zero page follow
+the same convention and are dereferenced with the indirect-indexed
+addressing mode --- the portable reading is just ``a 16-bit pointer.''
+
+\section{Machine and OS dependencies}
+
+A few hooks into the Apple~II and ProDOS have no portable content beyond
+their effect:
+
+\begin{description}
+\item[Soft switches] ([[$C0xx]]) toggle graphics modes, display pages, and
+  read the keyboard; a port calls its own platform's equivalents.
+\item[The vertical-blank interrupt] paces animation. Only the resulting
+  frame counts are portable; one mode even borrows a mouse card purely as
+  a VBL source on machines that lack a direct one.
+\item[The file library] wraps ProDOS file calls (and a transparent
+  \texttt{/RAM} cache); a port maps these to ordinary file or asset loads.
+  The seven overlays and the data files become seven code modules and
+  their bundled assets.
+\item[The reset vector] is hooked at two points (the bootstrap and the
+  victory screen) so a hardware reset re-enters the game rather than
+  dropping to the monitor --- cosmetic on a port.
+\end{description}
+
+None of these change behaviour a player sees; they are the seams where the
+1986 program meets its host, and a port re-cuts them against a different
+host without touching the game above.
+
 \chapter{Disk layout and boot chain}
 
 \section{Disk image format}
