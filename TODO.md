@@ -9,6 +9,44 @@ plus this file — never by re-deriving history.
 
 ## Milestones
 
+### Round 26 (2026-06-13): Synthesis begun -- the Architecture overview chapter
+
+- FIRST synthesis chapter written: \chapter{Architecture overview}
+  (label ch:architecture), placed right after the Introduction (overview
+  before evidence, per the synthesize skill). The document had NO synthesis
+  layer before this -- it was organized purely by file/subsystem. This is
+  the spine the per-subsystem synthesis will hang from.
+- Covers, in platform-independent terms a porter can use without reading
+  6502: (1) the engine-and-overlays memory model (STUPH library + MI.U1
+  engine resident, one mode overlay at a time over $8956; the overlay
+  scheme is the 1986 memory-limit answer, not a design requirement);
+  (2) boot/load flow + the single GAME_LOAD mode-dispatch (one integer,
+  never returns -> a port models it as set_mode(id)); (3) the universal
+  mode template (entry / timeout-polled main loop / per-command handlers /
+  end-of-turn tick) + the patched-JSR dispatch idiom and its portable
+  function-pointer-table equivalent; (4) the shared-state model (player
+  block = the /U1.PLAYER save format; object records as structure-of-
+  arrays; progress flags); (5) THE WIN CONDITION AS A STATE MACHINE (the
+  gem prophecies -> Space Ace counter -> princess rescue sets the endgame
+  flag -> TM: destroy the gem then kill Mondain; every arrow is a shared
+  flag, so the progression is data, not control flow); (6) rendering in
+  one paragraph (tile viewport vs wireframe vector; Apple-II-specifics
+  isolated in STUPH).
+- Added 4 chapter labels for cross-refs (ch:boot, ch:intro, ch:stuph,
+  ch:engine). All [[ ]]-wrapped, ASCII-clean, refs resolve.
+- Prose-only; all 16 targets still byte-perfect; hygiene fully green; PDF
+  985 pages, 0 errors, 0 undefined refs.
+- NEXT: continue the synthesis layer (the biggest remaining gaps, in
+  rough priority): the Data-structure reference (player block fields +
+  invariants, object-record arrays, the NPC/shop tables, coordinate
+  systems), then per-subsystem Algorithm descriptions (dungeon maze
+  generator + ray-marcher, the shop pricing/haggle, monster AI/spawn,
+  the SPA flight model, chargen math), then a Rendering-pipeline chapter
+  (tile blit + the two wireframe engines, double-buffering, the hi-res
+  layout), then Porting notes per subsystem. Optionally the TM CRAFT_GFX
+  render. Quality bar: a programmer who has never seen 6502 could
+  reimplement each subsystem from its synthesis section alone.
+
 ### Round 25 (2026-06-13): MAKE.INDATA fully decomposed -- the LAST stub cleared
 
 - MAKE.INDATA ($1E00-$5435, 13877 bytes) is decomposed across 13 chunks
@@ -916,9 +954,13 @@ TM_REVEAL / COURT_CELLS quest semantics fully.
       scene-setup positions to render the craft interior / Mondain / gem.
       Not a static sprite gallery -- a runtime display list. See
       tm_subsystem.md for the unblock recipe.
-- [ ] Synthesis chapters (Round 6 quality bar) once the overlays are
-      all decomposed: game overview, data structures, the quest/
-      gem/time-machine win condition in platform-independent prose.
+- [~] Synthesis chapters (the quality bar that makes the doc "done").
+      Started Round 26: the Architecture overview chapter (engine/overlay
+      model, GAME_LOAD dispatch, the mode template, shared state, the win
+      condition as a state machine, rendering overview). Still to write:
+      Data-structure reference, per-subsystem Algorithm descriptions,
+      Rendering pipeline, Porting notes. See the Round 26 milestone for
+      the priority order.
 
 ## Structural
 

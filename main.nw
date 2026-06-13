@@ -133,6 +133,260 @@ its data lives in ordinary ProDOS files on a volume named
   [[$8956]].
 \end{enumerate}
 
+\chapter{Architecture overview}
+\label{ch:architecture}
+
+This chapter recovers the \emph{shape} of the program --- how it is laid
+out in memory, how control passes between its parts, and how its parts
+share state --- in terms a porter can use without reading a line of 6502.
+The chapters that follow it are the evidence: each documents one file of
+the original, annotated to assemble byte-for-byte. Here we step back and
+describe the machine those files build.
+
+\section{The engine-and-overlays model}
+
+\emph{Ultima I} does not fit in memory all at once. The 1986 remake
+solves this the way most disk-based Apple~II games of its generation did:
+a \textbf{resident engine} stays in memory for the whole session and
+provides shared services, while the code for whichever \emph{mode} the
+player is in --- outdoors, town, castle, dungeon, space, the endgame ---
+is loaded on demand into a single shared region, one \textbf{overlay} at
+a time. Only one mode's code is ever resident; switching modes means
+loading a different overlay over the same addresses.
+
+Three things live in memory at once during play:
+
+\begin{description}
+\item[The resident library (\texttt{STUPH}, [[$0800]]--[[$1FFF]]).]
+  The lowest layer: the font and tile glyph banks, the hi-res blitter and
+  double-buffering machinery, the keyboard and sound-effect queues, the
+  pseudo-random generator, and the file loader (which wraps the disk in a
+  transparent \texttt{/RAM} cache on 128K machines). It exposes a fixed
+  \textbf{jump-vector table} --- a list of [[JMP]]s at known addresses ---
+  so callers bind to stable entry points, not to the routines' shifting
+  internal addresses. See chapter~\ref{ch:stuph}.
+\item[The resident engine (\texttt{MI.U1}, [[$7000]]--[[$89BC]]).]
+  The game layer shared by every mode: the player-state block, the
+  packed string tables (every name the game prints), the text/window/%
+  status-bar renderer, the inventory and ``ready'' screens, the BCD
+  number formatter, the turn/food/time bookkeeping, the command parser,
+  and the mode-switch loader. Overlays call \emph{into} the engine
+  constantly; the engine never calls \emph{out} to a specific overlay ---
+  it only jumps to the overlay's fixed entry point. See
+  chapter~\ref{ch:engine}.
+\item[The current mode overlay ([[OVERLAY_ENTRY]] = [[$8956]] upward).]
+  One file --- \texttt{OUT}, \texttt{DNG}, \texttt{TWN}, \texttt{CAS},
+  \texttt{SPA}, \texttt{GEN}, or \texttt{TM} --- loaded over the region
+  above the engine. It owns the mode's main loop, command handlers, and
+  mode-specific rendering, and it runs until the player does something
+  that changes mode, at which point it asks the engine to load a
+  different overlay over itself. See chapter~\ref{ch:overlays}.
+\end{description}
+
+\begin{table}[ht]
+\centering
+\caption{The resident memory map during play. Addresses below
+  [[OVERLAY_ENTRY]] persist across mode changes; the overlay region is
+  reloaded on every switch.}
+\label{tab:memmap-arch}
+\begin{tabular}{lll}
+\toprule
+Region & Contents & Lifetime \\
+\midrule
+[[$0800]]--[[$1FFF]] & \texttt{STUPH} resident library + glyph banks & whole session \\
+[[$2000]]--[[$5FFF]] & hi-res pages 1 and 2 (double-buffered display) & whole session \\
+[[$6000]]--[[$6FFF]] & decompressed current-continent map / scratch & whole session \\
+[[$7000]]--[[$89BC]] & \texttt{MI.U1} resident engine + player state & whole session \\
+[[$8956]]--$\approx$[[$B0FF]] & the current mode overlay & per mode \\
+[[$B400]]+ & town/castle live map buffer, object records & whole session \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A porter does not need this address map --- on a machine with enough
+memory, every overlay and the engine can be resident simultaneously and
+``loading an overlay'' becomes ``calling that mode's entry point.'' What
+\emph{is} essential is the \textbf{boundary}: the engine and library are a
+fixed API, each mode is a module behind that API, and exactly one mode is
+active at a time. The overlay scheme is the 1986 machine's answer to a
+memory limit, not a design requirement.
+
+\section{Boot and load flow}
+
+Cold start walks a chain of progressively more game-specific loaders, each
+loading the next (chapters~\ref{ch:boot}--\ref{ch:intro}):
+
+\begin{enumerate}
+\item The Disk~II PROM loads the 512-byte boot block and jumps to it.
+\item The boot block loads the stock \textbf{ProDOS} kernel (treated here
+  as an external dependency, like the ROM) and starts it.
+\item ProDOS runs \texttt{U1.SYSTEM}, the launcher, which installs the
+  resident file library and chains to the title program.
+\item \texttt{MAKE.INDATA} (section~\ref{sec:makeindata}) builds the two
+  title screens in memory once, then is discarded; \texttt{U1.INTRO}
+  animates the title and waits for a key.
+\item A keypress loads the resident engine \texttt{MI.U1} and the first
+  overlay, and play begins.
+\end{enumerate}
+
+From there, \textbf{every mode change goes through one routine},
+[[GAME_LOAD]] in the engine. The game keeps a table of the seven overlay
+filenames ([[LOC_NAME]]) at fixed four-byte strides, in the order
+\texttt{GEN OUT DNG TWN CAS SPA TM}. To change mode, code jumps to
+[[GAME_LOAD]] with the accumulator holding the destination's offset into
+that table (0, 4, 8, \dots); the routine resets the stack (there is no
+return --- a mode switch abandons the old mode's call chain), loads that
+overlay through the disk/\texttt{/RAM} cache, redraws the screen frame,
+and jumps to the overlay's fixed entry point [[OVERLAY_ENTRY]]. Offset~0
+(or any out-of-range value) is special: it loads \texttt{GEN}, the
+character generator --- the new-game path. Death funnels through
+[[RESPAWN]], which is just [[GAME_LOAD]] with the \texttt{OUT} offset, so
+the slain player wakes up outdoors.
+
+This is the cleanest single fact about the program's control flow: there
+is one mode-dispatch function, it is identified by a small integer, and it
+never returns. A port can implement it as a state-machine transition ---
+\texttt{set\_mode(mode\_id)} that tears down the current mode and starts
+the next --- with no stack gymnastics.
+
+\section{The anatomy of a mode}
+
+Every overlay is built to the same template, which makes the seven modes
+far more alike than the screenshots suggest. A porter who implements one
+mode's skeleton has implemented all seven:
+
+\begin{enumerate}
+\item \textbf{Entry} ([[OVERLAY_ENTRY]]). Restore the mode's view from
+  saved player state (e.g.\ the outdoor position, the dungeon level), set
+  the movement-command vocabulary for this mode (the same four movement
+  keys are labelled ``North/South/East/West'' outdoors but ``Forward/Turn
+  around/Turn right/Turn left'' in a dungeon and ``Thrust/Retro/%
+  Clockwise/Counter'' in space, via a single pointer the engine reads
+  when echoing commands), load any mode-specific map or glyph data, and
+  draw the first frame.
+\item \textbf{Main loop.} Show the status line, poll for a key with a
+  timeout. A timeout (no key) is an \textbf{idle turn}: the mode animates
+  (monsters step, NPCs wander) and time/food tick. A key is parsed by the
+  engine's [[GET_COMMAND]] into a command number, which the mode
+  \textbf{dispatches} to a handler.
+\item \textbf{Command handlers.} One routine per command. Movement
+  handlers update position and redraw; action handlers (Attack, Cast,
+  Get, Talk, \dots) do the mode-specific thing. A handler that ends the
+  mode jumps to [[GAME_LOAD]].
+\item \textbf{End-of-turn tick.} After a handled command, run the mode's
+  per-turn world update (spawn checks, monster AI, hazards), then loop.
+\end{enumerate}
+
+\subsection*{The dispatch idiom}
+
+The command dispatch deserves a porting note because its 6502 form looks
+nothing like its intent. Each overlay has a table of handler addresses,
+one per command. Rather than compute an indexed indirect jump, the code
+\textbf{patches the operand of a [[JSR]] instruction} in place with the
+handler's address and then executes that [[JSR]]. This ``patched-JSR
+dispatch'' is self-modifying code: the call target is data, written into
+the instruction stream a few bytes ahead, then run. (\texttt{SPA} is the
+exception --- it self-modifies a [[JMP]] into its loop instead.) The
+portable equivalent is a plain array of function pointers indexed by the
+command number:
+
+\begin{verbatim}
+    handler = COMMAND_TABLE[command_number]
+    handler()        // the patched JSR, expressed portably
+\end{verbatim}
+
+Several other 6502 idioms recur across the overlays and mean the same
+thing everywhere; they are collected in the per-subsystem porting notes,
+but the dispatch patch is the one a reader meets first and most often.
+
+\section{Shared state}
+
+Because only one mode is resident at a time, all state that must
+\emph{survive} a mode change lives in the resident engine, not in the
+overlays. The overlays are nearly stateless between visits: they read the
+player block on entry and write it back before switching away. The
+durable state falls into a few groups (the field-level reference is
+chapter~\ref{ch:engine}; here is the shape):
+
+\begin{description}
+\item[The player block.] One contiguous record in the engine's space:
+  name, race/sex/class, the six attributes, the vitals (hit points, food,
+  experience, gold --- all 16-bit binary, converted to decimal only for
+  display), the readied weapon/armour/spell, the owned-item and
+  owned-spell arrays, the current position, and the quest/gem flags. This
+  is exactly the record saved to and loaded from the \texttt{/U1.PLAYER}
+  disk file, so its layout \emph{is} the save format.
+\item[The world position.] Which continent, and where on it; which town,
+  castle, or dungeon the player is standing in or has entered. The
+  overlays translate this into their own coordinate systems on entry.
+\item[The object records.] Outdoors, the monsters, ships, and loose
+  items are a set of parallel fixed-length arrays (a slot's kind, screen
+  position, tile, and hit points each in their own array) --- an
+  ``array of structures'' stored as a ``structure of arrays.'' Towns and
+  castles use a smaller NPC table of the same flavour.
+\item[The progress flags.] The quest-completion flags, the four owned
+  gems, the storeroom permission counter, the space-combat kill counter,
+  and the single flag that arms the endgame. These thread the win
+  condition together across modes (next section).
+\end{description}
+
+A handful of shared scratch locations in zero page (the draw pointers,
+the double-buffer toggle, the random-number state) are also touched by
+both engine and overlays; these are working storage, not game state, and
+a port re-implements them however its host prefers.
+
+\section{The win condition, as a state machine}
+
+The modes are not peers in a menu; they are wired into a specific
+progression that constitutes ``winning,'' and the linkage is entirely in
+the shared progress flags. Recovered from the code, the path is:
+
+\begin{enumerate}
+\item \textbf{Outdoors and towns} build the character: kill monsters for
+  experience, buy gear, and gather the four \textbf{gems} that castles
+  hand out for completing quests. One gem's prophecy tells the player a
+  time machine is the only way to win; another that a princess will help
+  a ``space ace'' travel through time.
+\item \textbf{Space} is reached by boarding a shuttle and lifting off.
+  Each enemy craft destroyed increments a kill counter; reaching twenty
+  earns the rank of \textbf{Space Ace}. This is the only place that
+  counter is written.
+\item \textbf{A castle} is where the two threads meet. Rescuing the
+  princess while holding Space-Ace rank (and enough experience) sets the
+  single \textbf{endgame flag} and reveals the location of the time
+  machine.
+\item \textbf{The time machine} (the \texttt{TM} overlay) is the endgame:
+  a confrontation with Mondain in the past. Mondain is invulnerable while
+  he holds the Gem of Immortality; the player must \emph{destroy the gem}
+  and \emph{then} kill him. Success melts the screen into the victory
+  image and hooks the reset key --- the game is over.
+\end{enumerate}
+
+Every arrow in that chain is a flag written in one mode and read in
+another: the kill counter (written in space, gated on in the castle), the
+endgame flag (set in the castle, required by the time machine), the gems
+(handed out by castles, their prophecies the only in-game statement of
+the win condition). The progression is data, not control flow --- which is
+why it survives the overlay swaps intact, and why a port can model the
+whole game as one shared state object that the mode modules read and
+write.
+
+\section{Rendering, in one paragraph}
+
+Two presentation styles span the seven modes. The grid modes (outdoors,
+towns, castles) draw a \textbf{tile viewport}: a window of map cells, each
+cell a glyph blitted from a font-like tile bank, centred on the player.
+The first-person modes (dungeons, space, the endgame) draw
+\textbf{wireframe vector graphics}: line strokes computed from
+perspective tables, with no stored bitmap. Both render to one of two
+hi-res pages while the other is shown, then flip --- the standard
+double-buffer. What is Apple~II-specific (the interleaved hi-res address
+layout, the page-flip soft switches, the NTSC colour-artifact palette) is
+isolated in the \texttt{STUPH} library and called through its vectors;
+what is portable (the tile codes, the vector shape lists, the animation
+timing) lives in the engine and overlays. The per-mode rendering chapters
+mark the boundary explicitly.
+
 \chapter{Disk layout and boot chain}
 
 \section{Disk image format}
@@ -216,6 +470,7 @@ files on a separate player disk, \texttt{U1.PLAYER} and
 the saved character and game state.
 
 \chapter{Boot block}
+\label{ch:boot}
 
 The first 512 bytes of the disk --- ProDOS block~0, physical track~0
 sectors~0 and~2 --- are Apple's standard ProDOS~1.x boot loader, the
@@ -2384,6 +2639,7 @@ MLIB_UNIT
 @
 
 \chapter{Title and introduction: U1.INTRO}
+\label{ch:intro}
 
 \texttt{U1.INTRO} is the animated title sequence: the castle of Lord
 British is painted piece by piece on the hi-res screen while a tune
@@ -4008,6 +4264,7 @@ DISSOLVE
 
 
 \chapter{The resident library: STUPH}
+\label{ch:stuph}
 
 \texttt{STUPH} is not ``graphics/shape data'' --- it is the game's
 \textbf{resident low-memory library}: 6144 bytes loaded at
@@ -6580,6 +6837,7 @@ STUPH_FILL
 @
 
 \chapter{The resident engine: MI.U1}
+\label{ch:engine}
 
 \texttt{MI.U1} (``machine interface'') is the game's memory-resident
 core, occupying [[$7000]]--[[$89BC]] --- everything below the overlay
