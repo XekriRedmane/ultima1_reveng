@@ -11,6 +11,15 @@ image into a literate-programming document that:
 - weaves into a cross-referenced, searchable **HTML site** with Mermaid
   diagrams and rendered sprites, fonts, and screens.
 
+The startup screens below are reconstructed byte-accurately by replaying the
+game's own decompression routines on its title data — first the Origin Systems
+logo dissolves in, then the castle-title screen:
+
+<p align="center">
+  <img src="images/makeindata_origin.png" alt="The Origin Systems Inc. publisher logo, dissolved onto the screen at startup" width="49%">
+  <img src="images/makeindata_title.png" alt="The castle-title screen: Lord British's castle by the sea at night" width="49%">
+</p>
+
 ## 📖 Read it online
 
 **→ [xekriredmane.github.io/ultima1_reveng](https://xekriredmane.github.io/ultima1_reveng/)**
