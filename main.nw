@@ -2887,44 +2887,30 @@ The resident library at [[$B700]] is the game's entire disk interface from here 
 
 <a id="tab:mlib-vectors"></a>
 
-> **TODO-CONVERT — table (→ pipe/HTML table):** The resident file library's call vectors. "path" = inline zero-terminated pathname; ".w" = inline 16-bit word.
+**Table — the resident file library's call vectors.** "path" = inline zero-terminated pathname; ".w" = inline 16-bit word.
 
-```latex
-\begin{table}[H]
-\centering
-\ra{1.1}
-\small
-\begin{tabular}{@{}llll@{}}
-\toprule
-\thead{Vector} & \thead{Name} & \thead{Inline args} & \thead{Action} \\
-\midrule
-[[$B700]] & [[MLIB_MLI]] & --- & raw MLI call, command in A \\
-[[$B703]] & [[MLIB_BLOAD]] & path & load BIN file at its aux address \\
-[[$B706]] & [[MLIB_BLOAD_AT]] & addr.w, path & load BIN file at addr \\
-[[$B709]] & [[MLIB_BSAVE]] & addr.w, len.w, path & create/write BIN file \\
-[[$B70C]] & [[MLIB_BRUN]] & path & load at aux address and call \\
-[[$B70F]] & [[MLIB_SET_PREFIX]] & path & set ProDOS prefix \\
-[[$B712]] & [[MLIB_QUIT]] & --- & close all, jump to reset \\
-[[$B715]] & [[MLIB_READ_BLOCK]] & ptr.w to block\# & read disk block to [[MLIB_IOBUF]] \\
-[[$B718]] & [[MLIB_WRITE_BLOCK]] & ptr.w to block\# & write [[MLIB_IOBUF]] to block \\
-[[$B71B]] & [[MLIB_SET_UNIT]] & --- & unit number := A \\
-[[$B71E]] & [[MLIB_BLOAD_P]] & pathptr.w & as [[MLIB_BLOAD]] \\
-[[$B721]] & [[MLIB_BLOAD_AT_P]] & addr.w, pathptr.w & as [[MLIB_BLOAD_AT]] \\
-[[$B724]] & [[MLIB_BSAVE_P]] & addr.w, len.w, pathptr.w & as [[MLIB_BSAVE]] \\
-[[$B727]] & [[MLIB_BRUN_P]] & pathptr.w & as [[MLIB_BRUN]] \\
-[[$B72A]] & [[MLIB_SET_PREFIX_P]] & pathptr.w & as [[MLIB_SET_PREFIX]] \\
-[[$B72D]] & [[MLIB_DESTROY]] & path & delete a file \\
-[[$B730]] & [[MLIB_DESTROY_P]] & pathptr.w & as [[MLIB_DESTROY]] \\
-[[$B733]] & [[MLIB_PARSE_PATH]] & path & copy path to [[MLIB_PATH]] only \\
-[[$B736]] & [[MLIB_PARSE_PATH_P]] & pathptr.w & as [[MLIB_PARSE_PATH]] \\
-[[$B739]] & [[MLIB_BUZZ]] & --- & error buzz \\
-\bottomrule
-\end{tabular}
-\caption{The resident file library's call vectors. ``path'' = inline
-zero-terminated pathname; ``.w'' = inline 16-bit word.}
-\label{tab:mlib-vectors}
-\end{table}
-```
+| Vector | Name | Inline args | Action |
+|---|---|---|---|
+| [[$B700]] | [[MLIB_MLI]] | — | raw MLI call, command in A |
+| [[$B703]] | [[MLIB_BLOAD]] | path | load BIN file at its aux address |
+| [[$B706]] | [[MLIB_BLOAD_AT]] | addr.w, path | load BIN file at addr |
+| [[$B709]] | [[MLIB_BSAVE]] | addr.w, len.w, path | create/write BIN file |
+| [[$B70C]] | [[MLIB_BRUN]] | path | load at aux address and call |
+| [[$B70F]] | [[MLIB_SET_PREFIX]] | path | set ProDOS prefix |
+| [[$B712]] | [[MLIB_QUIT]] | — | close all, jump to reset |
+| [[$B715]] | [[MLIB_READ_BLOCK]] | ptr.w to block# | read disk block to [[MLIB_IOBUF]] |
+| [[$B718]] | [[MLIB_WRITE_BLOCK]] | ptr.w to block# | write [[MLIB_IOBUF]] to block |
+| [[$B71B]] | [[MLIB_SET_UNIT]] | — | unit number := A |
+| [[$B71E]] | [[MLIB_BLOAD_P]] | pathptr.w | as [[MLIB_BLOAD]] |
+| [[$B721]] | [[MLIB_BLOAD_AT_P]] | addr.w, pathptr.w | as [[MLIB_BLOAD_AT]] |
+| [[$B724]] | [[MLIB_BSAVE_P]] | addr.w, len.w, pathptr.w | as [[MLIB_BSAVE]] |
+| [[$B727]] | [[MLIB_BRUN_P]] | pathptr.w | as [[MLIB_BRUN]] |
+| [[$B72A]] | [[MLIB_SET_PREFIX_P]] | pathptr.w | as [[MLIB_SET_PREFIX]] |
+| [[$B72D]] | [[MLIB_DESTROY]] | path | delete a file |
+| [[$B730]] | [[MLIB_DESTROY_P]] | pathptr.w | as [[MLIB_DESTROY]] |
+| [[$B733]] | [[MLIB_PARSE_PATH]] | path | copy path to [[MLIB_PATH]] only |
+| [[$B736]] | [[MLIB_PARSE_PATH_P]] | pathptr.w | as [[MLIB_PARSE_PATH]] |
+| [[$B739]] | [[MLIB_BUZZ]] | — | error buzz |
 
 
 File loads and saves insist on file type `BIN` and files no
@@ -3574,42 +3560,28 @@ of tables into the game's own error numbering.
 
 <a id="tab:mlib-errors"></a>
 
-> **TODO-CONVERT — table (→ pipe/HTML table):** MLI-to-game error code translation. The library also issues $0D (wrong type), $0A (locked), and $0E (file over 64K) directly.
+**Table — MLI-to-game error code translation.** The library also issues `$0D` (wrong type), `$0A` (locked), and `$0E` (file over 64K) directly.
 
-```latex
-\begin{table}[H]
-\centering
-\ra{1.05}
-\small
-\begin{tabular}{@{}lll@{}}
-\toprule
-\thead{MLI error} & \thead{Meaning} & \thead{Game code} \\
-\midrule
-\$28 & no device connected & \$03 \\
-\$2B & disk write protected & \$04 \\
-\$40 & invalid pathname syntax & \$10 \\
-\$41, \$42 & file control block / too many files & \$0C \\
-\$43 & invalid reference number & \$12 \\
-\$44, \$45 & path / volume not found & \$06 \\
-\$46 & file not found & \$07 \\
-\$47 & duplicate filename & \$13 \\
-\$48 & volume full & \$09 \\
-\$49 & directory full & \$11 \\
-\$4B & unsupported storage type & \$0D \\
-\$4C & end of file & \$05 \\
-\$4D & position out of range & \$02 \\
-\$4E & access denied & \$0A \\
-\$50 & file open & \$14 \\
-\$53 & invalid parameter & \$0B \\
-\$56 & bad buffer address & \$0C \\
-(other) & --- & \$08 \\
-\bottomrule
-\end{tabular}
-\caption{MLI-to-game error code translation. The library also issues
-\$0D (wrong type), \$0A (locked), and \$0E (file over 64K) directly.}
-\label{tab:mlib-errors}
-\end{table}
-```
+| MLI error | Meaning | Game code |
+|---|---|---|
+| `$28` | no device connected | `$03` |
+| `$2B` | disk write protected | `$04` |
+| `$40` | invalid pathname syntax | `$10` |
+| `$41, $42` | file control block / too many files | `$0C` |
+| `$43` | invalid reference number | `$12` |
+| `$44, $45` | path / volume not found | `$06` |
+| `$46` | file not found | `$07` |
+| `$47` | duplicate filename | `$13` |
+| `$48` | volume full | `$09` |
+| `$49` | directory full | `$11` |
+| `$4B` | unsupported storage type | `$0D` |
+| `$4C` | end of file | `$05` |
+| `$4D` | position out of range | `$02` |
+| `$4E` | access denied | `$0A` |
+| `$50` | file open | `$14` |
+| `$53` | invalid parameter | `$0B` |
+| `$56` | bad buffer address | `$0C` |
+| (other) | — | `$08` |
 
 
 <<mlib mli dispatch>>=
@@ -5396,24 +5368,17 @@ platform-independent game logic calling these vectors.
 
 **The memory map of the module:**
 
-> **TODO-CONVERT — table (→ pipe/HTML table):**
+**Table — the STUPH library's low-memory layout** ([[$0800]]–[[$1FFF]]).
 
-```latex
-\begin{tabular}{llp{7.5cm}}
-[[$0800]]--[[$0BFF]] & [[FONT_BANK]] & 128 glyphs $\times$ 8 scanlines
-  (text font; chars [[$00]]--[[$19]] are terrain-strip pairs) \\
-[[$0C00]]--[[$11FF]] & [[TILE_BANK]] & 96 glyphs $\times$ 16 scanlines
-  (the map tile set: 48 two-glyph tiles) \\
-[[$1200]]--[[$137F]] & [[HGR_ROW_LO]]/[[HGR_ROW_HI]] & hi-res address
-  of each of the 192 screen scanlines \\
-[[$1380]]--[[$157F]] & [[XCOL_TBL]]/[[XMASK_TBL]] & pixel
-  column $\to$ screen byte / bit mask, for [[PLOT]] \\
-[[$1580]]--[[$15E8]] & flags + vectors & three flag bytes, then 34
-  three-byte [[JMP]] vectors \\
-[[$15E9]]--[[$1E39]] & code & the routines themselves \\
-[[$1E3A]]--[[$1FFF]] & --- & zero fill \\
-\end{tabular}
-```
+| Range | Symbol | Contents |
+|---|---|---|
+| [[$0800]]–[[$0BFF]] | [[FONT_BANK]] | 128 glyphs × 8 scanlines (text font; chars [[$00]]–[[$19]] are terrain-strip pairs) |
+| [[$0C00]]–[[$11FF]] | [[TILE_BANK]] | 96 glyphs × 16 scanlines (the map tile set: 48 two-glyph tiles) |
+| [[$1200]]–[[$137F]] | [[HGR_ROW_LO]]/[[HGR_ROW_HI]] | hi-res address of each of the 192 screen scanlines |
+| [[$1380]]–[[$157F]] | [[XCOL_TBL]]/[[XMASK_TBL]] | pixel column → screen byte / bit mask, for [[PLOT]] |
+| [[$1580]]–[[$15E8]] | flags + vectors | three flag bytes, then 34 three-byte [[JMP]] vectors |
+| [[$15E9]]–[[$1E39]] | code | the routines themselves |
+| [[$1E3A]]–[[$1FFF]] | — | zero fill |
 
 
 **Double buffering.** The library draws hi-res graphics on one
@@ -6091,47 +6056,45 @@ VEC_FRAME_SYNC      JMP FRAME_SYNC
 The vector summary, with each entry's calling convention:
 
 
-> **TODO-CONVERT — table (→ pipe/HTML table):**
+**Table — the STUPH jump-vector table** ([[$1583]] onward): 34 fixed entry points behind which the routines may move freely.
 
-```latex
-\begin{tabular}{llp{6.8cm}}
-[[$1583]] & [[LIB_INIT]] & detect mouse/IIgs, hook VBL, hi-res on \\
-[[$1586]] & [[LIB_SHUTDOWN]] & text mode, unhook, restore speed \\
-[[$1589]] & [[FILE_LOAD]] & load file in [[MLIB_PATH]] (RAM-disk cache) \\
-[[$158C]] & [[FILE_LOAD_AT]] & same, at address Y/A (lo/hi) \\
-[[$158F]] & [[PAGE_COPY]] & copy displayed page onto draw page \\
-[[$1592]] & [[TEXT_SCROLL]] & scroll the text window up one row \\
-[[$1595]] & [[CLR_ROW]] & clear the cursor row, both pages \\
-[[$1598]] & [[CLR_EOL]] & clear cursor to end of window row \\
-[[$159B]] & [[CLR_WINDOW]] & clear the whole text window \\
-[[$159E]] & [[WIN_FULL]] & window := full screen \\
-[[$15A1]] & [[WIN_STATS]] & window := stats panel (cols 31--39) \\
-[[$15A4]] & [[WIN_TEXT]] & window := message area (cols 0--29) \\
-[[$15A7]] & [[WIN_VIEW]] & window := viewport (rows 1--18) \\
-[[$15AA]] & [[VIEW_CLEAR]] & black out the viewport scanlines \\
-[[$15AD]] & [[PAGE_FLIP]] & show drawn page, toggle, drain effects \\
-[[$15B0]] & [[FONT_DRAW]] & A = char: draw glyph at the cursor \\
-[[$15B3]] & [[DRAW_MAP]] & render the 19$\times$9 tile viewport \\
-[[$15B6]] & [[KEY_DELAY]] & short delay, cut short by a keypress \\
-[[$15B9]] & [[RND]] & A := next pseudo-random byte \\
-[[$15BC]] & [[KEY_POLL]] & sample keyboard into the type-ahead queue \\
-[[$15BF]] & [[KEY_WAIT]] & block until a key; A := key \\
-[[$15C2]] & [[KEY_GET]] & poll once; A := key or 0 \\
-[[$15C5]] & [[KEY_GET_ANIM]] & as [[KEY_GET]] but redraw the map \\
-[[$15C8]] & [[CURSOR_FLASH]] & draw next cursor frame; A := random \\
-[[$15CB]] & [[SFX_PLAY]] & A = even code 0--[[$10]]: play effect \\
-[[$15CE]] & [[SFX_QUEUE]] & queue effect for the next [[PAGE_FLIP]] \\
-[[$15D1]] & [[SFX_DRAIN]] & play one queued effect \\
-[[$15D4]] & [[COLOR_SET]] & A = 0--7: set the [[PLOT]] color \\
-[[$15D7]] & [[PLOT]] & plot color dot pair at ([[ZP_PX]],[[ZP_PY]]) \\
-[[$15DA]] & [[LINE_TO]] & line from ([[ZP_PX]],[[ZP_PY]]) to (X,Y) \\
-[[$15DD]] & [[LINE_AGAIN]] & line to the previous destination \\
-[[$15E0]] & [[SOUND_SET]] & A = 0/1: master sound off/on \\
-[[$15E3]] & [[ACCEL_NUDGE]] & slow accelerators when sound is off \\
-[[$15E6]] & [[FRAME_SYNC]] & wait for vertical blank (if any) \\
-[[$15E9]] & [[VDELAY]] & calibrated delay of A units \\
-\end{tabular}
-```
+| Vector | Name | Action |
+|---|---|---|
+| [[$1583]] | [[LIB_INIT]] | detect mouse/IIgs, hook VBL, hi-res on |
+| [[$1586]] | [[LIB_SHUTDOWN]] | text mode, unhook, restore speed |
+| [[$1589]] | [[FILE_LOAD]] | load file in [[MLIB_PATH]] (RAM-disk cache) |
+| [[$158C]] | [[FILE_LOAD_AT]] | same, at address Y/A (lo/hi) |
+| [[$158F]] | [[PAGE_COPY]] | copy displayed page onto draw page |
+| [[$1592]] | [[TEXT_SCROLL]] | scroll the text window up one row |
+| [[$1595]] | [[CLR_ROW]] | clear the cursor row, both pages |
+| [[$1598]] | [[CLR_EOL]] | clear cursor to end of window row |
+| [[$159B]] | [[CLR_WINDOW]] | clear the whole text window |
+| [[$159E]] | [[WIN_FULL]] | window := full screen |
+| [[$15A1]] | [[WIN_STATS]] | window := stats panel (cols 31–39) |
+| [[$15A4]] | [[WIN_TEXT]] | window := message area (cols 0–29) |
+| [[$15A7]] | [[WIN_VIEW]] | window := viewport (rows 1–18) |
+| [[$15AA]] | [[VIEW_CLEAR]] | black out the viewport scanlines |
+| [[$15AD]] | [[PAGE_FLIP]] | show drawn page, toggle, drain effects |
+| [[$15B0]] | [[FONT_DRAW]] | A = char: draw glyph at the cursor |
+| [[$15B3]] | [[DRAW_MAP]] | render the 19×9 tile viewport |
+| [[$15B6]] | [[KEY_DELAY]] | short delay, cut short by a keypress |
+| [[$15B9]] | [[RND]] | A := next pseudo-random byte |
+| [[$15BC]] | [[KEY_POLL]] | sample keyboard into the type-ahead queue |
+| [[$15BF]] | [[KEY_WAIT]] | block until a key; A := key |
+| [[$15C2]] | [[KEY_GET]] | poll once; A := key or 0 |
+| [[$15C5]] | [[KEY_GET_ANIM]] | as [[KEY_GET]] but redraw the map |
+| [[$15C8]] | [[CURSOR_FLASH]] | draw next cursor frame; A := random |
+| [[$15CB]] | [[SFX_PLAY]] | A = even code 0–[[$10]]: play effect |
+| [[$15CE]] | [[SFX_QUEUE]] | queue effect for the next [[PAGE_FLIP]] |
+| [[$15D1]] | [[SFX_DRAIN]] | play one queued effect |
+| [[$15D4]] | [[COLOR_SET]] | A = 0–7: set the [[PLOT]] color |
+| [[$15D7]] | [[PLOT]] | plot color dot pair at ([[ZP_PX]],[[ZP_PY]]) |
+| [[$15DA]] | [[LINE_TO]] | line from ([[ZP_PX]],[[ZP_PY]]) to (X,Y) |
+| [[$15DD]] | [[LINE_AGAIN]] | line to the previous destination |
+| [[$15E0]] | [[SOUND_SET]] | A = 0/1: master sound off/on |
+| [[$15E3]] | [[ACCEL_NUDGE]] | slow accelerators when sound is off |
+| [[$15E6]] | [[FRAME_SYNC]] | wait for vertical blank (if any) |
+| [[$15E9]] | [[VDELAY]] | calibrated delay of A units |
 
 
 ## Calibrated delays
@@ -10524,49 +10487,22 @@ GAME_LOAD
 
 <a id="fig:gameload"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** Inside [[GAME_LOAD]], the engine's one mode-switch routine. The caller passes the destination's offset into the seven-name table ([[LOC_NAME]], order `GEN OUT DNG TWN CAS SPA TM`); the routine resets the stack (a mode switch never returns), and an out-of-range offset is the new-game path that loads `GEN`. Otherwise it makes the chosen name current, loads that overlay through the `/RAM` cache (retrying through [[DISK_PROMPT]] on a disk error), redraws the screen furniture, and jumps to [[OVERLAY_ENTRY]] — exactly where the file just landed. [[RESPAWN]] is this with the `OUT` offset.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
-  \node[dgterminal] (entry) {GAME\_LOAD (A = table offset)};
-  \node[dgprocess, below=of entry] (stack) {reset the stack\\\scriptsize no return -- old call chain abandoned};
-  \node[dgdecision, below=of stack] (bad) {A $\geq$ [[$19]]?\\\scriptsize (offset past the table)};
-  \node[dgsub, right=20mm of bad] (gen)
-        {load GEN\\\scriptsize the new-game / chargen path};
-  \node[dgprocess, below=of bad] (copy)
-        {copy name LOC\_NAME[A]\\down into the current slot};
-  \node[dgsub, below=of copy] (load)
-        {FILE\_LOAD via the /RAM cache\\\scriptsize lands at OVERLAY\_ENTRY};
-  \node[dgdecision, below=of load] (err) {disk error?};
-  \node[dgio, right=20mm of err] (prompt) {DISK\_PROMPT\\\scriptsize "Put in the Ultima disk"};
-  \node[dgprocess, below=of err] (redraw)
-        {redraw the frame\\\scriptsize PAGE1\_LOCK, STATS\_DRAW,\\DRAW\_BORDERS, WIN\_RESTORE};
-  \node[dgterminal, below=of redraw] (jmp) {JMP OVERLAY\_ENTRY};
-
-  \draw[->] (entry)--(stack); \draw[->] (stack)--(bad);
-  \draw[->] (bad) -- node[dgnote,above]{yes} (gen);
-  \draw[->] (bad) -- node[dgnote,left]{no} (copy);
-  \draw[->] (copy)--(load); \draw[->] (load)--(err);
-  \draw[->] (err) -- node[dgnote,above]{yes} (prompt);
-  \draw[->] (prompt) |- ($(load.north)+(0,3mm)$);
-  \draw[->] (err) -- node[dgnote,left]{no} (redraw);
-  \draw[->] (redraw)--(jmp);
-  \draw[->] (gen) |- (jmp.east);
-\end{tikzpicture}
-\caption{Inside [[GAME_LOAD]], the engine's one mode-switch routine. The
-  caller passes the destination's offset into the seven-name table
-  ([[LOC_NAME]], order \texttt{GEN OUT DNG TWN CAS SPA TM}); the routine
-  resets the stack (a mode switch never returns), and an out-of-range
-  offset is the new-game path that loads \texttt{GEN}. Otherwise it makes
-  the chosen name current, loads that overlay through the \texttt{/RAM}
-  cache (retrying through [[DISK_PROMPT]] on a disk error), redraws the
-  screen furniture, and jumps to [[OVERLAY_ENTRY]] --- exactly where the
-  file just landed. [[RESPAWN]] is this with the \texttt{OUT} offset.}
-\label{fig:gameload}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["GAME_LOAD (A = table offset)"]) --> stack["reset the stack<br/>no return — old call chain abandoned"]
+  stack --> bad{"A ≥ $19?<br/>(offset past the table)"}
+  bad -->|yes| gen["load GEN<br/>the new-game / chargen path"]
+  bad -->|no| copy["copy name LOC_NAME[A]<br/>down into the current slot"]
+  copy --> load["FILE_LOAD via the /RAM cache<br/>lands at OVERLAY_ENTRY"]
+  load --> err{"disk error?"}
+  err -->|yes| prompt[/"DISK_PROMPT<br/>Put in the Ultima disk"/]
+  prompt --> load
+  err -->|no| redraw["redraw the frame<br/>PAGE1_LOCK, STATS_DRAW, DRAW_BORDERS, WIN_RESTORE"]
+  redraw --> jmp(["JMP OVERLAY_ENTRY"])
+  gen --> jmp
 ```
+
+**Figure — inside [[GAME_LOAD]], the engine's one mode-switch routine.** The caller passes the destination's offset into the seven-name table ([[LOC_NAME]], order `GEN OUT DNG TWN CAS SPA TM`); the routine resets the stack (a mode switch never returns), and an out-of-range offset is the new-game path that loads `GEN`. Otherwise it makes the chosen name current, loads that overlay through the `/RAM` cache (retrying through [[DISK_PROMPT]] on a disk error), redraws the screen furniture, and jumps to [[OVERLAY_ENTRY]] — exactly where the file just landed. [[RESPAWN]] is this with the `OUT` offset.
 
 
 ## Quit, and the bootstrap at the overlay address
