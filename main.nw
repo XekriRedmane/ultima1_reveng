@@ -287,50 +287,23 @@ through the one-way [[GAME_LOAD]] door at the bottom.
 
 <a id="fig:mode-loop"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The universal mode template, shared by all seven overlays. The status/poll/dispatch/tick loop is identical mode to mode; only the handler set and the end-of-turn tick vary. A timeout is an idle turn (animate + tick, no command); a mode-ending command exits once, through [[GAME_LOAD]], which never returns.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=7mm and 16mm]
-  \node[dgterminal] (entry) {OVERLAY\_ENTRY};
-  \node[dgprocess, below=of entry] (init)
-        {restore view; set move\\vocabulary; load map;\\draw first frame};
-  \node[dgprocess, below=of init] (status) {draw status line};
-  \node[dgio, below=of status] (poll) {poll key\\(with timeout)};
-  \node[dgdecision, below=of poll] (key) {key or\\timeout?};
-  % idle branch (right)
-  \node[dgprocess, right=of key] (idle)
-        {idle turn:\\animate world;\\time/food tick};
-  % command branch (down)
-  \node[dgprocess, below=of key] (parse)
-        {GET\_COMMAND\\$\to$ command number};
-  \node[dgsub, below=of parse] (disp)
-        {dispatch to handler\\\scriptsize (patched-JSR via the table)};
-  \node[dgdecision, below=of disp] (ends) {handler\\ends mode?};
-  \node[dgprocess, right=of ends] (tick)
-        {end-of-turn tick:\\spawn / AI / hazards};
-  \node[dgterminal, below=of ends] (load) {JMP GAME\_LOAD\\\scriptsize (never returns)};
-
-  \draw[->] (entry)--(init); \draw[->] (init)--(status);
-  \draw[->] (status)--(poll); \draw[->] (poll)--(key);
-  \draw[->] (key) -- node[dgnote,above]{timeout} (idle);
-  \draw[->] (key) -- node[dgnote,left]{key} (parse);
-  \draw[->] (parse)--(disp); \draw[->] (disp)--(ends);
-  \draw[->] (ends) -- node[dgnote,below]{no} (tick);
-  \draw[->] (ends) -- node[dgnote,left]{yes} (load);
-  % idle and tick both loop back to the status line
-  \draw[->] (idle) -- ($(idle.east)+(6mm,0)$) |- (status.east);
-  \draw[->] (tick) -- ($(tick.east)+(2mm,0)$) |- (status.east);
-\end{tikzpicture}
-\caption{The universal mode template, shared by all seven overlays. The
-  status/poll/dispatch/tick loop is identical mode to mode; only the
-  handler set and the end-of-turn tick vary. A timeout is an idle turn
-  (animate + tick, no command); a mode-ending command exits once, through
-  [[GAME_LOAD]], which never returns.}
-\label{fig:mode-loop}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["OVERLAY_ENTRY"]) --> init["restore view; set move vocabulary;<br/>load map; draw first frame"]
+  init --> status["draw status line"]
+  status --> poll[/"poll key (with timeout)"/]
+  poll --> key{"key or timeout?"}
+  key -->|timeout| idle["idle turn:<br/>animate world; time/food tick"]
+  key -->|key| parse["GET_COMMAND → command number"]
+  parse --> disp["dispatch to handler<br/>(patched-JSR via the table)"]
+  disp --> ends{"handler ends mode?"}
+  ends -->|no| tick["end-of-turn tick:<br/>spawn / AI / hazards"]
+  ends -->|yes| load(["JMP GAME_LOAD<br/>(never returns)"])
+  idle --> status
+  tick --> status
 ```
+
+**Figure — the universal mode template**, shared by all seven overlays. The status/poll/dispatch/tick loop is identical mode to mode; only the handler set and the end-of-turn tick vary. A timeout is an idle turn (animate + tick, no command); a mode-ending command exits once, through [[GAME_LOAD]], which never returns.
 
 
 ### The dispatch idiom
@@ -411,72 +384,27 @@ does the [[TM]] overlay's destroy-gem-then-kill sequence end the game.
 
 <a id="fig:win-fsm"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The win condition as a flag-guarded state machine (`SPA` $\to$ `CAS` $\to$ `TM`). Each diamond tests a shared progress flag, not the current mode; the two loops are the gem-gathering grind in castles and the kill grind in space. The highlighted spine is the only path to victory: rescuing the princess while holding Space-Ace rank sets [[TM_REVEAL]], which unlocks the time machine, where the Gem of Immortality must be destroyed *before* Mondain can be killed.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=9mm and 13mm]
-  \node[dgterminal] (start) {new character};
-
-  % gem-gathering loop (castles)
-  \node[dgprocess, below=of start] (quests)
-        {complete castle quests\\\scriptsize (CAS quest system)};
-  \node[dgdecision, below=of quests] (gems)
-        {all four\\OWNED\_GEMS?};
-  \node[dgnote, right=2mm of gems] {prophecies reveal\\the win condition};
-
-  % space-ace counter (space)
-  \node[dgprocess, below left=10mm and 2mm of gems] (space)
-        {destroy enemy craft\\\scriptsize (SPA: HIT\_ENEMY)};
-  \node[dgdecision, below=of space] (ace)
-        {PLR\_VESSELS\\$\geq 20$?};
-
-  % the meeting point (castle)
-  \node[dgprocess, below right=10mm and 2mm of ace] (rescue)
-        {rescue the princess\\\scriptsize (CAS: CMD\_MOVE)};
-  \node[dgdecision, below=of rescue] (arm)
-        {Space Ace\\\& gems?};
-  \node[dgprocess, dgaccentnode, below=of arm] (reveal)
-        {set TM\_REVEAL\\\scriptsize endgame armed};
-
-  % time machine (endgame)
-  \node[dgprocess, dgaccentnode, below=of reveal] (destroy)
-        {TM\_GET: destroy\\the Gem (GEM\_GONE)};
-  \node[dgprocess, dgaccentnode, below=of destroy] (kill)
-        {kill Mondain\\\scriptsize (GEM\_HP $\to 0$)};
-  \node[dgterminal, dgaccentnode, below=of kill] (win)
-        {THOU ART\\VICTORIOUS};
-
-  \draw[->] (start) -- (quests);
-  \draw[->] (quests) -- (gems);
-  \draw[->] (gems) -- node[dgnote,left]{no, keep questing}
-        ($(gems.west)+(-6mm,0)$) |- (quests.west);
-  \draw[->] (gems) -- node[dgnote,left,pos=0.3]{yes} (space);
-  \draw[->] (space) -- (ace);
-  \draw[->] (ace.west) -- node[dgnote,above]{no} ($(ace.west)+(-6mm,0)$)
-        |- (space.west);
-  \draw[->] (ace) -- node[dgnote,left,pos=0.3]{yes (= Space Ace)} (rescue);
-  \draw[->] (rescue) -- (arm);
-  \draw[->] (arm.east) -- node[dgnote,above]{no} ($(arm.east)+(7mm,0)$)
-        |- (rescue.east);
-  \draw[->, dgaccentedge] (arm) -- node[dgnote,left,text=dgaccent]{yes} (reveal);
-  \draw[->, dgaccentedge] (reveal) -- node[dgnote,left,text=dgaccent]
-        {TM overlay} (destroy);
-  \draw[->, dgaccentedge] (destroy) -- (kill);
-  \draw[->, dgaccentedge] (kill) -- (win);
-\end{tikzpicture}
-\caption{The win condition as a flag-guarded state machine
-  (\texttt{SPA}~$\to$~\texttt{CAS}~$\to$~\texttt{TM}). Each diamond tests
-  a shared progress flag, not the current mode; the two loops are the
-  gem-gathering grind in castles and the kill grind in space. The
-  highlighted spine is the only path to victory: rescuing the princess
-  while holding Space-Ace rank sets [[TM_REVEAL]], which unlocks the time
-  machine, where the Gem of Immortality must be destroyed
-  \emph{before} Mondain can be killed.}
-\label{fig:win-fsm}
-\end{figure}
+```mermaid
+flowchart TB
+  start(["new character"]) --> quests["complete castle quests<br/>(CAS quest system)"]
+  quests --> gems{"all four OWNED_GEMS?"}
+  gems -->|"no, keep questing"| quests
+  gems -->|yes| space["destroy enemy craft<br/>(SPA: HIT_ENEMY)"]
+  space --> ace{"PLR_VESSELS ≥ 20?"}
+  ace -->|no| space
+  ace -->|"yes (= Space Ace)"| rescue["rescue the princess<br/>(CAS: CMD_MOVE)"]
+  rescue --> arm{"Space Ace and gems?"}
+  arm -->|no| rescue
+  arm -->|yes| reveal["set TM_REVEAL<br/>endgame armed"]
+  reveal -->|TM overlay| destroy["TM_GET: destroy the Gem (GEM_GONE)"]
+  destroy --> kill["kill Mondain (GEM_HP → 0)"]
+  kill --> win(["THOU ART VICTORIOUS"])
+  classDef win fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class reveal,destroy,kill,win win;
+  linkStyle 9,10,11,12 stroke:#b03a2e,stroke-width:2px,color:#b03a2e
 ```
+
+**Figure — the win condition as a flag-guarded state machine** (`SPA` → `CAS` → `TM`). Each diamond tests a shared progress flag, not the current mode; the two loops are the gem-gathering grind in castles and the kill grind in space. The highlighted spine is the only path to victory: rescuing the princess while holding Space-Ace rank sets [[TM_REVEAL]], which unlocks the time machine, where the Gem of Immortality must be destroyed *before* Mondain can be killed.
 
 
 ## Rendering, in one paragraph
@@ -1662,94 +1590,44 @@ game and is a reverse-engineering target of this document. Type
 
 <a id="tab:volume-files"></a>
 
-> **TODO-CONVERT — table (→ pipe/HTML table):** Files on the ProDOS volume `/U1` and the assembly targets they correspond to.
+**Table — files on the ProDOS volume `/U1`** and the assembly targets they correspond to.
 
-```latex
-\begin{table}[H]
-\centering
-\ra{1.1}
-\begin{tabular}{@{}llrlll@{}}
-\toprule
-\thead{File} & \thead{Type} & \thead{Bytes} & \thead{Load addr} &
-\thead{Target} & \thead{Contents} \\
-\midrule
-\texttt{PRODOS}      & SYS & 14848 & ---  & ---        & stock ProDOS 1.1.1 kernel \\
-\texttt{U1.SYSTEM}   & SYS &  1682 & [[$2000]] & [[u1system.asm]] & launcher \\
-\texttt{U1.INTRO}    & BIN &  2469 & [[$0800]] & [[u1intro.asm]] & title and main menu \\
-\texttt{MI.U1}       & BIN &  6589 & [[$7000]] & [[miu1.asm]] & resident engine \\
-\texttt{OUT}         & BIN &  5230 & [[$8956]] & [[out.asm]] & outdoors overlay \\
-\texttt{TWN}         & BIN &  8461 & [[$8956]] & [[twn.asm]] & town overlay \\
-\texttt{CAS}         & BIN &  5524 & [[$8956]] & [[cas.asm]] & castle overlay \\
-\texttt{DNG}         & BIN & 10051 & [[$8956]] & [[dng.asm]] & dungeon overlay \\
-\texttt{SPA}         & BIN &  9930 & [[$8956]] & [[spa.asm]] & space overlay \\
-\texttt{GEN}         & BIN &  8932 & [[$8956]] & [[gen.asm]] & character generation overlay \\
-\texttt{TM}          & BIN &  8123 & [[$8956]] & [[tm.asm]] & time machine (endgame) overlay \\
-\texttt{MAKE.INDATA} & BIN & 13877 & [[$1E00]] & [[makeindata.asm]] & initial game state builder \\
-\texttt{MAPCHARS}    & BIN &  1024 & [[$0800]] & [[mapchars.asm]] & town/castle glyph bank \\
-\texttt{TCMAPS}      & BIN &  7660 & [[$4000]] & [[tcmaps.asm]] & town/castle maps \\
-\texttt{NIF}         & BIN &  7680 & [[$4000]] & [[nif.asm]] & hi-res image \\
-\texttt{STUPH}       & BIN &  6144 & [[$0800]] & [[stuph.asm]] & resident low-memory library \\
-\bottomrule
-\end{tabular}
-\caption{Files on the ProDOS volume \texttt{/U1} and the assembly
-targets they correspond to.}
-\label{tab:volume-files}
-\end{table}
-```
+| File | Type | Bytes | Load addr | Target | Contents |
+|---|---|--:|---|---|---|
+| `PRODOS` | SYS | 14848 | — | — | stock ProDOS 1.1.1 kernel |
+| `U1.SYSTEM` | SYS | 1682 | [[$2000]] | [[u1system.asm]] | launcher |
+| `U1.INTRO` | BIN | 2469 | [[$0800]] | [[u1intro.asm]] | title and main menu |
+| `MI.U1` | BIN | 6589 | [[$7000]] | [[miu1.asm]] | resident engine |
+| `OUT` | BIN | 5230 | [[$8956]] | [[out.asm]] | outdoors overlay |
+| `TWN` | BIN | 8461 | [[$8956]] | [[twn.asm]] | town overlay |
+| `CAS` | BIN | 5524 | [[$8956]] | [[cas.asm]] | castle overlay |
+| `DNG` | BIN | 10051 | [[$8956]] | [[dng.asm]] | dungeon overlay |
+| `SPA` | BIN | 9930 | [[$8956]] | [[spa.asm]] | space overlay |
+| `GEN` | BIN | 8932 | [[$8956]] | [[gen.asm]] | character generation overlay |
+| `TM` | BIN | 8123 | [[$8956]] | [[tm.asm]] | time machine (endgame) overlay |
+| `MAKE.INDATA` | BIN | 13877 | [[$1E00]] | [[makeindata.asm]] | initial game state builder |
+| `MAPCHARS` | BIN | 1024 | [[$0800]] | [[mapchars.asm]] | town/castle glyph bank |
+| `TCMAPS` | BIN | 7660 | [[$4000]] | [[tcmaps.asm]] | town/castle maps |
+| `NIF` | BIN | 7680 | [[$4000]] | [[nif.asm]] | hi-res image |
+| `STUPH` | BIN | 6144 | [[$0800]] | [[stuph.asm]] | resident low-memory library |
 
 
 The seven files loaded at [[$8956]] are the mode overlays: the resident engine `MI.U1` occupies [[$7000]]–[[$8955]] and ends exactly where the overlay region begins. The game also creates two files on a separate player disk, `U1.PLAYER` and `U1.VARS` (their pathnames appear in `MI.U1`), holding the saved character and game state. Figure [fig:disklayout](#fig:disklayout) relates the files on the disk to the load chain that pulls them into memory.
 
 <a id="fig:disklayout"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The disk's boot/load chain (Table [tab:volume-files](#tab:volume-files)). The 140K `.dsk` holds the ProDOS volume `/U1`; its files (left) are loaded in a chain (right), each loader pulling in the next. The controller PROM reads block 0 (track 0, physical sectors 0 and 2); the boot block brings in the stock ProDOS kernel, which runs the `U1.SYSTEM` launcher; that chains `MAKE.INDATA` (which builds the title screens, then is discarded) and `U1.INTRO`, which loads the resident engine and library and hands off to [[GAME_LOAD]]. From there a single overlay is resident at a time. Load addresses are the documented memory-layout exception.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=4mm and 18mm]
-  % LEFT: the disk as a stack of files on the ProDOS volume /U1
-  \node[dgnote] (disktitle) {ProDOS volume \texttt{/U1} (140K, 35 tracks)};
-  \node[dgmemblock, fill=dgterm, below=2mm of disktitle, text width=42mm] (boot)
-        {block 0 = track 0, phys sectors 0+2\\\scriptsize ProDOS boot block};
-  \node[dgmemblock, fill=dgmem, below=0pt of boot, text width=42mm] (prodos) {\texttt{PRODOS} kernel (stock 1.1.1)};
-  \node[dgmemblock, fill=dgmem, below=0pt of prodos, text width=42mm] (sys) {\texttt{U1.SYSTEM} (launcher)};
-  \node[dgmemblock, fill=dgmem, below=0pt of sys, text width=42mm] (mi) {\texttt{MAKE.INDATA} (title builder)};
-  \node[dgmemblock, fill=dgmem, below=0pt of mi, text width=42mm] (intro) {\texttt{U1.INTRO} (title + menu)};
-  \node[dgmemblock, fill=dgmem, below=0pt of intro, text width=42mm] (eng) {\texttt{MI.U1} engine, \texttt{STUPH} lib};
-  \node[dgmemblock, fill=dgio, below=0pt of eng, text width=42mm] (ovl) {7 overlays + \texttt{TCMAPS} / \texttt{MAPCHARS} / \texttt{NIF}};
-
-  % RIGHT: the load chain (who loads whom, and to where)
-  \node[dgterminal, right=24mm of boot] (c1) {PROM reads block 0};
-  \node[dgprocess, below=of c1] (c2) {boot block loads ProDOS\\\scriptsize -> [[$2000]] then relocates high};
-  \node[dgprocess, below=of c2] (c3) {ProDOS runs U1.SYSTEM\\\scriptsize -> [[$2000]]};
-  \node[dgprocess, below=of c3] (c4) {U1.SYSTEM chains\\MAKE.INDATA -> [[$1E00]]\\then U1.INTRO -> [[$0800]]};
-  \node[dgprocess, below=of c4] (c5) {U1.INTRO loads the engine\\MI.U1 -> [[$7000]], STUPH -> [[$0800]]};
-  \node[dgterminal, below=of c5] (c6) {GAME\_LOAD loads one overlay\\-> [[$8956]] (per mode)};
-
-  \draw[->] (c1)--(c2); \draw[->] (c2)--(c3); \draw[->] (c3)--(c4);
-  \draw[->] (c4)--(c5); \draw[->] (c5)--(c6);
-  % link the disk files to the chain steps
-  \draw[dgline, ->] (boot.east) -- (c1.west);
-  \draw[dgline, ->] (prodos.east) to[bend right=8] (c2.west);
-  \draw[dgline, ->] (sys.east) to[bend right=8] (c3.west);
-  \draw[dgline, ->] (mi.east) to[bend right=6] (c4.west);
-  \draw[dgline, ->] (eng.east) to[bend right=6] (c5.west);
-  \draw[dgline, ->] (ovl.east) to[bend right=6] (c6.west);
-\end{tikzpicture}
-\caption{The disk's boot/load chain (Table~\ref{tab:volume-files}). The
-  140K \texttt{.dsk} holds the ProDOS volume \texttt{/U1}; its files (left)
-  are loaded in a chain (right), each loader pulling in the next. The
-  controller PROM reads block~0 (track~0, physical sectors~0 and~2); the
-  boot block brings in the stock ProDOS kernel, which runs the
-  \texttt{U1.SYSTEM} launcher; that chains \texttt{MAKE.INDATA} (which
-  builds the title screens, then is discarded) and \texttt{U1.INTRO}, which
-  loads the resident engine and library and hands off to [[GAME_LOAD]].
-  From there a single overlay is resident at a time. Load addresses are the
-  documented memory-layout exception.}
-\label{fig:disklayout}
-\end{figure}
+```mermaid
+flowchart TB
+  c1(["PROM reads block 0<br/>(track 0, phys sectors 0+2)"]) --> c2["boot block loads PRODOS kernel<br/>→ $2000, then relocates high"]
+  c2 --> c3["ProDOS runs U1.SYSTEM<br/>→ $2000"]
+  c3 --> c4["U1.SYSTEM chains MAKE.INDATA → $1E00<br/>then U1.INTRO → $0800"]
+  c4 --> c5["U1.INTRO loads the engine<br/>MI.U1 → $7000, STUPH → $0800"]
+  c5 --> c6(["GAME_LOAD loads one overlay<br/>→ $8956 (per mode)"])
+  classDef win fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class c6 win;
 ```
+
+**Figure — the disk's boot/load chain** (see the volume-files table). The 140K `.dsk` holds the ProDOS volume `/U1`; each loader pulls in the next. The controller PROM reads block 0 (track 0, physical sectors 0 and 2); the boot block brings in the stock ProDOS kernel, which runs the `U1.SYSTEM` launcher; that chains `MAKE.INDATA` (which builds the title screens, then is discarded) and `U1.INTRO`, which loads the resident engine and library and hands off to [[GAME_LOAD]]. From there a single overlay is resident at a time. Load addresses are the documented memory-layout exception.
 
 
 # Boot block
