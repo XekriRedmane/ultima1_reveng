@@ -893,53 +893,23 @@ special cases in pass 4 are the two decisions on the right.
 
 <a id="fig:dng-gen"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The five-pass dungeon generator [[DNG_GEN]]. The maze is never stored; the same level of the same dungeon regenerates identically from its seed. Only pass 2's count depends on depth; the two dashed decisions are pass 4's level-1 (arrival ladder) and level-10 (no exit downward) special cases.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6.5mm and 10mm]
-  \node[dgterminal] (e) {DNG\_GEN(level)};
-  \node[dgprocess, below=of e] (seed)
-        {seed maze PRNG\\\scriptsize from place/x/y/continent/level};
-  \node[dgprocess, below=of seed] (tmpl)
-        {map = copy(DNG\_TEMPLATE)\\\scriptsize border + even/even pillars};
-  \node[dgprocess, below=of tmpl] (p1)
-        {pass 1: edge openings\\\scriptsize open 6/secret 6/door 8 (of 20)};
-  \node[dgprocess, below=of p1] (p2)
-        {pass 2: walls + fields\\\scriptsize $2{\cdot}level{+}1$ times; field if rand $<$ 96/256};
-  \node[dgprocess, below=of p2] (p3)
-        {pass 3: containers\\\scriptsize $level$ times; chest/coffin (lib PRNG)};
-  \node[dgprocess, below=of p3] (p4)
-        {pass 4: fixed cells\\\scriptsize arrival open; ladders at (7,3),(3,7)};
-  % the two pass-4 special cases
-  \node[dgdecision, right=18mm of p4] (l10) {level\\$=10$?};
-  \node[dgdecision, above=8mm of l10] (l1) {level\\$=1$?};
-  \node[dgprocess, right=10mm of l1, text width=24mm] (l1a)
-        {arrival up-ladder at (1,1); drop the (7,3) up};
-  \node[dgprocess, right=10mm of l10, text width=24mm] (l10a)
-        {delete the down ladder (no level 11)};
-  \node[dgprocess, below=of p4] (p5)
-        {pass 5: spawn monsters\\\scriptsize (tier-gated, see below)};
-  \node[dgterminal, below=of p5] (r) {return map};
-
-  \draw[->] (e)--(seed); \draw[->] (seed)--(tmpl); \draw[->] (tmpl)--(p1);
-  \draw[->] (p1)--(p2); \draw[->] (p2)--(p3); \draw[->] (p3)--(p4);
-  \draw[->] (p4)--(p5); \draw[->] (p5)--(r);
-  % special cases hang off pass 4 conceptually
-  \draw[->, dashed] (p4.east) -- (l1.west);
-  \draw[->, dashed] (p4.east) -- (l10.west);
-  \draw[->] (l1) -- node[dgnote,above]{yes} (l1a);
-  \draw[->] (l10) -- node[dgnote,above]{yes} (l10a);
-\end{tikzpicture}
-\caption{The five-pass dungeon generator [[DNG_GEN]]. The maze is never
-  stored; the same level of the same dungeon regenerates identically from
-  its seed. Only pass~2's count depends on depth; the two dashed decisions
-  are pass~4's level-1 (arrival ladder) and level-10 (no exit downward)
-  special cases.}
-\label{fig:dng-gen}
-\end{figure}
+```mermaid
+flowchart TB
+  e(["DNG_GEN(level)"]) --> seed["seed maze PRNG<br/>from place / x / y / continent / level"]
+  seed --> tmpl["map = copy(DNG_TEMPLATE)<br/>border + even/even pillars"]
+  tmpl --> p1["pass 1: edge openings<br/>open 6 / secret 6 / door 8 (of 20)"]
+  p1 --> p2["pass 2: walls + fields<br/>2·level+1 times; field 96/256 of the time"]
+  p2 --> p3["pass 3: containers<br/>level times; chest / coffin (lib PRNG)"]
+  p3 --> p4["pass 4: fixed cells<br/>arrival open; ladders at (7,3),(3,7)"]
+  p4 -.-> l1{"level = 1?"}
+  p4 -.-> l10{"level = 10?"}
+  l1 -->|yes| l1a["arrival up-ladder at (1,1);<br/>drop the (7,3) up"]
+  l10 -->|yes| l10a["delete the down ladder<br/>(no level 11)"]
+  p4 --> p5["pass 5: spawn monsters<br/>(tier-gated)"]
+  p5 --> r(["return map"])
 ```
+
+**Figure — the five-pass dungeon generator [[DNG_GEN]].** The maze is never stored; the same level of the same dungeon regenerates identically from its seed. Only pass 2's count depends on depth; the two dashed decisions are pass 4's level-1 (arrival ladder) and level-10 (no exit downward) special cases.
 
 
 ## The dungeon view: ray marching
@@ -1045,43 +1015,20 @@ will trade.
 
 <a id="fig:npc-ai"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** Town/castle NPC behaviour, evaluated once per NPC per idle tick. The slot's kind code selects the state; hostiles home then melee when adjacent (the same logic as outdoor monsters), wanderers drift with flavour. The accent edge is the global [[AGGRO]] mood: caught stealing, every NPC reverts to wandering and refuses to trade.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=10mm and 20mm]
-  \node[dgstate] (empty) {empty\\\scriptsize kind FF};
-  \node[dgstate, right=of empty] (hostile) {hostile\\\scriptsize kind 3};
-  \node[dgstate, right=of hostile] (wander) {wanderer\\\scriptsize kind 4};
-  % hostile sub-behaviours
-  \node[dgprocess, below=12mm of hostile] (home) {home one step\\toward player};
-  \node[dgprocess, left=14mm of home] (attack)
-        {GUARD\_COMBAT:\\to-hit vs armour};
-  % wanderer sub-behaviours
-  \node[dgprocess, below=12mm of wander] (drift) {drift one step};
-  \node[dgnote, below=2mm of drift] {sing / pick a pocket};
-
-  \draw[->] (hostile) -- node[dgnote,left,pos=0.4]{not adjacent} (home);
-  \draw[->] (hostile.west) to[bend right=18]
-        node[dgnote,above]{adjacent} (attack.north);
-  \draw[->] (home) -- (hostile);
-  \draw[->] (attack) -- (hostile);
-  \draw[->] (wander) -- (drift);
-  \draw[->] (drift) -- (wander);
-  % AGGRO global mood: everything -> wander
-  \draw[->, dgaccentedge] (hostile) to[bend left=20]
-        node[dgnote,above,text=dgaccent]{AGGRO set} (wander);
-  \draw[->, dashed] (empty) -- node[dgnote,above]{next slot} (hostile);
-\end{tikzpicture}
-\caption{Town/castle NPC behaviour, evaluated once per NPC per idle tick.
-  The slot's kind code selects the state; hostiles home then melee when
-  adjacent (the same logic as outdoor monsters), wanderers drift with
-  flavour. The accent edge is the global [[AGGRO]] mood: caught stealing,
-  every NPC reverts to wandering and refuses to trade.}
-\label{fig:npc-ai}
-\end{figure}
+```mermaid
+flowchart LR
+  empty(["empty<br/>kind FF"]) -.->|next slot| hostile{{"hostile<br/>kind 3"}}
+  hostile -->|not adjacent| home["home one step<br/>toward player"]
+  home --> hostile
+  hostile -->|adjacent| attack["GUARD_COMBAT:<br/>to-hit vs armour"]
+  attack --> hostile
+  wander{{"wanderer<br/>kind 4"}} --> drift["drift one step<br/>(sing / pick a pocket)"]
+  drift --> wander
+  hostile -->|AGGRO set| wander
+  linkStyle 7 stroke:#b03a2e,stroke-width:2px,color:#b03a2e
 ```
+
+**Figure — town/castle NPC behaviour**, evaluated once per NPC per idle tick. The slot's kind code selects the state; hostiles home then melee when adjacent (the same logic as outdoor monsters), wanderers drift with flavour. The accent edge is the global [[AGGRO]] mood: caught stealing, every NPC reverts to wandering and refuses to trade.
 
 
 Figure [fig:combat](#fig:combat) draws the end-of-turn loop for one monster: the
@@ -1093,59 +1040,28 @@ serves outdoors and the 16-slot town/castle NPC tables.
 
 <a id="fig:combat"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** Combat resolution and the monster AI step, run once per end-of-turn per active monster. Spawning is tier-gated on a rising difficulty bar; an active monster fires (ranged kinds), else closes the greedy integer-square-root distance and melees when adjacent. A to-hit roll against armour gates damage; a monster reduced to zero hit points frees its object-record slot and grants tier-scaled experience.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=7mm and 12mm]
-  \node[dgterminal] (e) {end-of-turn};
-  \node[dgdecision, below=of e] (spawn) {spawn check:\\tier $\leq$ bar?};
-  \node[dgprocess, right=14mm of spawn] (add)
-        {add object record\\\scriptsize hp,exp $= 10{\cdot}$tier; terrain-matched};
-  \node[dgprocess, below=of spawn] (each) {for each active monster};
-  \node[dgdecision, below=of each] (ranged)
-        {ranged kind\\\& in line?};
-  \node[dgprocess, right=14mm of ranged] (fire)
-        {fire at player\\\scriptsize ranged attack};
-  \node[dgprocess, below=of ranged] (step)
-        {step to reduce dist\\\scriptsize dist $=\sqrt{dx^2+dy^2}$ (ISQRT)};
-  \node[dgdecision, below=of step] (adj) {adjacent to\\player?};
-  \node[dgdecision, below=of adj] (hit)
-        {to-hit roll\\vs armour?};
-  \node[dgprocess, right=14mm of hit] (dmg) {apply damage\\to player HP};
-  \node[dgdecision, below=of dmg] (dead) {monster\\HP $\leq 0$?};
-  \node[dgprocess, below=of dead] (free)
-        {free slot; grant\\tier-scaled exp};
-  \node[dgterminal, below=of hit] (loop) {next monster};
-
-  \draw[->] (e) -- (spawn);
-  \draw[->] (spawn) -- node[dgnote,above]{yes} (add);
-  \draw[->] (spawn) -- node[dgnote,left]{no} (each);
-  \draw[->] (add) |- (each.east);
-  \draw[->] (each) -- (ranged);
-  \draw[->] (ranged) -- node[dgnote,above]{yes} (fire);
-  \draw[->] (ranged) -- node[dgnote,left]{no} (step);
-  \draw[->] (fire) |- (loop.east);
-  \draw[->] (step) -- (adj);
-  \draw[->] (adj) -- node[dgnote,left]{no} (hit);
-  \draw[->] (adj.west) -- node[dgnote,above]{no contact} ($(adj.west)+(-8mm,0)$)
-        |- (loop.west);
-  \draw[->] (hit) -- node[dgnote,above]{hit} (dmg);
-  \draw[->] (hit) -- node[dgnote,left]{miss} (loop);
-  \draw[->] (dmg) -- (dead);
-  \draw[->] (dead) -- node[dgnote,left]{yes} (free);
-  \draw[->] (free) |- (loop.east);
-\end{tikzpicture}
-\caption{Combat resolution and the monster AI step, run once per
-  end-of-turn per active monster. Spawning is tier-gated on a rising
-  difficulty bar; an active monster fires (ranged kinds), else closes the
-  greedy integer-square-root distance and melees when adjacent. A to-hit
-  roll against armour gates damage; a monster reduced to zero hit points
-  frees its object-record slot and grants tier-scaled experience.}
-\label{fig:combat}
-\end{figure}
+```mermaid
+flowchart TB
+  e(["end-of-turn"]) --> spawn{"spawn check:<br/>tier ≤ bar?"}
+  spawn -->|yes| add["add object record<br/>hp,exp = 10·tier; terrain-matched"]
+  spawn -->|no| each["for each active monster"]
+  add --> each
+  each --> ranged{"ranged kind<br/>and in line?"}
+  ranged -->|yes| fire["fire at player<br/>(ranged attack)"]
+  ranged -->|no| step["step to reduce dist<br/>dist = sqrt(dx²+dy²) via ISQRT"]
+  fire --> loop(["next monster"])
+  step --> adj{"adjacent to<br/>player?"}
+  adj -->|no contact| loop
+  adj -->|yes| hit{"to-hit roll<br/>vs armour?"}
+  hit -->|miss| loop
+  hit -->|hit| dmg["apply damage<br/>to player HP"]
+  dmg --> dead{"monster<br/>HP ≤ 0?"}
+  dead -->|no| loop
+  dead -->|yes| free["free slot; grant<br/>tier-scaled exp"]
+  free --> loop
 ```
+
+**Figure — combat resolution and the monster AI step**, run once per end-of-turn per active monster. Spawning is tier-gated on a rising difficulty bar; an active monster fires (ranged kinds), else closes the greedy integer-square-root distance and melees when adjacent. A to-hit roll against armour gates damage; a monster reduced to zero hit points frees its object-record slot and grants tier-scaled experience.
 
 
 ## The space-flight model
@@ -1299,60 +1215,29 @@ modifies no attribute. Figure [fig:chargen](#fig:chargen) shows the whole flow.
 
 <a id="fig:chargen"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** Character generation's point-buy ([[CHARGEN]]). Each of the six attributes starts at the floor of $10$; a shared pool of $30$ points is spent under two hard limits — a raise costs a point and is refused at the ceiling of $25$, a lower returns a point and is refused at the floor. The editor cannot be left until the pool is empty. Only *then* are the race and class bonuses applied, as hardcoded deltas with *no ceiling re-check* (highlighted), so a final stat can legitimately exceed $25$. Hit points, food, coin, and the starting world are not derived from the attributes — they are stamped from [[GAME_IMAGE]].
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 11mm]
-  \node[dgterminal] (entry) {CHARGEN};
-  \node[dgprocess, below=of entry] (init)
-        {each stat = 10 (floor)\\POINT\_POOL = 30};
-  \node[dgio, below=of init] (key) {editor key?};
-  % raise branch (right column)
-  \node[dgdecision, right=15mm of key] (raisechk) {pool $>$ 0\\and stat $<$ 25?};
-  \node[dgprocess, below=of raisechk] (raise) {stat += 1\\pool $-$= 1};
-  % lower branch (left column)
-  \node[dgdecision, left=15mm of key] (lowerchk) {stat $>$ 10?};
-  \node[dgprocess, below=of lowerchk] (lower) {stat $-$= 1\\pool += 1};
-  % done branch (down)
-  \node[dgdecision, below=16mm of key] (done) {space:\\pool = 0?};
-  \node[dgprocess, below=of done] (bonus)
-        {apply race + class bonuses\\\scriptsize hardcoded deltas, NO ceiling re-check};
-  \node[dgprocess, dgaccentnode, below=of bonus] (over)
-        {a bonus may exceed 25\\\scriptsize (Dwarf Fighter: 40 STR)};
-  \node[dgsub, below=of over] (derived)
-        {derived values from GAME\_IMAGE\\\scriptsize HP, food, coin, world, inventory};
-  \node[dgterminal, below=of derived] (save) {write the player record};
-
-  \draw[->] (entry)--(init); \draw[->] (init)--(key);
-  \draw[->] (key) -- node[dgnote,above]{right} (raisechk);
-  \draw[->] (key) -- node[dgnote,above]{left} (lowerchk);
-  \draw[->] (key) -- node[dgnote,left]{space} (done);
-  \draw[->] (raisechk) -- node[dgnote,right]{yes} (raise);
-  \draw[->] (lowerchk) -- node[dgnote,left]{yes} (lower);
-  % raise/lower (and the "no" refusals) return up the outer columns to key
-  \draw[->] (raise.east) -- ($(raise.east)+(6mm,0)$) |- (key.east);
-  \draw[->] (raisechk.east) -- node[dgnote,above]{no} ($(raisechk.east)+(6mm,0)$) |- (key.east);
-  \draw[->] (lower.west) -- ($(lower.west)+(-6mm,0)$) |- (key.west);
-  \draw[->] (lowerchk.west) -- node[dgnote,above]{no} ($(lowerchk.west)+(-6mm,0)$) |- (key.west);
-  \draw[->] (done) -- node[dgnote,right]{no ("Huh?")} ($(done.east)+(12mm,0)$) |- (key.east);
-  \draw[->] (done) -- node[dgnote,left]{yes} (bonus);
-  \draw[->] (bonus)--(over); \draw[->] (over)--(derived);
-  \draw[->] (derived)--(save);
-\end{tikzpicture}
-\caption{Character generation's point-buy ([[CHARGEN]]). Each of the six
-  attributes starts at the floor of $10$; a shared pool of $30$ points is
-  spent under two hard limits --- a raise costs a point and is refused at
-  the ceiling of $25$, a lower returns a point and is refused at the floor.
-  The editor cannot be left until the pool is empty. Only \emph{then} are
-  the race and class bonuses applied, as hardcoded deltas with \emph{no
-  ceiling re-check} (highlighted), so a final stat can legitimately exceed
-  $25$. Hit points, food, coin, and the starting world are not derived from
-  the attributes --- they are stamped from [[GAME_IMAGE]].}
-\label{fig:chargen}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["CHARGEN"]) --> init["each stat = 10 (floor)<br/>POINT_POOL = 30"]
+  init --> key{"editor key?"}
+  key -->|right| raisechk{"raise OK?<br/>pool left, stat below 25"}
+  key -->|left| lowerchk{"lower OK?<br/>stat above 10"}
+  key -->|space| done{"space: pool empty?"}
+  raisechk -->|yes| raise["stat += 1, pool -= 1"]
+  raisechk -->|no| key
+  raise --> key
+  lowerchk -->|yes| lower["stat -= 1, pool += 1"]
+  lowerchk -->|no| key
+  lower --> key
+  done -->|"no (Huh?)"| key
+  done -->|yes| bonus["apply race + class bonuses<br/>hardcoded deltas, NO ceiling re-check"]
+  bonus --> over["a bonus may exceed 25<br/>(Dwarf Fighter: 40 STR)"]
+  over --> derived["derived values from GAME_IMAGE<br/>HP, food, coin, world, inventory"]
+  derived --> save(["write the player record"])
+  classDef win fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class over win;
 ```
+
+**Figure — character generation's point-buy ([[CHARGEN]]).** Each of the six attributes starts at the floor of 10; a shared pool of 30 points is spent under two hard limits — a raise costs a point and is refused at the ceiling of 25, a lower returns a point and is refused at the floor. The editor cannot be left until the pool is empty. Only *then* are the race and class bonuses applied, as hardcoded deltas with *no ceiling re-check* (highlighted), so a final stat can legitimately exceed 25. Hit points, food, coin, and the starting world are not derived from the attributes — they are stamped from [[GAME_IMAGE]].
 
 
 **Derived starting values.** Hit points, food, coin, and the initial
