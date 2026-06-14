@@ -82,7 +82,7 @@ Individual routine chunks are named after their subroutine (e.g., `<<scroll up>>
 
 ### Chunk conventions
 
-- Each `\section{}` gets its own code chunk with the routine's assembly.
+- Each section (a `#`/`##` Markdown heading) gets its own code chunk with the routine's assembly.
 - Section headers never contain numeric addresses.
 - Chunk names are lowercase with spaces (e.g., `<<boot1 entry>>`).
 - End chunks with `@ %def SYMBOL1 SYMBOL2` to declare exported symbols.
@@ -142,7 +142,7 @@ Additional annotation rules:
 - **Assignment comments: use `<-` and `#$` for values.** `STA ZP_SPRITE_H ; $57 = $1C` has two problems — `$57` is an address where a symbol exists (should be `ZP_SPRITE_H`), and `$1C` is a value being stored, not an address (should be `#$1C`). Correct form: `STA ZP_SPRITE_H ; ZP_SPRITE_H <- #$1C`. Use `<-` for the assignment direction (makes destination/source unambiguous), `#$` to prefix numeric values, and plain hex (or a symbol) for memory references. This mirrors the 6502 immediate-vs-absolute distinction `LDA #$1C` (value) vs `LDA $1C` (zero-page read) — the `#$` keeps the comment unambiguous about which is which.
 - **Numeric addresses in comments must serve a purpose beyond identification.** The rule applies to addresses of any width — 2-digit zero-page (`$5B`), 3-digit (`$1FF`), 4-digit (`$629E`). A raw `$XX…` in a comment is wrong when it is either (a) the instruction's own assembled address, which the `.lst` file already carries; or (b) the address of a symbol that exists, in which case use the symbol; or (c) a **compiled branch target**, which the programmer never knew in numeric form — use the local label or drop the address if the behavioral description is enough. Bare `; $XX…` comments that carry no other information get removed entirely. Addresses may remain in comments when they are something the reader actually needs to know in numeric form — an unlabeled address not yet RE'd (flag with a `TODO-SYM` note), a memory-region span described literally, an opcode byte value, etc.
 - **In comments, refer to indexed tables by `SYMBOL[Y]` notation, never `$XXXX,Y` or `SYMBOL,Y`.** The `,Y` form mimics the instruction syntax on the same line. Write `LDA FOO,Y ; FOO[Y] -> ptr` instead (or simply `; load pointer by frame index` if the mechanic is what matters). The `[Y]` bracket form is unambiguously prose, not asm.
-- **Code comments are ASCII-only: no LaTeX commands, no Unicode.** Noweb copies code-chunk content verbatim into the PDF via `\Tt{}`, which means `\Delta`, `\to`, `\ge`, `\S{...}` etc. render as literal backslash-text, and non-ASCII characters like `—` (em-dash), `→`, `≥`, `Δ` render as literal glyphs only if the font has them. Use ASCII equivalents: `delta`, `->`, `>=`, `<-`, `<=`, `<->`, `*`, `+/-`, `--`. LaTeX-escaped address forms like `\$XXXX` are also wrong inside code comments — write `$XXXX` (assembly syntax; dasm ignores everything after `;`). LaTeX commands *are* fine in prose/documentation chunks.
+- **Code comments are ASCII-only: no LaTeX commands, no Unicode.** The HTML weaver renders code-chunk content verbatim in a `<pre>` block, so LaTeX commands like `\Delta`, `\to`, `\ge`, `\S{...}` would show up as literal backslash-text rather than symbols. Keep comments to plain ASCII so the tangled `.asm` stays clean and portable. Use ASCII equivalents: `delta`, `->`, `>=`, `<-`, `<=`, `<->`, `*`, `+/-`, `--`. LaTeX-escaped address forms like `\$XXXX` are also wrong inside code comments — write `$XXXX` (assembly syntax; dasm ignores everything after `;`). Unicode and inline `$…$` math are fine in prose/documentation chunks — just not in code.
 - Use `; --- section name ---` headers between logical phases within a long routine.
 - Align all `;` comments to the same column within each routine.
 - Routines without `SUBROUTINE` (simple trampolines like `JMP target`) get a one-line `;` comment above instead of a full plate.
@@ -172,7 +172,7 @@ The `/annotate` skill automates these passes for an existing routine.
 - `SUBROUTINE` after each `ORG` to scope `.local` labels.
 - ORG directives must be in strictly ascending address order. Use `python .claude/skills/assemble/reorder_chunks.py` to fix.
 - Accumulator addressing: use bare `ASL`/`LSR`/`ROL`/`ROR`, not `ASL A`.
-- `HEX` directives: at most 8 bytes per line. Longer rows overflow the PDF column and wrap awkwardly. Break any hex blob into 8-byte lines; put the inline comment (if any) on the first line only.
+- `HEX` directives: at most 8 bytes per line. Longer rows wrap awkwardly in the rendered code block. Break any hex blob into 8-byte lines; put the inline comment (if any) on the first line only.
 - Use `-f3` for raw binary output (not `-f1` which adds a 2-byte header).
 - Always produce `.lst` and `.sym` files when assembling.
 - Force absolute addressing when dasm optimizes to zero-page: `DC.B $9D,$00,$00` for `STA $0000,X`.

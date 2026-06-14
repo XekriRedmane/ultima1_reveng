@@ -85,14 +85,13 @@ Before any RE work, extract the raw binary data from the `.dsk` image. This requ
 
 ### Initialize main.nw
 
-Set up the document structure:
+Set up the document structure as Markdown headings (no LaTeX preamble):
 
-```latex
-\chapter{Boot sequence}
-\chapter{Loader}          % if applicable
-\chapter{Game code}       % main game logic
-\appendix
-\chapter{...}             % reference material
+```markdown
+# Boot sequence
+# Loader          (if a second-stage loader / RWTS exists)
+# Game code       (main game logic)
+# Memory map      (reference material)
 ```
 
 Create the first assembly target (e.g., `boot1.asm`) with a defines chunk and a collection chunk.
@@ -208,7 +207,7 @@ Use the `/re-next` skill to find candidates, or pick manually based on the main 
 3. **Identify inputs, outputs, and side effects.**
 4. **Choose a descriptive name** (UPPER_SNAKE_CASE).
 5. **Write the chunk** with:
-   - Prose `\section{}` explaining the routine's purpose
+   - A Markdown section heading and prose explaining the routine's purpose
    - EQU defines for any new addresses (in a defines chunk, placed just before first use)
    - Annotated assembly with header plate, section headers, aligned comments
    - `@ %def` declaring exported symbols
@@ -358,11 +357,11 @@ priority as writing prose or annotating assembly.
 ## Standing rule: addresses in prose
 
 Applies every session, not just graphics work. Three rules for numeric
-addresses in LaTeX prose inside `main.nw`:
+addresses in Markdown prose inside `main.nw`:
 
-1. **Wrap every address in `[[ ]]`.** Never bare `\$XXXX` in prose — always
+1. **Wrap every address in `[[ ]]`.** Never bare `$XXXX` in prose — always
    `[[$XXXX]]` or `[[SYMBOL]]`. The `[[ ]]` form renders as a navigable
-   tt-styled hyperlink; raw hex does not.
+   cross-reference link; raw hex does not.
 2. **Prefer symbol over hex, and never annotate a symbol with its own
    address.** `[[SYMBOL]]`, not `[[SYMBOL]] ([[$XXXX]])` — the parenthetical
    hex adds no information. Only range appositions conveying extent
@@ -371,8 +370,8 @@ addresses in LaTeX prose inside `main.nw`:
 
 During active RE with no symbol yet, `[[$XXXX]]` is fine but flag it:
 
-```latex
-The routine reads from [[$XXXX]] % TODO-SYM: needs label
+```markdown
+The routine reads from [[$XXXX]] <!-- TODO-SYM: needs label -->
 ```
 
 When introducing a label, grep prose for the raw hex and replace with the
