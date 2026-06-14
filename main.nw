@@ -114,29 +114,16 @@ Three things live in memory at once during play:
 
 <a id="tab:memmap-arch"></a>
 
-> **TODO-CONVERT — table (→ pipe/HTML table):** The resident memory map during play. Addresses below [[OVERLAY_ENTRY]] persist across mode changes; the overlay region is reloaded on every switch.
+**Table — the resident memory map during play.** Addresses below [[OVERLAY_ENTRY]] persist across mode changes; the overlay region is reloaded on every switch.
 
-```latex
-\begin{table}[ht]
-\centering
-\caption{The resident memory map during play. Addresses below
-  [[OVERLAY_ENTRY]] persist across mode changes; the overlay region is
-  reloaded on every switch.}
-\label{tab:memmap-arch}
-\begin{tabular}{lll}
-\toprule
-Region & Contents & Lifetime \\
-\midrule
-[[$0800]]--[[$1FFF]] & \texttt{STUPH} resident library + glyph banks & whole session \\
-[[$2000]]--[[$5FFF]] & hi-res pages 1 and 2 (double-buffered display) & whole session \\
-[[$6000]]--[[$6FFF]] & decompressed current-continent map / scratch & whole session \\
-[[$7000]]--[[$89BC]] & \texttt{MI.U1} resident engine + player state & whole session \\
-[[$8956]]--$\approx$[[$B0FF]] & the current mode overlay & per mode \\
-[[$B400]]+ & town/castle live map buffer, object records & whole session \\
-\bottomrule
-\end{tabular}
-\end{table}
-```
+| Region | Contents | Lifetime |
+|---|---|---|
+| [[$0800]]–[[$1FFF]] | `STUPH` resident library + glyph banks | whole session |
+| [[$2000]]–[[$5FFF]] | hi-res pages 1 and 2 (double-buffered display) | whole session |
+| [[$6000]]–[[$6FFF]] | decompressed current-continent map / scratch | whole session |
+| [[$7000]]–[[$89BC]] | `MI.U1` resident engine + player state | whole session |
+| [[$8956]]–≈[[$B0FF]] | the current mode overlay | per mode |
+| [[$B400]]+ | town/castle live map buffer, object records | whole session |
 
 
 Figure [fig:memmap](#fig:memmap) draws the same map as address-ordered blocks, with
@@ -144,47 +131,19 @@ the one band that is reloaded on every mode switch called out.
 
 <a id="fig:memmap"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The resident memory map during play (a blocks view of Table [tab:memmap-arch](#tab:memmap-arch)). Bands are drawn in ascending address order. Every band except the mode-overlay window persists for the whole session; the overlay region (highlighted) is reloaded on each mode switch, one mode at a time, over the same addresses. The two hi-res pages share the [[$2000]]–[[$5FFF]] span for double-buffering. A port with more memory drops the overlay scheme and keeps every layer resident at once.
+<table class="memmap">
+<thead><tr><th>Address range</th><th>Resident band</th><th>Lifetime</th></tr></thead>
+<tbody>
+<tr><td>[[$0800]]–[[$1FFF]]</td><td><strong>STUPH</strong> library + glyph banks</td><td>whole session</td></tr>
+<tr><td>[[$2000]]–[[$5FFF]]</td><td>hi-res pages 1 &amp; 2 <span class="dim">(double-buffered display)</span></td><td>whole session</td></tr>
+<tr><td>[[$6000]]–[[$6FFF]]</td><td>current-continent map / scratch</td><td>whole session</td></tr>
+<tr><td>[[$7000]]–[[$89BC]]</td><td><strong>MI.U1</strong> engine + player state</td><td>whole session</td></tr>
+<tr class="hot"><td>[[$8956]]–≈[[$B0FF]]</td><td><strong>current mode overlay</strong> <span class="dim">OUT / DNG / TWN / CAS / SPA / GEN / TM</span></td><td><strong>reloaded every mode switch</strong></td></tr>
+<tr><td>[[$B400]]+</td><td>town/castle live map buffer, object records</td><td>whole session</td></tr>
+</tbody>
+</table>
 
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth]
-  \def\bw{52mm}
-  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=10mm] (stuph)
-        {[[$0800]]--[[$1FFF]]\quad \textbf{STUPH} library + glyph banks};
-  \node[dgmemblock, fill=dgproc, minimum width=\bw, minimum height=12mm, below=0pt of stuph] (hgr)
-        {[[$2000]]--[[$5FFF]]\quad hi-res pages 1 \& 2\\\scriptsize (double-buffered display)};
-  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=8mm, below=0pt of hgr] (map)
-        {[[$6000]]--[[$6FFF]]\quad current-continent map / scratch};
-  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=11mm, below=0pt of map] (engine)
-        {[[$7000]]--[[$89BC]]\quad \textbf{MI.U1} engine + player state};
-  \node[dgmemblock, fill=dgio, minimum width=\bw, minimum height=12mm, below=0pt of engine] (ov)
-        {[[$8956]]--$\approx$[[$B0FF]]\quad \textbf{current mode overlay}\\\scriptsize OUT / DNG / TWN / CAS / SPA / GEN / TM};
-  \node[dgmemblock, fill=dgmem, minimum width=\bw, minimum height=10mm, below=0pt of ov] (buf)
-        {[[$B400]]+\quad town/castle live map buffer,\\\scriptsize object records};
-
-  % lifetime brace on the right: the overlay band is the one reloaded band
-  \draw[dgaccentedge, decorate, decoration={brace, amplitude=5pt}]
-        ($(ov.north east)+(3mm,0)$) -- ($(ov.south east)+(3mm,0)$);
-  \node[dgnote, right=7mm of ov, text width=26mm, anchor=west]
-        {reloaded every mode switch};
-  % whole-session brace spanning the persistent bands
-  \draw[dgline, decorate, decoration={brace, amplitude=5pt}]
-        ($(buf.south west)+(-3mm,0)$) -- ($(stuph.north west)+(-3mm,0)$);
-  \node[dgnote, left=7mm of map, text width=24mm, anchor=east, align=right]
-        {persist the whole session (except the overlay band)};
-\end{tikzpicture}
-\caption{The resident memory map during play (a blocks view of
-  Table~\ref{tab:memmap-arch}). Bands are drawn in ascending address order.
-  Every band except the mode-overlay window persists for the whole session;
-  the overlay region (highlighted) is reloaded on each mode switch, one
-  mode at a time, over the same addresses. The two hi-res pages share the
-  [[$2000]]--[[$5FFF]] span for double-buffering. A port with more memory
-  drops the overlay scheme and keeps every layer resident at once.}
-\label{fig:memmap}
-\end{figure}
-```
+**Figure — the resident memory map as address-ordered bands** (a blocks view of the table above). Every band except the mode-overlay window (highlighted) persists for the whole session; the overlay region is reloaded on each mode switch, one mode at a time, over the same addresses. The two hi-res pages share the [[$2000]]–[[$5FFF]] span for double-buffering. A port with more memory drops the overlay scheme and keeps every layer resident at once.
 
 
 Figure [fig:layers](#fig:layers) draws these three layers and, just as important,
@@ -192,44 +151,21 @@ the *direction* of the calls between them.
 
 <a id="fig:layers"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The three resident layers and the direction of control. Each layer calls only *downward*: an overlay calls into the engine, and both the overlay and the engine reach the library only through the 34-entry jump-vector table at [[$1583]] (so the library's internals can move without re-assembling a caller). The engine never calls *out* to a specific overlay; the sole upward transfer is [[GAME_LOAD]]'s single [[JMP]] to the fixed entry point [[OVERLAY_ENTRY]] (highlighted), which is why the engine needs no compile-time knowledge of any mode. A port collapses the layers into modules behind this fixed API.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth]
-  % three layers as stacked bands, plus a thin vector-table band
-  \node[dgmode, minimum width=86mm, minimum height=12mm] (overlay)
-        {\textbf{current mode overlay}\ \ \scriptsize one of GEN OUT DNG TWN CAS SPA TM\\\scriptsize main loop, command handlers, mode-specific rendering};
-  \node[dgmode, minimum width=86mm, minimum height=12mm, below=8mm of overlay] (engine)
-        {\textbf{MI.U1 engine} (resident)\\\scriptsize player state, string tables, text/window, turn economy, GAME\_LOAD};
-  \node[dgmemblock, fill=dgio, minimum width=86mm, minimum height=8mm, below=8mm of engine] (vec)
-        {jump-vector table --- 34 fixed [[JMP]]s at [[$1583]] (a stable API)};
-  \node[dgmode, minimum width=86mm, minimum height=12mm, below=6mm of vec] (stuph)
-        {\textbf{STUPH library} (resident)\\\scriptsize glyph banks, hi-res blitter, double-buffer, keys, sound, RNG, file loader};
-
-  % downward calls (left side): overlay -> engine, and both -> vector band
-  \draw[->] ($(overlay.south)+(-30mm,0)$) -- node[dgnote,left]{calls into} ($(engine.north)+(-30mm,0)$);
-  \draw[->] ($(overlay.east)+(0,0)$) to[bend left=20]
-        node[dgnote,right,pos=0.5]{via vectors} (vec.east);
-  \draw[->] ($(engine.south)+(20mm,0)$) -- ($(vec.north)+(20mm,0)$);
-  \draw[->] (vec.south) -- node[dgnote,right]{dispatch} (stuph.north);
-  % the one UPWARD transfer: GAME_LOAD jumps to the overlay entry point
-  \draw[dgaccentedge, ->] (engine.west) to[bend right=42]
-        node[dgnote,left,pos=0.5]{GAME\_LOAD:\\JMP OVERLAY\_ENTRY} (overlay.west);
-\end{tikzpicture}
-\caption{The three resident layers and the direction of control. Each
-  layer calls only \emph{downward}: an overlay calls into the engine, and
-  both the overlay and the engine reach the library only through the
-  34-entry jump-vector table at [[$1583]] (so the library's internals can
-  move without re-assembling a caller). The engine never calls \emph{out}
-  to a specific overlay; the sole upward transfer is [[GAME_LOAD]]'s single
-  [[JMP]] to the fixed entry point [[OVERLAY_ENTRY]] (highlighted), which is
-  why the engine needs no compile-time knowledge of any mode. A port
-  collapses the layers into modules behind this fixed API.}
-\label{fig:layers}
-\end{figure}
+```mermaid
+flowchart TB
+  overlay["Current mode overlay (GEN OUT DNG TWN CAS SPA TM)<br/>main loop · command handlers · mode-specific rendering"]
+  engine["MI.U1 engine (resident)<br/>player state · string tables · text/window · turn economy · GAME_LOAD"]
+  vec["Jump-vector table — 34 fixed JMPs at $1583 (a stable API)"]
+  stuph["STUPH library (resident)<br/>glyph banks · blitter · double-buffer · keys · sound · RNG · file loader"]
+  overlay -->|calls into| engine
+  overlay -->|via vectors| vec
+  engine -->|via vectors| vec
+  vec -->|dispatch| stuph
+  engine -.->|"GAME_LOAD: JMP OVERLAY_ENTRY"| overlay
+  linkStyle 4 stroke:#b03a2e,stroke-width:2px,color:#b03a2e
 ```
+
+**Figure — the three resident layers and the direction of control.** Each layer calls only *downward*: an overlay calls into the engine, and both the overlay and the engine reach the library only through the 34-entry jump-vector table at [[$1583]] (so the library's internals can move without re-assembling a caller). The engine never calls *out* to a specific overlay; the sole upward transfer is [[GAME_LOAD]]'s single [[JMP]] to the fixed entry point [[OVERLAY_ENTRY]] (highlighted), which is why the engine needs no compile-time knowledge of any mode. A port collapses the layers into modules behind this fixed API.
 
 
 A porter does not need this address map — on a machine with enough
@@ -261,46 +197,23 @@ one mode overlay) is resident and the [[GAME_LOAD]] loop takes over.
 
 <a id="fig:bootflow"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The cold-start load chain. Each loader is more game-specific than the last and hands control to the next; the early stages (boot block, `MAKE.INDATA`) are discarded once their job is done. Steady state is the resident library + engine + one overlay, driven by the [[GAME_LOAD]] mode loop (figure [fig:mode-fsm](#fig:mode-fsm)). Load addresses are the documented memory-layout exception to the symbol rule.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 14mm]
-  \node[dgterminal] (prom) {Disk II PROM};
-  \node[dgprocess, below=of prom] (boot) {boot block\\\scriptsize loaded at \$0800};
-  \node[dgprocess, below=of boot] (prodos)
-        {ProDOS kernel\\\scriptsize loaded at \$2000 (external dep.)};
-  \node[dgprocess, below=of prodos] (sys)
-        {U1.SYSTEM\\\scriptsize installs the resident file library};
-  \node[dgprocess, below=of sys] (mid)
-        {MAKE.INDATA\\\scriptsize builds 2 title screens, then discarded};
-  \node[dgprocess, below=of mid] (intro)
-        {U1.INTRO\\\scriptsize animates title; waits for a key};
-  \node[dgio, right=18mm of intro] (key) {keypress};
-  \node[dgprocess, below=of intro] (engine)
-        {load MI.U1 engine + first overlay};
-  \node[dgmode, below=of engine, dgaccentnode] (loop)
-        {play: the GAME\_LOAD\\mode loop};
-
-  \draw[->] (prom) -- node[dgnote,right]{loads + jumps} (boot);
-  \draw[->] (boot) -- node[dgnote,right]{finds PRODOS} (prodos);
-  \draw[->] (prodos) -- node[dgnote,right]{runs first .SYSTEM} (sys);
-  \draw[->] (sys) -- node[dgnote,right]{chains} (mid);
-  \draw[->] (mid) -- node[dgnote,right]{chains} (intro);
-  \draw[->] (key) -- (intro);
-  \draw[->] (intro) -- node[dgnote,right]{on key} (engine);
-  \draw[->, dgaccentedge] (engine) -- (loop);
-\end{tikzpicture}
-\caption{The cold-start load chain. Each loader is more game-specific than
-  the last and hands control to the next; the early stages (boot block,
-  \texttt{MAKE.INDATA}) are discarded once their job is done. Steady state
-  is the resident library + engine + one overlay, driven by the
-  [[GAME_LOAD]] mode loop (figure~\ref{fig:mode-fsm}). Load addresses are
-  the documented memory-layout exception to the symbol rule.}
-\label{fig:bootflow}
-\end{figure}
+```mermaid
+flowchart TB
+  prom(["Disk II PROM"]) -->|loads + jumps| boot["boot block<br/>loaded at $0800"]
+  boot -->|finds PRODOS| prodos["ProDOS kernel<br/>loaded at $2000 (external dep.)"]
+  prodos -->|runs first .SYSTEM| sys["U1.SYSTEM<br/>installs the resident file library"]
+  sys -->|chains| mid["MAKE.INDATA<br/>builds 2 title screens, then discarded"]
+  mid -->|chains| intro["U1.INTRO<br/>animates title; waits for a key"]
+  key[/"keypress"/] --> intro
+  intro -->|on key| engine["load MI.U1 engine + first overlay"]
+  engine --> loop(["play: the GAME_LOAD mode loop"])
+  classDef gone stroke-dasharray:4 3,color:#7c6f57;
+  classDef win fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class boot,mid gone;
+  class loop win;
 ```
+
+**Figure — the cold-start load chain.** Each loader is more game-specific than the last and hands control to the next; the early stages (boot block, `MAKE.INDATA`, dashed) are discarded once their job is done. Steady state is the resident library + engine + one overlay, driven by the [[GAME_LOAD]] mode loop (see [the mode state machine](#fig:mode-fsm)). Load addresses are the documented memory-layout exception to the symbol rule.
 
 
 From there, **every mode change goes through one routine**,
@@ -333,55 +246,23 @@ key — the subject of section [sec:winfsm](#sec:winfsm).
 
 <a id="fig:mode-fsm"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The game as a seven-state machine over the overlays. Every transition is one [[GAME_LOAD]] call (it never returns; it abandons the old mode's stack). `GEN` is the start state and `OUT` the hub; solid arrows are terrain/menu transitions, dashed arrows the death-to-[[RESPAWN]] path, and the single highlighted arrow is the flag-gated win path to the endgame.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=11mm and 17mm]
-  % start
-  \node[dgterminal] (gen) {GEN\\\scriptsize chargen};
-  % the hub
-  \node[dgmode, right=22mm of gen] (out) {OUT\\\scriptsize outdoors};
-  % satellites of OUT
-  \node[dgmode, above right=8mm and 16mm of out] (twn) {TWN\\\scriptsize town};
-  \node[dgmode, right=of out] (cas) {CAS\\\scriptsize castle};
-  \node[dgmode, below right=8mm and 16mm of out] (dng) {DNG\\\scriptsize dungeon};
-  \node[dgmode, below=14mm of out] (spa) {SPA\\\scriptsize space};
-  % endgame
-  \node[dgmode, dgaccentnode, right=18mm of cas] (tm) {TM\\\scriptsize endgame};
-
-  % GEN -> OUT (new game / continue)
-  \draw[->] (gen) -- node[dgnote, above, align=center]{new game\\/ continue} (out);
-
-  % OUT <-> satellites (enter via terrain tile; leave back to OUT)
-  \draw[->] (out) to[bend left=12] node[dgnote, above, sloped]{enter} (twn);
-  \draw[->] (twn) to[bend left=12] node[dgnote, below, sloped]{X-it} (out);
-  \draw[->] (out) to[bend left=8]  node[dgnote, above]{enter} (cas);
-  \draw[->] (cas) to[bend left=8]  node[dgnote, below]{X-it} (out);
-  \draw[->] (out) to[bend right=12] node[dgnote, below, sloped]{descend} (dng);
-  \draw[->] (dng) to[bend right=12] node[dgnote, above, sloped]{climb out} (out);
-  \draw[->] (out) to[bend right=10] node[dgnote, left]{lift off} (spa);
-  \draw[->] (spa) to[bend right=10] node[dgnote, right]{land} (out);
-
-  % the win path (accent)
-  \draw[->, dgaccentedge] (cas) -- node[dgnote, above, text=dgaccent,
-        align=center]{endgame flag\\(TM\_REVEAL)} (tm);
-
-  % death funnels back to OUT via RESPAWN (dashed, from the danger modes)
-  \draw[->, dashed] (dng.south) to[bend left=22]
-        node[dgnote, below, pos=0.4]{death = RESPAWN} (out.south east);
-  \draw[->, dashed] (spa.west) to[bend right=30] (out.south west);
-\end{tikzpicture}
-\caption{The game as a seven-state machine over the overlays. Every
-  transition is one [[GAME_LOAD]] call (it never returns; it abandons the
-  old mode's stack). \texttt{GEN} is the start state and \texttt{OUT} the
-  hub; solid arrows are terrain/menu transitions, dashed arrows the
-  death-to-[[RESPAWN]] path, and the single highlighted arrow is the
-  flag-gated win path to the endgame.}
-\label{fig:mode-fsm}
-\end{figure}
+```mermaid
+flowchart LR
+  gen(["GEN<br/>chargen"]) -->|new game / continue| out
+  out{{"OUT<br/>outdoors"}}
+  out <-->|enter / exit| twn["TWN<br/>town"]
+  out <-->|enter / exit| cas["CAS<br/>castle"]
+  out <-->|descend / climb out| dng["DNG<br/>dungeon"]
+  out <-->|lift off / land| spa["SPA<br/>space"]
+  cas -->|endgame flag TM_REVEAL| tm["TM<br/>endgame"]
+  dng -.->|death = RESPAWN| out
+  spa -.->|death = RESPAWN| out
+  classDef win fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class tm win;
+  linkStyle 5 stroke:#b03a2e,stroke-width:2px,color:#b03a2e
 ```
+
+**Figure — the game as a seven-state machine over the overlays.** Every transition is one [[GAME_LOAD]] call (it never returns; it abandons the old mode's stack). `GEN` is the start state and `OUT` the hub; solid arrows are terrain/menu transitions, dashed arrows the death-to-[[RESPAWN]] path, and the single highlighted arrow is the flag-gated win path to the endgame.
 
 
 ## The anatomy of a mode

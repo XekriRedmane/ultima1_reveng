@@ -86,6 +86,11 @@ main th, main td { border: 1px solid var(--line); padding: .35rem .7rem; text-al
 main thead th { background: var(--panel); }
 table.layout td code { background: none; }
 .addr { background: var(--code-bg); border-radius: 4px; padding: 0 .25rem; color: var(--muted); }
+/* memory-band table (memory-map figures) */
+table.memmap td:first-child { font-family: "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; }
+table.memmap tr.hot td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+table.memmap tr.hot td:first-child { border-left: 3px solid var(--accent); }
+.dim { color: var(--muted); font-size: .85em; }
 blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding: .2rem 1rem; color: var(--muted); }
 pre.verbatim { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
   padding: .8rem 1rem; overflow: auto; font-size: .88rem; }
