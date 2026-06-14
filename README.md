@@ -117,10 +117,3 @@ image, reverse engineered the boot chain, loader, engine, overlays, and data,
 rendered the graphics, and wrote platform-independent design chapters —
 committing after every verified round. The process and conventions are
 documented in `reveng.md` and `CLAUDE.md`.
-
-## Legal
-
-This repository contains original analysis, annotations, and prose. It does
-**not** redistribute the game; reproducing the work requires a legally obtained
-copy of the disk image. *Ultima* is a trademark of its respective rights
-holders; this is an independent preservation and educational study.
