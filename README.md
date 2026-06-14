@@ -1,91 +1,117 @@
-# Apple II Reverse-Engineering Template
+# Ultima I — Reverse Engineering
 
-A template repository for autonomously reverse engineering an Apple II game from a `.dsk` disk image into a literate-programming document (`main.nw`) that:
+A complete, byte-perfect reverse engineering of **Ultima I: The First Age of
+Darkness** (Origin Systems, 1986) — the all-assembly remake of Richard
+Garriott's 1981 *Ultima* — for the Apple II, recovered from its `.dsk` disk
+image into a literate-programming document that:
 
-- assembles to **byte-perfect** copies of the original binaries,
-- explains how the game works in enough detail to **reproduce or port it in any language, on any platform**, and
-- weaves into a cross-referenced, searchable **HTML site** with Mermaid diagrams and rendered sprites, fonts, and figures.
+- assembles to **byte-perfect** copies of every original binary,
+- explains how the game works in enough detail to **reproduce or port it in any
+  language, on any platform**, and
+- weaves into a cross-referenced, searchable **HTML site** with Mermaid
+  diagrams and rendered sprites, fonts, and screens.
 
-The work is done by Claude Code running the `reverse-engineer` agent, which operates continuously and unattended: it bootstraps reference binaries from the disk image, reverse engineers the boot chain, loader, game code, and data, renders graphics, writes platform-independent design chapters, and commits/pushes after every verified round.
+## 📖 Read it online
 
-## Quick start
+**→ [xekriredmane.github.io/ultima1_reveng](https://xekriredmane.github.io/ultima1_reveng/)**
 
-1. **Create a new repository from this template** (GitHub: "Use this template"), clone it.
-2. **Add the disk image**: copy your game's `.dsk` into the repo root and commit.
-3. **Configure the container**: create a `.env` file next to `docker-compose.yml`:
+The site is the primary output: a three-pane, searchable rendering of the
+annotated 6502 assembly alongside platform-independent design chapters for
+porters. It is rebuilt and republished automatically from `main.nw` on every
+push to `main` (see `.github/workflows/pages.yml`).
 
-   ```
-   GIT_USER_NAME=Your Name
-   GIT_USER_EMAIL=you@example.com
-   ```
+## The subject
 
-   **Authentication** — pick one:
+The game is the 4am crack preservation release: a ProDOS 1.1.1 volume named
+`/U1` containing the unmodified game files. The player explores Sosaria across
+six play modes — outdoors, towns, castles, 3-D dungeons, space flight, and the
+time-machine endgame — each implemented as a separate overlay loaded at
+`$8956` over a memory-resident engine (`MI.U1` at `$7000`).
 
-   - **Subscription (Pro/Max):** leave `ANTHROPIC_API_KEY` unset. The first time
-     you start the container, run `claude` (not `yolo`), complete the browser
-     login it prompts for, then exit. The credentials are written to the
-     persistent state dir (`CLAUDE_STATE_DIR`, symlinked to `~/.claude.json`
-     inside the container), so you only log in once — later sessions and the
-     `yolo` autonomous mode reuse it.
-   - **API key:** add `ANTHROPIC_API_KEY=sk-ant-...` to the `.env` file. This
-     uses metered API billing, which is **separate from and billed independently
-     of a subscription** — long autonomous runs can get expensive this way.
+| | |
+|---|---|
+| Title | Ultima I: The First Age of Darkness |
+| Publisher | Origin Systems, 1986 (remake of California Pacific's 1981 *Ultima*) |
+| Platform | Apple II |
+| Disk | 4am crack — DOS-order `.dsk`, ProDOS 1.1.1 volume `/U1` |
+| Code | Entirely 6502 assembly |
 
-   SSH keys for `git push` are mounted read-only from `~/.ssh` (see `docker-compose.yml`).
-4. **Build and enter the container**:
+## Assembly targets
 
-   ```bash
-   docker compose build
-   docker compose run --rm re
-   ```
+16 targets, one per ProDOS file (plus the boot block); every one assembles to
+a byte-perfect match against the reference binary extracted from the disk.
 
-5. **Start the agent** — inside the container:
+| Target | Base | Bytes | Contents |
+|---|---|---|---|
+| `boot1` | `$0800` | 512 | ProDOS boot block |
+| `u1system` | `$2000` | 1682 | `U1.SYSTEM` — launcher |
+| `u1intro` | `$0800` | 2469 | `U1.INTRO` — title and main menu |
+| `miu1` | `$7000` | 6589 | `MI.U1` — resident engine |
+| `out` | `$8956` | 5230 | outdoors overlay |
+| `twn` | `$8956` | 8461 | town overlay |
+| `cas` | `$8956` | 5524 | castle overlay |
+| `dng` | `$8956` | 10051 | dungeon overlay |
+| `spa` | `$8956` | 9930 | space overlay |
+| `gen` | `$8956` | 8932 | character generation overlay |
+| `tm` | `$8956` | 8123 | time machine (endgame) overlay |
+| `makeindata` | `$1E00` | 13877 | initial game-state builder |
+| `mapchars` | `$0800` | 1024 | town/castle glyph bank |
+| `tcmaps` | `$4000` | 7660 | town/castle map data |
+| `nif` | `$4000` | 7680 | hi-res image data |
+| `stuph` | `$0800` | 6144 | resident low-memory library: fonts, tiles, blitters, keyboard, sound, RNG |
 
-   ```bash
-   yolo        # alias for: claude --dangerously-skip-permissions
-   ```
+The ProDOS 1.1.1 kernel is byte-identical to Apple's 18-SEP-84 release; it is
+extracted for inspection but treated as an external dependency, not an RE
+target.
 
-   then tell it:
+## How it's built
 
-   > Start reverse engineering the disk image. Work autonomously until done.
+`main.nw` is the single source of truth — Markdown documentation interleaved
+with 6502 assembly code chunks in noweb format. Two backends consume it:
 
-   The agent reads `reveng.md` (the process), `CLAUDE.md` (the conventions), and `TODO.md` (the loop state), and goes. Sessions are resumable: a fresh session picks up from the `/re-status` scoreboard and `TODO.md`.
+```bash
+# Tangle the literate source to .asm, assemble, and verify byte-for-byte
+python3 weave.py main.nw output
+cd output && dasm NAME.asm -f3 -oNAME.bin -lNAME.lst -sNAME.sym
+python3 .claude/skills/assemble/verify.py        # all 16 targets
 
-## What's in the box
+# Weave the human-readable HTML site into output_site/
+python3 weave_html.py main.nw output_site
+```
+
+The HTML site needs only Python plus `mistune` (`pip install mistune absl-py`);
+KaTeX, Mermaid, and MiniSearch load from a CDN, so the published site is
+self-contained static HTML. `weave.py` is the byte-perfect tangler and
+chunk-graph engine; `weave_html.py` reuses it unchanged and replaces only the
+output backend.
+
+## Repository layout
 
 | Path | Purpose |
 |---|---|
-| `reveng.md` | The process bible: rounds, standing rules, autonomy protocol, definition of done |
-| `CLAUDE.md` | Conventions: assembly style, chunk rules, annotation rules, prose rules, pitfalls |
-| `main.nw` | Skeleton literate document (the agent fills it in) |
+| `main.nw` | The literate document — the single source of truth |
 | `weave.py` | Noweb tangler and chunk-graph engine (byte-perfect `.asm`) |
 | `weave_html.py`, `web/` | HTML weaver and its CSS/JS assets |
-| `targets.json.example` | Example project manifest (the real one is created during bootstrap) |
-| `.claude/agents/reverse-engineer.md` | The autonomous driver agent |
-| `.claude/skills/bootstrap/` | Round 0: disk image → reference binaries + manifest (`dsk_tool.py`) |
-| `.claude/skills/re-status/` | Scoreboard of every completion criterion |
-| `.claude/skills/assemble/` | Tangle + assemble + byte-perfect verification |
-| `.claude/skills/disassemble/`, `re-next/`, `find-gaps/`, `trace-address/` | The RE loop |
-| `.claude/skills/annotate/`, `chunk-placement/` | Documentation quality passes |
-| `.claude/skills/synthesize/` | Platform-independent design chapters for porters |
-| `.claude/skills/gen-html/` | HTML site build |
-| `.claude/scripts/dasm6502.py` | 6502 disassembler for reference binaries |
-| `.claude/scripts/render_hires.py` | Apple II hi-res graphics rendering library (PNG output) |
-| `Dockerfile`, `docker-compose.yml` | Agent container: Claude Code, dasm, Python (Pillow, absl-py, mistune), gh |
+| `targets.json` | Project manifest: game, disk image, sector order, assembly targets |
+| `reference/` | Flat binaries extracted from the disk image (the ground truth) |
+| `images/` | Rendered sprites, fonts, and screens, embedded in the document |
+| `reveng.md` | The RE process: rounds, standing rules, definition of done |
+| `CLAUDE.md` | Conventions: assembly style, chunk rules, annotation and prose rules |
+| `.claude/skills/`, `.claude/scripts/` | The RE toolchain (assemble, disassemble, render, status) |
+| `output/`, `output_site/` | Build artifacts — tangled `.asm`/`.bin` and the woven site (gitignored) |
 
-## Layout produced by a run
+## Method
 
-- `targets.json` — project manifest: game, disk image, sector order, assembly targets
-- `reference/` — flat binaries extracted from the disk image (the ground truth)
-- `maps/` — track/sector→page map files that make `reference/` reproducible
-- `output/` — tangled `.asm`, assembled `.bin`/`.lst`/`.sym` (gitignored)
-- `output_site/` — the woven HTML site (gitignored)
-- `images/` — rendered sprites, fonts, and screens, embedded in the document
-- `TODO.md` — the loop state: milestones, work queue, blocked list
+The work was carried out with Claude Code running an autonomous
+`reverse-engineer` agent: it bootstrapped reference binaries from the disk
+image, reverse engineered the boot chain, loader, engine, overlays, and data,
+rendered the graphics, and wrote platform-independent design chapters —
+committing after every verified round. The process and conventions are
+documented in `reveng.md` and `CLAUDE.md`.
 
-## Requirements
+## Legal
 
-- Docker (the container brings Claude Code, dasm, and Python deps)
-- A Claude Code login: either a Pro/Max **subscription** (log in once inside the
-  container) or an **Anthropic API key** (metered, billed separately) — see step 3
-- The legal right to reverse engineer the disk image you supply
+This repository contains original analysis, annotations, and prose. It does
+**not** redistribute the game; reproducing the work requires a legally obtained
+copy of the disk image. *Ultima* is a trademark of its respective rights
+holders; this is an independent preservation and educational study.
