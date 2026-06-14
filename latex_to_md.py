@@ -205,12 +205,25 @@ def convert_list(lines, i, depth=0):
         if mi:
             flush()
             rest = mi.group(1)
-            if desc:
-                md = re.match(r"\[(.*)\]\s*(.*)$", rest)
-                if md:
-                    prefix, raw = f"{indent}- **{inline(md.group(1))}**", md.group(2)
+            if desc and rest.startswith("["):
+                # Find the ] matching \item[ by bracket depth, so [[ ]] inside
+                # the term or the body never confuses the term/body split.
+                depth, end = 0, -1
+                for idx, ch in enumerate(rest):
+                    if ch == "[":
+                        depth += 1
+                    elif ch == "]":
+                        depth -= 1
+                        if depth == 0:
+                            end = idx
+                            break
+                if end >= 0:
+                    prefix = f"{indent}- **{inline(rest[1:end])}**"
+                    raw = rest[end + 1:].lstrip()
                 else:
                     prefix, raw = f"{indent}- ", rest
+            elif desc:
+                prefix, raw = f"{indent}- ", rest
             else:
                 prefix, raw = f"{indent}{'1.' if ordered else '-'} ", rest
             j += 1

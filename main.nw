@@ -575,48 +575,39 @@ this order interoperates with the original.
 
 <a id="fig:playerblock"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The player block as a byte-layout map — the byte image of `/U1.PLAYER`, abbreviated past the fixed header through the vitals (object records follow). Row height tracks byte span; offsets are at the left, sizes at the right. Saving the game is one block-write of these bytes, so this layout *is* the save format. Quantities are 16-bit little-endian binary; only [[MOVE_CNT]] and [[FOOD_FRAC]] are BCD.
+<table class="bytefield">
+<thead><tr><th>Offset</th><th>Bytes</th><th>Field</th></tr></thead>
+<tbody>
+<tr><td>0–1</td><td>2</td><td>length = <code>0x01CA</code></td></tr>
+<tr><td>2–7</td><td>6</td><td>continent, audio, OUT x/y</td></tr>
+<tr><td>8–11</td><td>4</td><td>[[OWNED_GEMS]] [4]</td></tr>
+<tr><td>12–15</td><td>4</td><td>readied spell / weapon / armour / transport</td></tr>
+<tr><td>16–21</td><td>6</td><td>[[OWNED_ARMOUR]] [6]</td></tr>
+<tr><td>22–37</td><td>16</td><td>[[OWNED_WEAPONS]] [16]</td></tr>
+<tr><td>38–48</td><td>11</td><td>[[OWNED_SPELLS]] [11]</td></tr>
+<tr><td>49–59</td><td>11</td><td>[[OWNED_TRANSPORT]] [11]</td></tr>
+<tr><td>60–67</td><td>8</td><td>[[QUEST_FLAGS]] [8]</td></tr>
+<tr><td>68–73</td><td>6</td><td>[[COURT_CELLS]], [[TM_REVEAL]], vessels, sex</td></tr>
+<tr><td>74–87</td><td>14</td><td>[[PLR_NAME]] [14]</td></tr>
+<tr><td>88–89</td><td>2</td><td>[[PLR_HITS]]</td></tr>
+<tr><td>90–101</td><td>12</td><td>attributes STR / AGI / STA / CHA / WIS / INT</td></tr>
+<tr><td>102–107</td><td>6</td><td>[[PLR_COIN]], [[PLR_RACE]], [[PLR_CLASS]]</td></tr>
+<tr><td>108–118</td><td>11</td><td>[[MOVE_CNT]] [10] + [[FOOD_FRAC]] (BCD)</td></tr>
+<tr><td>119–122</td><td>4</td><td>[[PLR_FOOD]], [[PLR_EXP]]</td></tr>
+<tr><td>123–128</td><td>6</td><td>reserved, [[PLR_PLACE]], [[PLR_LASTMARK]]</td></tr>
+</tbody>
+</table>
 
-```latex
-\begin{figure}[ht]
-\centering
-\begin{dgrecord}
-  \dgfield{2}{length = 0x01CA}{0}{1}
-  \dgfield{6}{continent, audio, OUT x/y}{2}{7}
-  \dgfield{4}{OWNED\_GEMS [4]}{8}{11}
-  \dgfield{4}{readied spell/weapon/armour/transport}{12}{15}
-  \dgfield{6}{OWNED\_ARMOUR [6]}{16}{21}
-  \dgfield{16}{OWNED\_WEAPONS [16]}{22}{37}
-  \dgfield{11}{OWNED\_SPELLS [11]}{38}{48}
-  \dgfield{11}{OWNED\_TRANSPORT [11]}{49}{59}
-  \dgfield{8}{QUEST\_FLAGS [8]}{60}{67}
-  \dgfield{6}{COURT\_CELLS, TM\_REVEAL, vessels, sex}{68}{73}
-  \dgfield{14}{PLR\_NAME [14]}{74}{87}
-  \dgfield{2}{PLR\_HITS}{88}{89}
-  \dgfield{12}{attributes STR/AGI/STA/CHA/WIS/INT}{90}{101}
-  \dgfield{6}{PLR\_COIN, PLR\_RACE, PLR\_CLASS}{102}{107}
-  \dgfield{11}{MOVE\_CNT [10] + FOOD\_FRAC (BCD)}{108}{118}
-  \dgfield{4}{PLR\_FOOD, PLR\_EXP}{119}{122}
-  \dgfield{6}{reserved, PLR\_PLACE, PLR\_LASTMARK}{123}{128}
-\end{dgrecord}
-\caption{The player block as a byte-layout map --- the byte image of
-  \texttt{/U1.PLAYER}, abbreviated past the fixed header through the vitals
-  (object records follow). Row height tracks byte span; offsets are at the
-  left, sizes at the right. Saving the game is one block-write of these
-  bytes, so this layout \emph{is} the save format. Quantities are 16-bit
-  little-endian binary; only [[MOVE_CNT]] and [[FOOD_FRAC]] are BCD.}
-\label{fig:playerblock}
-\end{figure}
-```
+**Figure — the player block as a byte-layout map** — the byte image of `/U1.PLAYER`, abbreviated past the fixed header through the vitals (object records follow). Saving the game is one block-write of these bytes, so this layout *is* the save format. Quantities are 16-bit little-endian binary; only [[MOVE_CNT]] and [[FOOD_FRAC]] are BCD.
 
 
  Field notes and invariants:
 
-- **The six attributes] live at [[PLR_HITS]** — +2 as 16-bit words in the fixed order Strength, Agility, Stamina, Charisma, Wisdom, Intelligence. Character generation (chapter [ch:gen](#ch:gen)) seeds them from a 30-point pool with a floor of 10 and a ceiling of 25, then adds race and class bonuses. Charisma drives shop prices; the others gate class abilities and combat.
+- **The six attributes** — live at [[PLR_HITS]]+2 as 16-bit words in the fixed order Strength, Agility, Stamina, Charisma, Wisdom, Intelligence. Character generation (chapter [ch:gen](#ch:gen)) seeds them from a 30-point pool with a floor of 10 and a ceiling of 25, then adds race and class bonuses. Charisma drives shop prices; the others gate class abilities and combat.
 - **The owned-item arrays** — are *counts*, not booleans: index $i$ holds how many of item $i$ the player has. Index 0 of each is the "empty" choice (hands / skin / no spell) and is always available. Buying increments, using or selling decrements. The readied-item fields index into these arrays.
-- **Experience determines level** — — the displayed level is $\lfloor \mathit{experience} / 1000 \rfloor + 1$, recomputed on every stats draw; level is not stored.
+- **Experience determines level** — the displayed level is $\lfloor \mathit{experience} / 1000 \rfloor + 1$, recomputed on every stats draw; level is not stored.
 - **The coin purse is one number** — shown three ways: the inventory screen splits the single [[PLR_COIN]] value into pence (ones), silver (tens), and gold (hundreds-and-up) for display only.
-- **continent_bits] is [[PLR_CONT]** — shifted into the top two bits, precomputed once so the object-record code can tag and test coordinates with a mask instead of a shift (see the next section).
+- **continent_bits** — is [[PLR_CONT]] shifted into the top two bits, precomputed once so the object-record code can tag and test coordinates with a mask instead of a shift (see the next section).
 
 
 ## The object records: the mutable world
@@ -649,46 +640,25 @@ layout is transposed from the C-struct intuition.
 
 <a id="fig:soa"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The 80-slot object table as a structure of arrays. Each named field is its own array; one logical object is a column at a common slot index (highlighted slot $k$). [[OBJ_COUNT]] gives the live slot count, [[OBJ_YC]] folds the continent into its top two bits, and [[OBJ_HP]] lives in unsaved RAM. Towns and castles use the same shape with 16 slots.
+<table class="soa">
+<thead><tr><th>Array (one per field, [80])</th><th>Stores, at slot index <em>k</em></th></tr></thead>
+<tbody>
+<tr><td>[[OBJ_X]]</td><td>world column (x)</td></tr>
+<tr><td>[[OBJ_YC]]</td><td>world row in the low 6 bits · continent in the top 2 bits</td></tr>
+<tr><td>[[OBJ_TILE]]</td><td>the cell glyph drawn for the object</td></tr>
+<tr><td>[[OBJ_UNDER]]</td><td>terrain cell hidden beneath the object</td></tr>
+<tr><td>[[OBJ_HP]]</td><td>hit points (in unsaved RAM)</td></tr>
+</tbody>
+</table>
 
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, node distance=0pt, font=\footnotesize]
-  \def\cw{17mm}
-  \foreach \name/\i in {OBJ\_X/0, OBJ\_YC/1, OBJ\_TILE/2, OBJ\_UNDER/3, OBJ\_HP/4} {
-    % header
-    \node[dgmemblock, fill=dgproc, minimum width=\cw, minimum height=6mm,
-          font=\scriptsize\ttfamily] (h\i) at (\i*\cw,0) {\name};
-    % slots 0..2, k, .., 79  (show a few + the highlighted k + ellipsis)
-    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (a\i) at (\i*\cw,-6mm) {[0]};
-    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (b\i) at (\i*\cw,-11mm) {[1]};
-    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (c\i) at (\i*\cw,-16mm) {\vdots};
-    \node[dgmemblock, fill=dgdeci, minimum width=\cw, minimum height=5mm] (k\i) at (\i*\cw,-21mm) {[k]};
-    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (d\i) at (\i*\cw,-26mm) {\vdots};
-    \node[dgmemblock, minimum width=\cw, minimum height=5mm] (e\i) at (\i*\cw,-31mm) {[79]};
-  }
-  % bracket the highlighted row = one logical object
-  \draw[dgaccent, very thick, decorate, decoration={brace, amplitude=4pt, mirror}]
-        ($(k0.south west)+(0,-1.5mm)$) -- ($(k4.south east)+(0,-1.5mm)$)
-        node[midway, below=2.5mm, font=\scriptsize\itshape, text=dgaccent]
-        {one object = slot $k$ read across all five arrays};
-\end{tikzpicture}
-\caption{The 80-slot object table as a structure of arrays. Each named
-  field is its own array; one logical object is a column at a common slot
-  index (highlighted slot~$k$). [[OBJ_COUNT]] gives the live slot count,
-  [[OBJ_YC]] folds the continent into its top two bits, and [[OBJ_HP]] lives
-  in unsaved RAM. Towns and castles use the same shape with 16 slots.}
-\label{fig:soa}
-\end{figure}
-```
+**Figure — the 80-slot object table as a structure of arrays.** Each named field is its own array; one logical object is the set of entries at a common slot index *k*, read across all five arrays (`ARRAY_f[k]` is one indexed load). [[OBJ_COUNT]] gives the live slot count, [[OBJ_YC]] folds the continent into its top two bits, and [[OBJ_HP]] lives in unsaved RAM. Towns and castles use the same shape with 16 slots.
 
 
  Invariants and behaviour:
 
-- **The continent tag.] [[OBJ_YC]** — packs the row in its low six bits and the continent in its top two. Records for all four continents coexist in the arrays; a map redraw paints only the records whose top two bits match [[PLR_CONT_BITS]]. This is how a ship the player left on one continent is still there on return without a per-continent record set.
+- **The continent tag.** — [[OBJ_YC]] packs the row in its low six bits and the continent in its top two. Records for all four continents coexist in the arrays; a map redraw paints only the records whose top two bits match [[PLR_CONT_BITS]]. This is how a ship the player left on one continent is still there on return without a per-continent record set.
 - **under.** — Because an object hides the terrain beneath it, the cell it is standing on is saved in [[OBJ_UNDER]] so the map can be repainted correctly when the object moves or is removed.
-- **Hit points are not saved.] [[OBJ_HP]** — lives in unsaved RAM ([[OBJ_HP]] = the page at [[$B600]]), and [[OBJ_HP]]+0 doubles as a "world has been initialised" sentinel. Reloading a game respawns monster health; only the records' positions and kinds persist.
+- **Hit points are not saved.** — [[OBJ_HP]] lives in unsaved RAM ([[OBJ_HP]] = the page at [[$B600]]), and [[OBJ_HP]]+0 doubles as a "world has been initialised" sentinel. Reloading a game respawns monster health; only the records' positions and kinds persist.
 - **Parked transports** — are object records too: buying a ship or other craft writes a record at the player's location with the craft's tile; boarding removes it and sets [[READY_TRANSPORT]]. The outdoor overlay recounts [[OWNED_TRANSPORT]] from these records on entry, which is why that array is the one owned-item array not trusted from the save.
 
 
@@ -726,34 +696,26 @@ plays from there.
 
 <a id="fig:tcmap"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The 764-byte town/castle record (`TCMAPS`), copied to the live buffer [[TOWN_MAP]] on entry. The 684-byte $38\times18$ glyph grid is the bulk; the five 16-entry NPC arrays at offset 684 are a structure of arrays (kind, grid x, grid y, and 16-bit hit points split lo/hi). Row heights here are schematic — the grid is far larger than the table.
+<table class="bytefield">
+<thead><tr><th>Offset</th><th>Bytes</th><th>Field</th></tr></thead>
+<tbody>
+<tr><td>0–683</td><td>684</td><td><code>cells[38 × 18]</code> — the displayed grid, row-major</td></tr>
+<tr><td>684–699</td><td>16</td><td>[[NPC_TYPE]] [16] <span class="dim">(FF empty, else kind code)</span></td></tr>
+<tr><td>700–715</td><td>16</td><td>[[NPC_X]] [16] <span class="dim">(column)</span></td></tr>
+<tr><td>716–731</td><td>16</td><td>[[NPC_Y]] [16] <span class="dim">(row)</span></td></tr>
+<tr><td>732–747</td><td>16</td><td>npc_hp_lo [16]</td></tr>
+<tr><td>748–763</td><td>16</td><td>npc_hp_hi [16]</td></tr>
+</tbody>
+</table>
 
-```latex
-\begin{figure}[ht]
-\centering
-\begin{dgrecord}
-  \dgfield{18}{cells[38 x 18] -- the displayed grid, row-major}{0}{683}
-  \dgfield{2}{NPC\_TYPE [16]}{684}{699}
-  \dgfield{2}{NPC\_X [16]}{700}{715}
-  \dgfield{2}{NPC\_Y [16]}{716}{731}
-  \dgfield{2}{npc\_hp\_lo [16]}{732}{747}
-  \dgfield{2}{npc\_hp\_hi [16]}{748}{763}
-\end{dgrecord}
-\caption{The 764-byte town/castle record (\texttt{TCMAPS}), copied to the
-  live buffer [[TOWN_MAP]] on entry. The 684-byte $38\times18$ glyph grid is
-  the bulk; the five 16-entry NPC arrays at offset~684 are a structure of
-  arrays (kind, grid x, grid y, and 16-bit hit points split lo/hi). Row
-  heights here are schematic --- the grid is far larger than the table.}
-\label{fig:tcmap}
-\end{figure}
-```
+**Figure — the 764-byte town/castle record (`TCMAPS`)**, copied to the live buffer [[TOWN_MAP]] on entry. The 684-byte 38×18 glyph grid is the bulk; the five 16-entry NPC arrays at offset 684 are a structure of arrays (kind, grid x, grid y, and 16-bit hit points split lo/hi).
 
 
  Notes:
 
 - **The grid is $38 \times 18$.** — Each cell is a glyph code drawn through the town/castle tile bank (`MAPCHARS`); shop signs ("ARMOUR", "THE PUB", …) are spelled into the grid as ASCII glyph codes. Walking off the $38\times18$ edge leaves the place. (An earlier draft of this document said $38\times19$; the move handler's bounds prove 18.)
 - **The NPC table** — is the same structure-of-arrays flavour as the outdoor object records, 16 slots wide. The *kind* code selects behaviour: hostiles home in and attack, wanderers drift (and may sing, pick a pocket, or, at a shop counter, trade). Counter NPCs with kind codes in a small range select one of six shop classes; a king's audience kind triggers the quest system.
-- **The live buffer persists] at [[TOWN_MAP]** — across the visit so NPC positions and health survive turns; it is reloaded fresh from `TCMAPS` on the next entry.
+- **The live buffer persists** — at [[TOWN_MAP]] across the visit so NPC positions and health survive turns; it is reloaded fresh from `TCMAPS` on the next entry.
 
 
 The ten rendered maps appear as a figure in the game-data chapter.
@@ -1873,7 +1835,7 @@ addressing mode — the portable reading is just "a 16-bit pointer."
 A few hooks into the Apple II and ProDOS have no portable content beyond
 their effect:
 
-- **Soft switches] ([[$C0xx]** — ) toggle graphics modes, display pages, and read the keyboard; a port calls its own platform's equivalents.
+- **Soft switches** — ([[$C0xx]]) toggle graphics modes, display pages, and read the keyboard; a port calls its own platform's equivalents.
 - **The vertical-blank interrupt** — paces animation. Only the resulting frame counts are portable; one mode even borrows a mouse card purely as a VBL source on machines that lack a direct one.
 - **The file library** — wraps ProDOS file calls (and a transparent `/RAM` cache); a port maps these to ordinary file or asset loads. The seven overlays and the data files become seven code modules and their bundled assets.
 - **The reset vector** — is hooked at two points (the bootstrap and the victory screen) so a hardware reset re-enters the game rather than dropping to the monitor — cosmetic on a port.

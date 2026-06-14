@@ -91,6 +91,11 @@ table.memmap td:first-child { font-family: "SF Mono", Menlo, Consolas, monospace
 table.memmap tr.hot td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 table.memmap tr.hot td:first-child { border-left: 3px solid var(--accent); }
 .dim { color: var(--muted); font-size: .85em; }
+/* byte-field / structure-of-arrays tables */
+table.bytefield td:nth-child(1), table.bytefield td:nth-child(2) {
+  font-family: "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: right; }
+table.bytefield td:nth-child(2) { color: var(--muted); }
+table.soa td:first-child { font-family: "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; }
 blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding: .2rem 1rem; color: var(--muted); }
 pre.verbatim { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
   padding: .8rem 1rem; overflow: auto; font-size: .88rem; }
