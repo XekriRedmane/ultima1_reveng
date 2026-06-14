@@ -1293,47 +1293,21 @@ Figure [fig:pageflip](#fig:pageflip) traces one frame through this machinery.
 
 <a id="fig:pageflip"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** Two-page XOR double-buffering. The hardware always shows one hi-res page while the program renders the other; [[ZP_PAGE_XOR]] holds the high-byte XOR ([[$00]] or [[$60]]) that retargets every screen write to the current *draw* page. [[PAGE_FLIP]] ends a frame: it waits for vertical blank, touches the soft switch that displays the page just drawn, then XORs [[ZP_PAGE_XOR]] with [[ZP_PAGE_TGL]] so the next frame draws into the other page. A port replaces the address XOR with an ordinary back-buffer-then-present.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 14mm]
-  % the two physical pages
-  \node[dgmemblock, fill=dgmem] (p1) {Page 1\\\scriptsize [[$2000]]--[[$3FFF]]};
-  \node[dgmemblock, fill=dgmem, right=22mm of p1] (p2) {Page 2\\\scriptsize [[$4000]]--[[$5FFF]]};
-  \node[dgnote, above=2mm of p1] {high byte XOR [[$00]]};
-  \node[dgnote, above=2mm of p2] {high byte XOR [[$60]]};
-
-  % the selector
-  \node[dgprocess, below=12mm of $(p1)!0.5!(p2)$] (xor)
-        {every screen write:\\addr.hi EOR ZP\_PAGE\_XOR\\\scriptsize ($00$ = draw page 1, $60$ = draw page 2)};
-  \node[dgsub, below=of xor] (draw) {render the frame\\\scriptsize VIEW\_CLEAR, DRAW\_MAP / strokes};
-  \node[dgterminal, below=of draw] (flip) {PAGE\_FLIP};
-  \node[dgprocess, below=of flip] (sync) {FRAME\_SYNC\\\scriptsize wait for vertical blank};
-  \node[dgprocess, below=of sync] (show) {show the just-drawn page\\\scriptsize touch TXTPAGE1/2 soft switch};
-  \node[dgprocess, below=of show] (tgl)
-        {ZP\_PAGE\_XOR EOR ZP\_PAGE\_TGL\\\scriptsize swap draw target to the other page};
-
-  \draw[->] (xor.north) to[bend left=12] (p1.south);
-  \draw[->] (xor.north) to[bend right=12] (p2.south);
-  \draw[->] (xor) -- (draw); \draw[->] (draw) -- (flip);
-  \draw[->] (flip) -- (sync); \draw[->] (sync) -- (show);
-  \draw[->] (show) -- (tgl);
-  % loop back: the new draw target feeds the next frame
-  \draw[dgaccentedge] (tgl.west) -- ($(tgl.west)+(-10mm,0)$) |- (xor.west);
-\end{tikzpicture}
-\caption{Two-page XOR double-buffering. The hardware always shows one
-  hi-res page while the program renders the other; [[ZP_PAGE_XOR]] holds
-  the high-byte XOR ([[$00]] or [[$60]]) that retargets every screen write
-  to the current \emph{draw} page. [[PAGE_FLIP]] ends a frame: it waits for
-  vertical blank, touches the soft switch that displays the page just
-  drawn, then XORs [[ZP_PAGE_XOR]] with [[ZP_PAGE_TGL]] so the next frame
-  draws into the other page. A port replaces the address XOR with an
-  ordinary back-buffer-then-present.}
-\label{fig:pageflip}
-\end{figure}
+```mermaid
+flowchart TB
+  xor["every screen write:<br/>addr.hi EOR ZP_PAGE_XOR<br/>(00 = draw page 1, 60 = draw page 2)"]
+  xor -.->|writes to| p1["Page 1 — $2000–$3FFF<br/>(high byte XOR 00)"]
+  xor -.->|writes to| p2["Page 2 — $4000–$5FFF<br/>(high byte XOR 60)"]
+  xor --> draw["render the frame<br/>VIEW_CLEAR, DRAW_MAP / strokes"]
+  draw --> flip(["PAGE_FLIP"])
+  flip --> sync["FRAME_SYNC<br/>wait for vertical blank"]
+  sync --> show["show the just-drawn page<br/>(touch TXTPAGE1/2 soft switch)"]
+  show --> tgl["ZP_PAGE_XOR EOR ZP_PAGE_TGL<br/>swap draw target to the other page"]
+  tgl -->|next frame| xor
+  linkStyle 7 stroke:#b03a2e,stroke-width:2px,color:#b03a2e
 ```
+
+**Figure — two-page XOR double-buffering.** The hardware always shows one hi-res page while the program renders the other; [[ZP_PAGE_XOR]] holds the high-byte XOR ([[$00]] or [[$60]]) that retargets every screen write to the current *draw* page. [[PAGE_FLIP]] ends a frame: it waits for vertical blank, touches the soft switch that displays the page just drawn, then XORs [[ZP_PAGE_XOR]] with [[ZP_PAGE_TGL]] so the next frame draws into the other page. A port replaces the address XOR with an ordinary back-buffer-then-present.
 
 
 **Soft switches and cycle timing.** Mode changes (graphics vs text,
@@ -1394,45 +1368,22 @@ Figure [fig:tileblit](#fig:tileblit) shows it as a flowchart.
 
 <a id="fig:tileblit"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The tile-viewport blit ([[DRAW_MAP]]). A fixed $19 \times 9$ window of map cells, centred on the player, is painted one tile at a time: each cell code selects a tile from the glyph bank (chapter [ch:stuph](#ch:stuph)). After the terrain pass, object and NPC records whose coordinates fall inside the window are overlaid, and the player tile is stamped at the centre. The window into the map is the only thing that moves; the screen positions are fixed, so the renderer is a plain nested loop a port copies verbatim.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
-  \node[dgterminal] (entry) {DRAW\_MAP\\\scriptsize centre = player};
-  \node[dgprocess, below=of entry] (row) {row vy = 0 .. 8};
-  \node[dgprocess, below=of row] (col) {col vx = 0 .. 18};
-  \node[dgprocess, below=of col] (cell)
-        {cell = map[cx+vx$-$9,\\cy+vy$-$4]};
-  \node[dgsub, below=of cell] (blit) {blit\_tile(tile\_of(cell), vx, vy)\\\scriptsize two glyphs wide, plane-major};
-  \node[dgdecision, below=of blit] (cend) {col done?};
-  \node[dgdecision, below=of cend] (rend) {row done?};
-  \node[dgprocess, below=of rend] (over)
-        {paint object / NPC records\\whose cell is in the window};
-  \node[dgprocess, below=of over] (player) {draw player tile at centre};
-  \node[dgterminal, below=of player] (done) {return};
-
-  \draw[->] (entry)--(row); \draw[->] (row)--(col);
-  \draw[->] (col)--(cell); \draw[->] (cell)--(blit);
-  \draw[->] (blit)--(cend);
-  \draw[->] (cend) -- node[dgnote,right]{no} ($(cend.east)+(14mm,0)$) |- (col.east);
-  \draw[->] (cend) -- node[dgnote,left]{yes} (rend);
-  \draw[->] (rend) -- node[dgnote,right]{no} ($(rend.east)+(22mm,0)$) |- (row.east);
-  \draw[->] (rend) -- node[dgnote,left]{yes} (over);
-  \draw[->] (over)--(player); \draw[->] (player)--(done);
-\end{tikzpicture}
-\caption{The tile-viewport blit ([[DRAW_MAP]]). A fixed $19 \times 9$
-  window of map cells, centred on the player, is painted one tile at a
-  time: each cell code selects a tile from the glyph bank
-  (chapter~\ref{ch:stuph}). After the terrain pass, object and NPC records
-  whose coordinates fall inside the window are overlaid, and the player
-  tile is stamped at the centre. The window into the map is the only thing
-  that moves; the screen positions are fixed, so the renderer is a plain
-  nested loop a port copies verbatim.}
-\label{fig:tileblit}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["DRAW_MAP<br/>centre = player"]) --> row["row vy = 0 .. 8"]
+  row --> col["col vx = 0 .. 18"]
+  col --> cell["cell = map[cx+vx-9, cy+vy-4]"]
+  cell --> blit["blit_tile(tile_of(cell), vx, vy)<br/>two glyphs wide, plane-major"]
+  blit --> cend{"col done?"}
+  cend -->|no| col
+  cend -->|yes| rend{"row done?"}
+  rend -->|no| row
+  rend -->|yes| over["paint object / NPC records<br/>whose cell is in the window"]
+  over --> player["draw player tile at centre"]
+  player --> done(["return"])
 ```
+
+**Figure — the tile-viewport blit ([[DRAW_MAP]]).** A fixed 19×9 window of map cells, centred on the player, is painted one tile at a time: each cell code selects a tile from the glyph bank (chapter [ch:stuph](#ch:stuph)). After the terrain pass, object and NPC records whose coordinates fall inside the window are overlaid, and the player tile is stamped at the centre. The window into the map is the only thing that moves; the screen positions are fixed, so the renderer is a plain nested loop a port copies verbatim.
 
 
 ### Wireframe vector (dungeons, space, the endgame)
@@ -1447,96 +1398,40 @@ at draw time. There are two variants:
 
 <a id="fig:raymarch"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The dungeon ray-marcher slice loop ([[DNG_DRAW]]). With no stored 3-D model, the renderer walks the maze one cell straight ahead per depth, inspecting the cell ahead and the two side cells (the facing vector rotated $\pm 90^{\circ}$ by exact integer swaps), and strokes one perspective "slice" whose converging screen coordinates come from [[DNG_GEOM]] indexed by depth. Monsters and items in view are stroked by [[SHAPE_DRAW]], halving the vertex list once per unit of depth so the outline shrinks with distance. The march stops at the first solid cell or the depth limit. Compare the generator in Figure [fig:dng-gen](#fig:dng-gen).
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
-  \node[dgterminal] (entry) {DNG\_DRAW\\\scriptsize cell = player, depth = 1};
-  \node[dgprocess, below=of entry] (step) {step forward:\\cell += facing};
-  \node[dgprocess, below=of step] (probe)
-        {ahead = feature(cell)\\left = feature(cell + rot$_{+90}$)\\right = feature(cell + rot$_{-90}$)};
-  \node[dgsub, below=of probe] (slice)
-        {draw\_slice(depth, ahead, left, right)\\\scriptsize edges from DNG\_GEOM[depth]};
-  \node[dgsub, right=22mm of slice] (shapes)
-        {SHAPE\_DRAW any monster / item\\\scriptsize vertex list, halved once per depth};
-  \node[dgdecision, below=of slice] (solid) {ahead\\solid?};
-  \node[dgdecision, below=of solid] (max) {depth =\\VIEW\_DEPTH?};
-  \node[dgprocess, below=of max] (inc) {depth += 1};
-  \node[dgterminal, below=of inc] (done) {present frame};
-
-  \draw[->] (entry)--(step); \draw[->] (step)--(probe);
-  \draw[->] (probe)--(slice);
-  \draw[->] (slice) -- (shapes);
-  \draw[->] (slice)--(solid);
-  \draw[->] (solid) -- node[dgnote,above]{yes} ($(solid.east)+(20mm,0)$) |- (done.east);
-  \draw[->] (solid) -- node[dgnote,left]{no} (max);
-  \draw[->] (max) -- node[dgnote,above]{yes} ($(max.east)+(28mm,0)$) |- (done.east);
-  \draw[->] (max) -- node[dgnote,left]{no} (inc);
-  \draw[->] (inc.west) -- ($(inc.west)+(-12mm,0)$) |- (step.west);
-\end{tikzpicture}
-\caption{The dungeon ray-marcher slice loop ([[DNG_DRAW]]). With no stored
-  3-D model, the renderer walks the maze one cell straight ahead per depth,
-  inspecting the cell ahead and the two side cells (the facing vector
-  rotated $\pm 90^{\circ}$ by exact integer swaps), and strokes one
-  perspective ``slice'' whose converging screen coordinates come from
-  [[DNG_GEOM]] indexed by depth. Monsters and items in view are stroked by
-  [[SHAPE_DRAW]], halving the vertex list once per unit of depth so the
-  outline shrinks with distance. The march stops at the first solid cell or
-  the depth limit. Compare the generator in Figure~\ref{fig:dng-gen}.}
-\label{fig:raymarch}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["DNG_DRAW<br/>cell = player, depth = 1"]) --> step["step forward: cell += facing"]
+  step --> probe["ahead = feature(cell)<br/>left = feature(cell + rot +90)<br/>right = feature(cell + rot -90)"]
+  probe --> slice["draw_slice(depth, ahead, left, right)<br/>edges from DNG_GEOM[depth]"]
+  slice --> shapes["SHAPE_DRAW any monster / item<br/>vertex list, halved once per depth"]
+  slice --> solid{"ahead solid?"}
+  solid -->|yes| done(["present frame"])
+  solid -->|no| max{"depth = VIEW_DEPTH?"}
+  max -->|yes| done
+  max -->|no| inc["depth += 1"]
+  inc --> step
 ```
+
+**Figure — the dungeon ray-marcher slice loop ([[DNG_DRAW]]).** With no stored 3-D model, the renderer walks the maze one cell straight ahead per depth, inspecting the cell ahead and the two side cells (the facing vector rotated ±90° by exact integer swaps), and strokes one perspective "slice" whose converging screen coordinates come from [[DNG_GEOM]] indexed by depth. Monsters and items in view are stroked by [[SHAPE_DRAW]], halving the vertex list once per unit of depth so the outline shrinks with distance. The march stops at the first solid cell or the depth limit. Compare the generator in [the dungeon generator figure](#fig:dng-gen).
 
 
 <a id="fig:sprite"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The space/endgame sprite path ([[BLIT_SHAPE_AT]]). A moving object is projected to screen coordinates through fixed-point perspective, the correct shape frame is chosen from its heading, and [[SHAPE_PRESHIFT]] aligns the bitmap to the target pixel column. A draw-mode flag then selects one of two unrolled passes: the *XOR* pass reads each screen byte (accumulating an overlap into [[ZP_BLIT_HIT]] for collision) and EORs the sprite in, so drawing the same sprite twice erases it; the *copy* pass ORs or ANDs the bitmap with a patched operator. Both write to the page selected by [[ZP_PAGE_XOR]] (Figure [fig:pageflip](#fig:pageflip)). XOR-onto-the-back-buffer is the portable idea; the two hand-unrolled passes are a speed convenience.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 18mm]
-  \node[dgterminal] (entry) {object to draw\\\scriptsize world pos, heading};
-  \node[dgprocess, below=of entry] (proj)
-        {project to screen\\\scriptsize fixed-point perspective -> ZP\_CX, ZP\_CY};
-  \node[dgprocess, below=of proj] (pick)
-        {pick shape\\\scriptsize base + heading frame};
-  \node[dgprocess, below=of pick] (shift)
-        {SHAPE\_PRESHIFT\\\scriptsize align bitmap to X bit position};
-  \node[dgdecision, below=of shift] (mode) {DRAW\_MODE?};
-  % XOR draw/erase pass (left)
-  \node[dgprocess, below left=10mm and 2mm of mode] (xor)
-        {XOR pass\\\scriptsize for each byte: AND screen\\-> collision; EOR -> screen};
-  \node[dgio, below=of xor] (hit) {ZP\_BLIT\_HIT\\\scriptsize collision result};
-  % OR/AND copy pass (right)
-  \node[dgprocess, below right=10mm and 2mm of mode] (copy)
-        {copy pass\\\scriptsize OR / AND patched into\\BLIT\_OP, BLIT\_EOR};
-  \node[dgterminal, below=22mm of mode] (back) {to draw page\\\scriptsize (selected by ZP\_PAGE\_XOR)};
-
-  \draw[->] (entry)--(proj); \draw[->] (proj)--(pick);
-  \draw[->] (pick)--(shift); \draw[->] (shift)--(mode);
-  \draw[dgaccentedge] (mode) -- node[dgnote,left]{$40$: draw/erase} (xor);
-  \draw[->] (mode) -- node[dgnote,right]{$11$/$31$: copy} (copy);
-  \draw[->] (xor)--(hit);
-  \draw[->] (hit) |- (back);
-  \draw[->] (copy) |- (back);
-\end{tikzpicture}
-\caption{The space/endgame sprite path ([[BLIT_SHAPE_AT]]). A moving object
-  is projected to screen coordinates through fixed-point perspective, the
-  correct shape frame is chosen from its heading, and [[SHAPE_PRESHIFT]]
-  aligns the bitmap to the target pixel column. A draw-mode flag then
-  selects one of two unrolled passes: the \emph{XOR} pass reads each screen
-  byte (accumulating an overlap into [[ZP_BLIT_HIT]] for collision) and
-  EORs the sprite in, so drawing the same sprite twice erases it; the
-  \emph{copy} pass ORs or ANDs the bitmap with a patched operator. Both
-  write to the page selected by [[ZP_PAGE_XOR]] (Figure~\ref{fig:pageflip}).
-  XOR-onto-the-back-buffer is the portable idea; the two hand-unrolled
-  passes are a speed convenience.}
-\label{fig:sprite}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["object to draw<br/>(world pos, heading)"]) --> proj["project to screen<br/>fixed-point perspective → ZP_CX, ZP_CY"]
+  proj --> pick["pick shape<br/>base + heading frame"]
+  pick --> shift["SHAPE_PRESHIFT<br/>align bitmap to X bit position"]
+  shift --> mode{"DRAW_MODE?"}
+  mode -->|"40: draw / erase"| xor["XOR pass<br/>per byte: AND screen → collision; EOR → screen"]
+  mode -->|"11 / 31: copy"| copy["copy pass<br/>OR / AND patched into BLIT_OP, BLIT_EOR"]
+  xor --> hit[/"ZP_BLIT_HIT<br/>collision result"/]
+  hit --> back(["to draw page<br/>(selected by ZP_PAGE_XOR)"])
+  copy --> back
+  linkStyle 4 stroke:#b03a2e,stroke-width:2px,color:#b03a2e
 ```
+
+**Figure — the space/endgame sprite path ([[BLIT_SHAPE_AT]]).** A moving object is projected to screen coordinates through fixed-point perspective, the correct shape frame is chosen from its heading, and [[SHAPE_PRESHIFT]] aligns the bitmap to the target pixel column. A draw-mode flag then selects one of two unrolled passes: the *XOR* pass reads each screen byte (accumulating an overlap into [[ZP_BLIT_HIT]] for collision) and EORs the sprite in, so drawing the same sprite twice erases it; the *copy* pass ORs or ANDs the bitmap with a patched operator. Both write to the page selected by [[ZP_PAGE_XOR]] (see [double-buffering](#fig:pageflip)). XOR-onto-the-back-buffer is the portable idea; the two hand-unrolled passes are a speed convenience.
 
 
 The line drawing itself ([[LINE_TO]]) is a standard Bresenham-style
@@ -1548,31 +1443,20 @@ target (the interleaved hi-res page) is machine-specific.
 
 <a id="tab:render-split"></a>
 
-> **TODO-CONVERT — table (→ pipe/HTML table):** The rendering layer, split for porting.
+**Table — the rendering layer, split for porting.** The right-hand column is the entire portable rendering specification.
 
-```latex
-\begin{table}[ht]
-\centering
-\caption{The rendering layer, split for porting.}
-\label{tab:render-split}
-\begin{tabular}{lll}
-\toprule
-Concern & Apple~II mechanism & Portable equivalent \\
-\midrule
-Framebuffer & interleaved hi-res pages & flat RGB buffer \\
-Colour & NTSC bit-parity artifacts & direct palette \\
-Buffering & [[ZP_PAGE_XOR]] address XOR & back buffer + present \\
-Mode/timing & soft switches, VBL pacing & engine's frame counts \\
-Fonts/tiles & plane-major glyph banks & indexed glyph arrays \\
-Inverse text & [[ZP_INVERSE]] EOR mask & ``draw inverted'' flag \\
-Tile animation & plane-byte rotation & two-frame tile cycling \\
-Grid view & [[DRAW_MAP]] $19\times9$ blit & centred tile window \\
-3-D view & perspective tables + [[LINE_TO]] & projected vector strokes \\
-Sprite erase & XOR double-pass blitter & XOR onto back buffer \\
-\bottomrule
-\end{tabular}
-\end{table}
-```
+| Concern | Apple II mechanism | Portable equivalent |
+|---|---|---|
+| Framebuffer | interleaved hi-res pages | flat RGB buffer |
+| Colour | NTSC bit-parity artifacts | direct palette |
+| Buffering | [[ZP_PAGE_XOR]] address XOR | back buffer + present |
+| Mode/timing | soft switches, VBL pacing | engine's frame counts |
+| Fonts/tiles | plane-major glyph banks | indexed glyph arrays |
+| Inverse text | [[ZP_INVERSE]] EOR mask | "draw inverted" flag |
+| Tile animation | plane-byte rotation | two-frame tile cycling |
+| Grid view | [[DRAW_MAP]] 19×9 blit | centred tile window |
+| 3-D view | perspective tables + [[LINE_TO]] | projected vector strokes |
+| Sprite erase | XOR double-pass blitter | XOR onto back buffer |
 
 
 The right-hand column is the entire portable rendering specification; the
