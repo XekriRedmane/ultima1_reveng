@@ -1,12 +1,10 @@
 FROM node:22-bookworm
 
-# System packages: git, pdflatex (texlive), build tools for dasm, Python
+# System packages: git, build tools for dasm, Python.
+# (The document weaves to HTML via weave_html.py; the LaTeX/texlive
+# pipeline has been retired, so no TeX packages are needed.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    texlive-latex-base \
-    texlive-latex-recommended \
-    texlive-latex-extra \
-    texlive-fonts-recommended \
     build-essential \
     python3 \
     python3-pip \
@@ -23,8 +21,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Python dependencies: absl-py for weave.py, Pillow for graphics renderers
-RUN pip3 install --break-system-packages absl-py Pillow
+# Python dependencies: absl-py for weave.py, Pillow for graphics renderers,
+# mistune for the HTML weaver (weave_html.py) Markdown rendering
+RUN pip3 install --break-system-packages absl-py Pillow mistune
 
 # Build dasm from source
 RUN git clone https://github.com/dasm-assembler/dasm.git /tmp/dasm \

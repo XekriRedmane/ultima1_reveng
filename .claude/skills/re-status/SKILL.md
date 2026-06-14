@@ -35,9 +35,9 @@ python3 .claude/skills/re-status/status.py
    - Synthesis chapters exist and are current (`/synthesize`): subsystem overviews, data-structure reference, platform-independent algorithm descriptions.
    - Chapter organization matches function, not just memory address (see "When to reorganize" in reveng.md).
    - All uncovered graphics data has been rendered and embedded (standing rule in reveng.md).
-   - The PDF builds cleanly (`/gen-pdf`).
+   - The HTML site builds cleanly with no broken links (`/gen-html`).
 
-5. The project is DONE when the scoreboard is green, the editorial checklist passes, and a full `/gen-pdf` run succeeds. Report the final status rather than looping further.
+5. The project is DONE when the scoreboard is green, the editorial checklist passes, and a full `/gen-html` run succeeds. Report the final status rather than looping further.
 
 ## Notes
 

@@ -28,9 +28,14 @@ python3 .claude/skills/assemble/verify.py NAME     # one target
 
 # Disassemble a region from a reference binary
 python3 .claude/scripts/dasm6502.py --file reference/NAME.bin --base XXXX START [END]
+
+# Weave the human-readable HTML site (also tangles, via the same tangler)
+python3 weave_html.py main.nw output_site
 ```
 
-Skill: `/assemble` runs the full tangle+build+verify pipeline. `/re-status` prints the project scoreboard.
+Skill: `/assemble` runs the full tangle+build+verify pipeline. `/gen-html` builds the HTML site into `output_site/`. `/re-status` prints the project scoreboard.
+
+The document output is **HTML** (`weave_html.py`), not PDF. The LaTeX/`pdflatex` pipeline has been retired; `weave.py` is kept as the tangler and chunk-graph engine that `weave_html.py` reuses unchanged.
 
 ## Assembly targets
 
@@ -59,7 +64,7 @@ The ProDOS 1.1.1 kernel (file `PRODOS`, byte-identical to Apple's 18-SEP-84 rele
 
 ## Architecture: main.nw
 
-`main.nw` is the single source of truth. It contains LaTeX documentation interleaved with 6502 assembly code chunks. `weave.py` tangles it to produce `.asm` files; `pdflatex` weaves it to produce documentation.
+`main.nw` is the single source of truth. It contains **Markdown** documentation interleaved with 6502 assembly code chunks. `weave.py` tangles it to produce `.asm` files; `weave_html.py` weaves it to a multi-page HTML site (`output_site/`). The chunk syntax (`<<name>>=`, `@`/`@ %def`) is unchanged noweb; only the prose/output is Markdown/HTML rather than LaTeX/PDF. See `html-migration-design.md` for the format spec.
 
 ### Assembly file structure
 
@@ -175,39 +180,42 @@ The `/annotate` skill automates these passes for an existing routine.
 - Self-modifying code: `label = *+1` or `label = *+2` to name the patched operand byte. For indexed self-modification (`STA base,X`), calculate: base = effective\_addr - X.
 - NMOS 6502 has no `STZ` instruction.
 
-### Noweb / LaTeX
+### Noweb / Markdown
 
-- Do not escape underscores or dollar signs inside `[[ ]]` noweb code refs. Write `[[$4000]]` and `[[GAME_INIT]]`, not `[[\$4000]]` or `[[GAME\_INIT]]` — `[[ ]]` content is literal code, and weave.py LaTeX-escapes it automatically; any author-written `\` prefix will render as a visible backslash in the PDF. (weave.py strips `\_`, `\$`, `\&`, `\#`, `\%`, `\{`, `\}` inside `[[ ]]` as a safety net, but keep the source clean.)
+- The chunk syntax is unchanged noweb: `<<name>>=` opens a code chunk; a bare `@` or `@ %def …` line opens a doc chunk. Prose inside doc chunks is **Markdown**.
+- Do not escape underscores or dollar signs inside `[[ ]]` refs. Write `[[$4000]]` and `[[GAME_INIT]]`, not `[[\$4000]]` or `[[GAME\_INIT]]` — `[[ ]]` content is literal code that the weaver escapes for HTML automatically; an author-written `\` renders as a visible backslash.
 - Never put `<<chunk>>` inside assembly comments — the tangler expands them.
-- Never put LaTeX math inside `[[ ]]` noweb code refs.
 - `@ %def` must not have duplicate identifiers across chunks.
+- **Diagrams are Mermaid** — author them as ```mermaid fenced blocks, followed by a `**Figure — …**` caption paragraph. Use the shared visual language: accent stroke `#b03a2e` (via `linkStyle`/`classDef fill:#f6dccb,stroke:#b03a2e`) for win/critical paths, dashed edges (`-.->`) for death/discarded paths. Avoid raw `<`/`>` in node *labels* (use words or `≤`/`≥`). Memory-map and byte-field layouts are block-level HTML tables; ordinary data tables are Markdown pipe tables.
+- **Inline math** stays `$…$` (rendered by KaTeX). Wrap a raw `$NN` byte value that sits next to another `$` (e.g. in a table) in **backticks** so the `$…$` rule cannot read the span between them as math.
+- A page break inside an oversized chapter is an explicit marker on its own line: `<!-- nwpage: slug | Page Title -->` (slug becomes the stable `.html` filename).
 
 ### Prose rules
 
-LaTeX prose in `main.nw` (sections, paragraphs, captions, figure labels, list items, table-cell text) must follow two standing rules for memory addresses:
+Markdown prose in `main.nw` (paragraphs, headings, captions, list items, table-cell text) must follow these standing rules for memory addresses:
 
-**1. Every numeric address gets wrapped in `[[ ]]`.** Never write a bare `\$XXXX` or `$XXXX` in prose. Always `[[$XXXX]]` or `[[SYMBOL]]`. A raw `\$XXXX` renders as plain hex with no navigation; the `[[ ]]` form renders as a tt-styled chunk-cross-reference hyperlink in the PDF. No exceptions in normal prose — not captions, not parentheticals, not "for example $XXXX", nothing. The wrap is mechanical and total.
+**1. Every numeric address gets wrapped in `[[ ]]`.** Never write a bare `$XXXX` in prose. Always `[[$XXXX]]` or `[[SYMBOL]]`. The `[[ ]]` form renders as a cross-reference link (to the defining chunk for a `@ %def` symbol; styled-but-unlinked for a raw address). A bare `$XXXX` is also at risk of being parsed as inline math. The wrap is mechanical and total — not captions, not parentheticals, nothing.
 
-**2. Prefer the symbol over the hex, and do not annotate the symbol with its own address.** When a label, EQU, or `@ %def`-exported name exists for the address, write `[[SYMBOL]]` — never `[[SYMBOL]] ([[$XXXX]])`. The parenthetical hex adds no information: a reader who wants the numeric address can click the symbol and jump to its defining chunk. The only permissible numeric annotation on a symbol is a **range** that conveys extent (e.g. `[[SYMBOL]] ([[$XXXX]]--[[$YYYY]])` when documenting a region's span), and even then prefer stating the size in bytes (`SYMBOL (256 bytes)`) if that's the actual information being added.
+**2. Prefer the symbol over the hex, and do not annotate the symbol with its own address.** When a label, EQU, or `@ %def`-exported name exists for the address, write `[[SYMBOL]]` — never `[[SYMBOL]] ([[$XXXX]])`. The parenthetical hex adds no information: a reader who wants the numeric address can click the symbol and jump to its defining chunk. The only permissible numeric annotation on a symbol is a **range** that conveys extent (e.g. `[[SYMBOL]] ([[$XXXX]]–[[$YYYY]])`), and even then prefer stating the size in bytes (`SYMBOL (256 bytes)`) if that's the actual information being added.
 
-**3. No backslash inside `[[ ]]`.** Write `[[$XXXX]]`, never `[[\$XXXX]]`. Noweb `[[ ]]` content is literal code; weave.py LaTeX-escapes automatically. Any `\` you write inside `[[ ]]` renders as a visible backslash in the PDF. (weave.py strips `\_ \$ \& \# \% \{ \}` inside `[[ ]]` as a safety net, but the source must stay clean.)
+**3. No backslash inside `[[ ]]`.** Write `[[$XXXX]]`, never `[[\$XXXX]]`. `[[ ]]` content is literal code; the weaver escapes it for HTML automatically, so any `\` you write renders as a visible backslash.
 
-**Unsymbolized addresses during active RE** (no label yet) are fine as `[[$XXXX]]`, but flag them so a later pass can upgrade:
+**Unsymbolized addresses during active RE** (no label yet) are fine as `[[$XXXX]]`, but flag them so a later pass can upgrade, with an HTML comment:
 
-```latex
-The routine reads from [[$XXXX]] % TODO-SYM: needs label
+```markdown
+The routine reads from [[$XXXX]] <!-- TODO-SYM: needs label -->
 ```
 
 Grep for `TODO-SYM` periodically. When introducing a new label for an address, grep main.nw for `$XXXX` occurrences in prose and replace with the symbol in the same commit.
 
 **Exceptions where raw (unwrapped) addresses are expected** — narrow and specific:
 
-- Memory-map tables and disk-layout tables designed to show raw addresses in their own column. Even then, consider whether wrapping makes the PDF more navigable.
+- Memory-map tables and disk-layout tables designed to show raw addresses in their own column. Even then, consider whether wrapping makes the page more navigable.
 - `ORG` directives in code chunks (governed by assembly rules, not prose).
 - Comments explaining *why* a specific numeric value matters mechanically (e.g. "chosen because the address is page-aligned"). The address is the subject, not a reference.
 - Code chunks themselves — governed by the separate code chunk rules above, which already require symbolic addresses in code.
 
-If you're unsure whether something is prose or an exception, wrap it. Over-wrapping produces a navigable PDF; under-wrapping produces a worse one.
+If you're unsure whether something is prose or an exception, wrap it. Over-wrapping produces a navigable page; under-wrapping produces a worse one.
 
 ## Assembly pitfalls
 

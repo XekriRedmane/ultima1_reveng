@@ -70,17 +70,17 @@ Create the project manifest at the repo root:
   "targets": [
     {"name": "boot1", "base": "$0800", "reference": "reference/boot1.bin", "description": "Boot sector (T0S0)"}
   ],
-  "pdf_pregen": []
+  "site_pregen": []
 }
 ```
 
-Every script in the pipeline (`verify.py`, `reorder_chunks.py`, status tooling) reads this file. `pdf_pregen` is an optional list of shell commands the gen-pdf skill runs before `pdflatex` (e.g. font-table generators).
+Every script in the pipeline (`verify.py`, `reorder_chunks.py`, status tooling) reads this file. `site_pregen` is an optional list of shell commands the gen-html skill runs before weaving (e.g. the `render_*.py` image generators).
 
 ## Step 6: Initialize main.nw
 
 Create the skeleton if it doesn't exist (or only contains the template preamble):
 
-- LaTeX preamble with `noweb.sty`, title, and chapter structure: Boot sequence, Loader, Game code, plus `\appendix` for reference material (memory map, disk layout).
+- Markdown title (`# Title`) and chapter structure (`# Boot sequence`, `# Loader`, `# Game code`, plus reference chapters for memory map and disk layout). Prose is Markdown; diagrams are Mermaid; there is no LaTeX preamble.
 - A disk-layout chapter documenting what Step 3 found: track/sector → memory tables, the page table, persistent vs. swappable regions.
 - For each target: a `<<NAME defines>>=` chunk and a `<<NAME.asm>>=` collection chunk (`PROCESSOR 6502` + defines ref).
 - The first real code chunk: the fully annotated boot sector from Step 1, following all CLAUDE.md chunk/annotation rules.

@@ -595,6 +595,10 @@ class HtmlWeaver:
                 shutil.copy(src, assets / fn)
         (assets / "site-data.js").write_text(self.site_data_js())
         (outdir / ".nojekyll").write_text("")
+        # Rendered image figures referenced by the prose live in images/.
+        src_images = pathlib.Path("images")
+        if src_images.exists():
+            shutil.copytree(src_images, outdir / "images", dirs_exist_ok=True)
 
     # ------------------------------------------------------------------ run
     def run(self, files, output_dir):

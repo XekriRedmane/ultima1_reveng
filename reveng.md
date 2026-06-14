@@ -14,9 +14,9 @@ The reader of `main.nw` wants to learn how the game was written and how it works
 
 The template repository must contain:
 
-- `noweb.sty` — LaTeX noweb style file
-- `main.nw` — minimal literate programming source (document preamble, empty chapters)
-- `weave.py` — noweb tangler (extracts `.asm` files from `main.nw`)
+- `main.nw` — literate programming source (Markdown prose + noweb code chunks)
+- `weave.py` — noweb tangler + chunk-graph engine (extracts byte-perfect `.asm` from `main.nw`)
+- `weave_html.py`, `web/` — HTML weaver (Markdown→multi-page site) and its CSS/JS assets
 - `.claude/scripts/dasm6502.py` — 6502 disassembler for reference binaries
 - `.claude/skills/bootstrap/` — Round 0 skill: disk image → reference binaries, `targets.json`, initial `main.nw` (includes `dsk_tool.py` for sector dump/extract/search)
 - `.claude/skills/assemble/verify.py` — byte-level comparison of assembled output against reference
@@ -275,7 +275,7 @@ The closing rounds, interleaved with late synthesis work:
 
 1. **Reorganize chapters by function.** Address-order chapter structure is scaffolding; the final document is organized by subsystem (boot/load, main loop, input, rendering, entities, audio, level data), with the memory map as an appendix. Reorganize when the current structure actively misleads (see "When to reorganize").
 2. **Hygiene to zero.** EQU stubs, ORG stub chunks, `TODO-SYM` markers, raw-hex JSR/JMP operands, missing header plates, and placement violations all go to zero — `/re-status` measures each.
-3. **PDF quality pass.** Build with `/gen-pdf`; fix LaTeX errors, review figure placement and table overflow, confirm every rendered image is referenced from prose.
+3. **HTML quality pass.** Build with `/gen-html`; fix any weave errors, confirm internal links resolve (no broken `[[ ]]`/anchor references), confirm Mermaid diagrams and tables render, and confirm every rendered image is referenced from prose.
 
 ## Definition of done
 
@@ -286,7 +286,7 @@ The project is finished when ALL of the following hold (the `/re-status` skill c
 3. Every `SUBROUTINE` routine has a header plate; chunk-placement check passes.
 4. All graphics data is rendered to `images/` and embedded with prose (standing rule below).
 5. The synthesis layer is complete to the Round 6 quality bar for every subsystem.
-6. Chapters are organized by function; the PDF builds cleanly.
+6. Chapters are organized by function; the HTML site builds cleanly with no broken links.
 7. Everything is committed and pushed.
 
 When done, report the final scoreboard and stop — do not loop further.
@@ -324,12 +324,12 @@ session while the data layout is fresh.
    `enemy_a_sprites.png`, `hud_frame.png`, etc. Use lowercase with
    underscores.
 5. **Embed the image in `main.nw`**, right where the data is documented.
-   Use a `figure` environment with a caption and a `\label{fig:...}`
-   referenced from the prose. For tiny sprites (7-14 px wide), scale up so
-   they're visible — `\includegraphics[scale=2]{...}` or
-   `\includegraphics[width=0.3\textwidth]{...}`. Put the `\includegraphics`
-   path as `{images/<name>.png}` (LaTeX runs from `output/`; the gen-pdf
-   skill copies `images/` there before `pdflatex`).
+   Use a Markdown image followed by a `**Figure — …**` caption paragraph;
+   if the figure is cross-referenced, precede it with an anchor
+   `<a id="fig:..."></a>`. Path: `![alt](images/<name>.png)` (the HTML
+   weaver copies `images/` into `output_site/`). HTML has no LaTeX-style
+   scale knob, so for tiny sprites (7-14 px wide) the `render_*.py` script
+   should upscale before saving the PNG.
 6. **Describe the decoding in prose** immediately before or after the
    figure: record size, dimensions, frame count, how the game indexes into
    the table, any palette/color quirks specific to this data.
@@ -469,15 +469,13 @@ no arguments to verify all targets).
 All targets must be byte-perfect. If any target diverges, roll back the
 offending edit and re-verify. Do not commit a red build.
 
-Then run the `/gen-pdf` skill (or equivalently the steps in
-`.claude/skills/gen-pdf/SKILL.md`: `mkdir -p output`, tangle, copy
-`noweb.sty` and `images/`, run any `pdf_pregen` commands from
-`targets.json`, then run `pdflatex main.tex` twice from `output/`).
-The PDF must build cleanly — `pdflatex` should finish without an error
-exit code. Undefined-reference and overfull-hbox warnings are
-acceptable, but LaTeX errors (missing chunk, bad `[[ ]]`, undefined
-control sequence) must be fixed before committing. Do not commit a PDF
-that fails to build.
+Then run the `/gen-html` skill (or equivalently: run any `site_pregen`
+commands from `targets.json`, then `python3 weave_html.py main.nw
+output_site`). The site must build cleanly — `weave_html.py` should
+finish without an error, and a link check should report zero broken
+internal references. Weave errors (missing chunk, malformed `[[ ]]`)
+must be fixed before committing. Do not commit a site that fails to
+build.
 
 ### 3. Commit and push
 

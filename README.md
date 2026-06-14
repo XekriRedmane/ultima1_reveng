@@ -4,7 +4,7 @@ A template repository for autonomously reverse engineering an Apple II game from
 
 - assembles to **byte-perfect** copies of the original binaries,
 - explains how the game works in enough detail to **reproduce or port it in any language, on any platform**, and
-- weaves into a cross-referenced PDF with rendered sprites, fonts, and figures.
+- weaves into a cross-referenced, searchable **HTML site** with Mermaid diagrams and rendered sprites, fonts, and figures.
 
 The work is done by Claude Code running the `reverse-engineer` agent, which operates continuously and unattended: it bootstraps reference binaries from the disk image, reverse engineers the boot chain, loader, game code, and data, renders graphics, writes platform-independent design chapters, and commits/pushes after every verified round.
 
@@ -58,7 +58,8 @@ The work is done by Claude Code running the `reverse-engineer` agent, which oper
 | `reveng.md` | The process bible: rounds, standing rules, autonomy protocol, definition of done |
 | `CLAUDE.md` | Conventions: assembly style, chunk rules, annotation rules, prose rules, pitfalls |
 | `main.nw` | Skeleton literate document (the agent fills it in) |
-| `weave.py`, `noweb.sty` | Noweb tangler and LaTeX style |
+| `weave.py` | Noweb tangler and chunk-graph engine (byte-perfect `.asm`) |
+| `weave_html.py`, `web/` | HTML weaver and its CSS/JS assets |
 | `targets.json.example` | Example project manifest (the real one is created during bootstrap) |
 | `.claude/agents/reverse-engineer.md` | The autonomous driver agent |
 | `.claude/skills/bootstrap/` | Round 0: disk image → reference binaries + manifest (`dsk_tool.py`) |
@@ -67,23 +68,24 @@ The work is done by Claude Code running the `reverse-engineer` agent, which oper
 | `.claude/skills/disassemble/`, `re-next/`, `find-gaps/`, `trace-address/` | The RE loop |
 | `.claude/skills/annotate/`, `chunk-placement/` | Documentation quality passes |
 | `.claude/skills/synthesize/` | Platform-independent design chapters for porters |
-| `.claude/skills/gen-pdf/` | PDF build |
+| `.claude/skills/gen-html/` | HTML site build |
 | `.claude/scripts/dasm6502.py` | 6502 disassembler for reference binaries |
 | `.claude/scripts/render_hires.py` | Apple II hi-res graphics rendering library (PNG output) |
-| `Dockerfile`, `docker-compose.yml` | Agent container: Claude Code, dasm, texlive, Python (Pillow, absl-py), gh |
+| `Dockerfile`, `docker-compose.yml` | Agent container: Claude Code, dasm, Python (Pillow, absl-py, mistune), gh |
 
 ## Layout produced by a run
 
 - `targets.json` — project manifest: game, disk image, sector order, assembly targets
 - `reference/` — flat binaries extracted from the disk image (the ground truth)
 - `maps/` — track/sector→page map files that make `reference/` reproducible
-- `output/` — tangled `.asm`, assembled `.bin`/`.lst`/`.sym`, and the PDF (gitignored)
+- `output/` — tangled `.asm`, assembled `.bin`/`.lst`/`.sym` (gitignored)
+- `output_site/` — the woven HTML site (gitignored)
 - `images/` — rendered sprites, fonts, and screens, embedded in the document
 - `TODO.md` — the loop state: milestones, work queue, blocked list
 
 ## Requirements
 
-- Docker (the container brings Claude Code, dasm, pdflatex, and Python deps)
+- Docker (the container brings Claude Code, dasm, and Python deps)
 - A Claude Code login: either a Pro/Max **subscription** (log in once inside the
   container) or an **Anthropic API key** (metered, billed separately) — see step 3
 - The legal right to reverse engineer the disk image you supply
