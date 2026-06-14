@@ -10653,6 +10653,8 @@ for the conventions; `DNG` follows it (all but its
 wireframe renderer, which has its own round); the remaining five
 are stub regions pending their own rounds.
 
+<!-- nwpage: out | OUT — the outdoors overlay -->
+
 ## OUT: the outdoors overlay
 
 
@@ -10990,41 +10992,20 @@ DISPATCH_VEC = *+1
 
 <a id="fig:out-loop"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The `OUT` turn loop, a specialization of the universal template (Figure [fig:mode-loop](#fig:mode-loop)). Outdoors the death test guards both hit points *and* food at the top of every turn; an idle turn costs $0.05$ food and $0.50$ time and still runs the world ([[TURN_PASS]]); commands dispatch through [[CMD_TBL]] by patching [[DISPATCH_VEC]]. The world always acts once per lap, key or not.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=5.5mm and 14mm]
-  \node[dgterminal] (entry) {OUT\_MAIN\\\scriptsize reset stack, prompt};
-  \node[dgprocess, below=of entry] (stats) {STATS\_VALUES};
-  \node[dgdecision, below=of stats] (dead) {hits = 0\\or food = 0?};
-  \node[dgterminal, right=20mm of dead] (death) {DEATH\\\scriptsize reload OUT -> RESURRECT};
-  \node[dgio, below=of dead] (poll) {KEY\_OR\_IDLE};
-  \node[dgprocess, below right=7mm and 2mm of poll] (idle)
-        {idle tick:\\food $-$0.05, time $+$0.50\\TURN\_PASS};
-  \node[dgsub, below left=7mm and 2mm of poll] (disp)
-        {GET\_COMMAND -> CMD\_TBL\\patch DISPATCH\_VEC, JSR};
-  \node[dgprocess, below=20mm of poll] (world) {TURN\_PASS\\\scriptsize the world acts};
-
-  \draw[->] (entry)--(stats); \draw[->] (stats)--(dead);
-  \draw[->] (dead) -- node[dgnote,above]{yes} (death);
-  \draw[->] (dead) -- node[dgnote,left]{no} (poll);
-  \draw[->] (poll) -- node[dgnote,right]{timeout} (idle);
-  \draw[->] (poll) -- node[dgnote,left]{key} (disp);
-  \draw[->] (disp) |- (world);
-  \draw[->] (idle.south) |- (stats.west);
-  \draw[->] (world) -- ($(world.south)+(0,-4mm)$) -| ($(entry.west)+(-8mm,0)$) |- (stats.west);
-\end{tikzpicture}
-\caption{The \texttt{OUT} turn loop, a specialization of the universal
-  template (Figure~\ref{fig:mode-loop}). Outdoors the death test guards
-  both hit points \emph{and} food at the top of every turn; an idle turn
-  costs $0.05$ food and $0.50$ time and still runs the world
-  ([[TURN_PASS]]); commands dispatch through [[CMD_TBL]] by patching
-  [[DISPATCH_VEC]]. The world always acts once per lap, key or not.}
-\label{fig:out-loop}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["OUT_MAIN<br/>reset stack, prompt"]) --> stats["STATS_VALUES"]
+  stats --> dead{"hits = 0<br/>or food = 0?"}
+  dead -->|yes| death(["DEATH<br/>reload OUT → RESURRECT"])
+  dead -->|no| poll[/"KEY_OR_IDLE"/]
+  poll -->|timeout| idle["idle tick:<br/>food -0.05, time +0.50<br/>TURN_PASS"]
+  poll -->|key| disp["GET_COMMAND → CMD_TBL<br/>patch DISPATCH_VEC, JSR"]
+  disp --> world["TURN_PASS<br/>the world acts"]
+  idle --> stats
+  world --> stats
 ```
+
+**Figure — the `OUT` turn loop**, a specialization of the [universal template](#fig:mode-loop). Outdoors the death test guards both hit points *and* food at the top of every turn; an idle turn costs 0.05 food and 0.50 time and still runs the world ([[TURN_PASS]]); commands dispatch through [[CMD_TBL]] by patching [[DISPATCH_VEC]]. The world always acts once per lap, key or not.
 
 
 ## OUT: death and resurrection
@@ -13833,6 +13814,8 @@ WEAP_RANGE ; Attack reach per weapon; 0 = cannot attack.
 <<out landmark tables>>
 @
 
+<!-- nwpage: twn | TWN — the town overlay -->
+
 ## TWN
 
 
@@ -14174,45 +14157,20 @@ function-pointer table indexed by the command number.
 
 <a id="fig:dispatch"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The patched-[[JSR]] command dispatch, shared by all the grid overlays. The engine's [[GET_COMMAND]] yields an index; [[CMD_TBL]] maps it to a handler address; that address is written into the operand of a [[JSR]] in the instruction stream (self-modifying code), which then runs. Most commands point at [[QUERY_MARK]]. A port replaces the patch with a function-pointer table indexed by the command number.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=8mm and 16mm]
-  \node[dgsub] (get) {GET\_COMMAND\\\scriptsize (engine)};
-  \node[dgprocess, below=of get] (idx) {command index\\\scriptsize X = 2 * cmd};
-  \node[dgmemblock, right=of idx, fill=dgmem] (tbl)
-        {CMD\_TBL[X]\\\scriptsize 26 handler addresses};
-  \node[dgprocess, below=of idx] (patch)
-        {patch the JSR operand\\\scriptsize (self-modifying code)};
-  \node[dgprocess, below=of patch] (jsr) {JSR <patched target>};
-  \node[dgsub, below left=8mm and 2mm of jsr] (handler)
-        {command handler\\\scriptsize CMD\_MOVE, CMD\_ATTACK, ...};
-  \node[dgsub, below right=8mm and 2mm of jsr] (huh)
-        {QUERY\_MARK\\\scriptsize "Huh?" (no-op cmds)};
-  \node[dgterminal, below=14mm of jsr] (back) {back to main loop};
-
-  \draw[->] (get) -- (idx);
-  \draw[->] (idx) -- node[dgnote,above]{look up} (tbl);
-  \draw[->] (tbl.south) to[bend left=20]
-        node[dgnote,right]{address} (patch.east);
-  \draw[->] (idx) -- (patch);
-  \draw[->] (patch) -- (jsr);
-  \draw[->] (jsr) -- (handler);
-  \draw[->] (jsr) -- (huh);
-  \draw[->] (handler) -- (back);
-  \draw[->] (huh) -- (back);
-\end{tikzpicture}
-\caption{The patched-[[JSR]] command dispatch, shared by all the grid
-  overlays. The engine's [[GET_COMMAND]] yields an index; [[CMD_TBL]] maps
-  it to a handler address; that address is written into the operand of a
-  [[JSR]] in the instruction stream (self-modifying code), which then runs.
-  Most commands point at [[QUERY_MARK]]. A port replaces the patch with a
-  function-pointer table indexed by the command number.}
-\label{fig:dispatch}
-\end{figure}
+```mermaid
+flowchart TB
+  get["GET_COMMAND (engine)"] --> idx["command index<br/>X = 2 * cmd"]
+  idx -->|look up| tbl["CMD_TBL[X]<br/>26 handler addresses"]
+  tbl -->|address| patch["patch the JSR operand<br/>(self-modifying code)"]
+  idx --> patch
+  patch --> jsr["JSR (patched target)"]
+  jsr --> handler["command handler<br/>CMD_MOVE, CMD_ATTACK, ..."]
+  jsr --> huh["QUERY_MARK<br/>'Huh?' (no-op cmds)"]
+  handler --> back(["back to main loop"])
+  huh --> back
 ```
+
+**Figure — the patched-[[JSR]] command dispatch**, shared by all the grid overlays. The engine's [[GET_COMMAND]] yields an index; [[CMD_TBL]] maps it to a handler address; that address is written into the operand of a [[JSR]] in the instruction stream (self-modifying code), which then runs. Most commands point at [[QUERY_MARK]]. A port replaces the patch with a function-pointer table indexed by the command number.
 
 
 <<twn command table>>=
@@ -17333,6 +17291,8 @@ TWN_BSS ; scratch past the tables (disk-image stale bytes)
 @
 
 
+<!-- nwpage: cas | CAS — the castle overlay -->
+
 ## CAS
 
 
@@ -20151,6 +20111,8 @@ The chunks assemble in address order into `cas.asm`.
 <<cas data tables>>
 @
 
+<!-- nwpage: dng | DNG — the dungeon overlay -->
+
 ## DNG: the dungeon overlay
 
 
@@ -20177,25 +20139,21 @@ A map cell is one byte: low nibble = *feature*, high nibble =
 *monster slot*. The features:
 
 
-> **TODO-CONVERT — table (→ pipe/HTML table):**
+**Table — dungeon map-cell features** (the low nibble of each map byte).
 
-```latex
-\begin{tabular}{cll}
-code & feature & notes \\
-\hline
-0 & open floor & \\
-1 & wall & blocks walking and sight \\
-2 & hidden trapdoor & walk on it and fall (see [[MOVE_FWD]]) \\
-3 & hidden secret door & drawn as wall; Inform reveals it \\
-4 & door & passable; drawn with a frame \\
-5 & chest & opened by Unlock (trapped!) \\
-6 & coffin & opened by Open (occupied!) \\
-7 & ladder down & K-limb descends \\
-8 & ladder up & K-limb ascends \\
-9 & revealed trapdoor & K-limb descends \\
-\texttt{\$C} & force field & blocks everything; Create/Destroy \\
-\end{tabular}
-```
+| Code | Feature | Notes |
+|---|---|---|
+| 0 | open floor | |
+| 1 | wall | blocks walking and sight |
+| 2 | hidden trapdoor | walk on it and fall (see [[MOVE_FWD]]) |
+| 3 | hidden secret door | drawn as wall; Inform reveals it |
+| 4 | door | passable; drawn with a frame |
+| 5 | chest | opened by Unlock (trapped!) |
+| 6 | coffin | opened by Open (occupied!) |
+| 7 | ladder down | K-limb descends |
+| 8 | ladder up | K-limb ascends |
+| 9 | revealed trapdoor | K-limb descends |
+| `$C` | force field | blocks everything; Create/Destroy |
 
 
 Movement treats codes 1 and 3 and everything at or above
@@ -21080,42 +21038,22 @@ DNG_CMDS
 
 <a id="fig:dng-loop"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The `DNG` turn loop. Two dungeon twists distinguish it from the outdoor loop (Figure [fig:out-loop](#fig:out-loop)): the entire first-person view is redrawn at the top of every turn ([[DNG_DRAW]], highlighted), because almost any command changes the corridor; and the idle turn is cheaper ($0.01$ food, $0.10$ time) but the monsters still take a turn ([[MON_TURNS]]) every idle beat. Dispatch is the same patched-[[JSR]] idiom, through [[DNG_CMDS]].
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=5.5mm and 14mm]
-  \node[dgterminal] (entry) {DNG\_MAIN};
-  \node[dgprocess, dgaccentnode, below=of entry] (draw) {DNG\_DRAW\\\scriptsize redraw the whole view};
-  \node[dgdecision, below=of draw] (dead) {hits = 0\\or food = 0?};
-  \node[dgterminal, right=20mm of dead] (death) {DNG\_DEATH};
-  \node[dgio, below=of dead] (poll) {DNG\_PROMPT\\\scriptsize poll (KEY\_SHORT)};
-  \node[dgprocess, right=20mm of poll] (idle)
-        {idle tick:\\food $-$0.01, time $+$0.10\\MON\_TURNS each beat};
-  \node[dgsub, below=of poll] (disp)
-        {GET\_COMMAND -> DNG\_CMDS\\patch DNG\_VEC, JSR};
-  \node[dgprocess, below=of disp] (mon) {MON\_TURNS\\\scriptsize monsters move};
-
-  \draw[->] (entry)--(draw); \draw[->] (draw)--(dead);
-  \draw[->] (dead) -- node[dgnote,above]{yes} (death);
-  \draw[->] (dead) -- node[dgnote,left]{no} (poll);
-  \draw[->] (poll) -- node[dgnote,above]{timeout} (idle);
-  \draw[->] (poll) -- node[dgnote,left]{key} (disp);
-  \draw[->] (idle.south) -- ($(idle.south)+(0,-3mm)$) -| (poll.north);
-  \draw[->] (disp)--(mon);
-  \draw[->] (mon.west) -- ($(mon.west)+(-9mm,0)$) |- (draw.west);
-\end{tikzpicture}
-\caption{The \texttt{DNG} turn loop. Two dungeon twists distinguish it from
-  the outdoor loop (Figure~\ref{fig:out-loop}): the entire first-person
-  view is redrawn at the top of every turn ([[DNG_DRAW]], highlighted),
-  because almost any command changes the corridor; and the idle turn is
-  cheaper ($0.01$ food, $0.10$ time) but the monsters still take a turn
-  ([[MON_TURNS]]) every idle beat. Dispatch is the same patched-[[JSR]]
-  idiom, through [[DNG_CMDS]].}
-\label{fig:dng-loop}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["DNG_MAIN"]) --> draw["DNG_DRAW<br/>redraw the whole view"]
+  draw --> dead{"hits = 0<br/>or food = 0?"}
+  dead -->|yes| death(["DNG_DEATH"])
+  dead -->|no| poll[/"DNG_PROMPT<br/>poll (KEY_SHORT)"/]
+  poll -->|timeout| idle["idle tick:<br/>food -0.01, time +0.10<br/>MON_TURNS each beat"]
+  poll -->|key| disp["GET_COMMAND → DNG_CMDS<br/>patch DNG_VEC, JSR"]
+  disp --> mon["MON_TURNS<br/>monsters move"]
+  idle --> poll
+  mon --> draw
+  classDef hot fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class draw hot;
 ```
+
+**Figure — the `DNG` turn loop.** Two dungeon twists distinguish it from the [outdoor loop](#fig:out-loop): the entire first-person view is redrawn at the top of every turn ([[DNG_DRAW]], highlighted), because almost any command changes the corridor; and the idle turn is cheaper (0.01 food, 0.10 time) but the monsters still take a turn ([[MON_TURNS]]) every idle beat. Dispatch is the same patched-[[JSR]] idiom, through [[DNG_CMDS]].
 
 
 ## DNG: turning and walking
@@ -21476,24 +21414,20 @@ uniformly random spell 1–10 in place of a chosen one. The chosen ones dispatch
 command table:
 
 
-> **TODO-CONVERT — table (→ pipe/HTML table):**
+**Table — the ten dungeon spells.**
 
-```latex
-\begin{tabular}{cllp{5.2cm}}
-\# & spell & incantation & effect \\
-\hline
-1 & Open & APERTUS! & open the coffin underfoot \\
-2 & Unlock & PECUNIA! & open the chest underfoot \\
-3 & Magic Missile & VASTO! & ranged damage, see below \\
-4 & Steal & NUDO! & always fails (town magic) \\
-5 & Ladder Down & INFERUS & conjure feature 7 underfoot \\
-6 & Ladder Up & ASCENDO & conjure feature 8 underfoot \\
-7 & Blink & DUCIS-EDUCO! & teleport within the level \\
-8 & Create & STRUXI! & force field in the cell ahead \\
-9 & Destroy & DELIO! & remove the field ahead \\
-10 & Kill & INTERFICIO! & slay the monster ahead \\
-\end{tabular}
-```
+| # | Spell | Incantation | Effect |
+|--:|---|---|---|
+| 1 | Open | APERTUS! | open the coffin underfoot |
+| 2 | Unlock | PECUNIA! | open the chest underfoot |
+| 3 | Magic Missile | VASTO! | ranged damage, see below |
+| 4 | Steal | NUDO! | always fails (town magic) |
+| 5 | Ladder Down | INFERUS | conjure feature 7 underfoot |
+| 6 | Ladder Up | ASCENDO | conjure feature 8 underfoot |
+| 7 | Blink | DUCIS-EDUCO! | teleport within the level |
+| 8 | Create | STRUXI! | force field in the cell ahead |
+| 9 | Destroy | DELIO! | remove the field ahead |
+| 10 | Kill | INTERFICIO! | slay the monster ahead |
 
 
 <<dng cmd cast>>=
@@ -23286,25 +23220,20 @@ adding a fixed byte offset to [[DNG_GEOM]] before indexing by
 ([[DRAW_COFFIN]]) makes explicit, by offset:
 
 
-> **TODO-CONVERT — table (→ pipe/HTML table):**
+**Table — key offsets into the dungeon perspective pool [[DNG_GEOM]].**
 
-```latex
-\begin{tabular}{ll}
-offset & role \\
-\hline
-\texttt{+\$00} & near/inner left X ramp (and \texttt{+\$01} its
-                  depth$+1$ neighbour) \\
-\texttt{+\$0B} & inner right X ramp \\
-\texttt{+\$16} & top edge Y (ceiling line) \\
-\texttt{+\$21} & bottom edge Y (floor line) \\
-\texttt{+\$22} & far floor Y (\texttt{BOX\_YF} source) \\
-\texttt{+\$54} & near top Y (\texttt{BOX\_YN} source) \\
-\texttt{+\$9A} & far-left X (\texttt{BOX\_XFL}) \\
-\texttt{+\$A4} & near-left X (\texttt{BOX\_XNL}) \\
-\texttt{+\$AE} & far-right X (\texttt{BOX\_XFR}) \\
-\texttt{+\$B8} & near-right X (\texttt{BOX\_XNR}) \\
-\end{tabular}
-```
+| Offset | Role |
+|---|---|
+| `+$00` | near/inner left X ramp (and `+$01` its depth+1 neighbour) |
+| `+$0B` | inner right X ramp |
+| `+$16` | top edge Y (ceiling line) |
+| `+$21` | bottom edge Y (floor line) |
+| `+$22` | far floor Y (`BOX_YF` source) |
+| `+$54` | near top Y (`BOX_YN` source) |
+| `+$9A` | far-left X (`BOX_XFL`) |
+| `+$A4` | near-left X (`BOX_XNL`) |
+| `+$AE` | far-right X (`BOX_XFR`) |
+| `+$B8` | near-right X (`BOX_XNR`) |
 
 
 The other offsets the primitives use (`+$36`,
@@ -24880,6 +24809,8 @@ SHAPE_STROKES ; (dx,dy,flag) triples; (0,0,*) ends a shape
 <<dng shapes>>
 @
 
+<!-- nwpage: spa | SPA — the space overlay -->
+
 ## SPA
 
 
@@ -25275,48 +25206,25 @@ DISP_OP = *+1
 
 <a id="fig:spa-loop"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The `SPA` main loop — the one that breaks the template (Figure [fig:mode-loop](#fig:mode-loop)). There is no discrete end-of-turn tick: every lap runs [[PHYSICS]], which integrates the velocity vector into the ship position on a wrapping torus and resolves the docking, collision, and star hazards in real time. A keypress that decodes to a flight command (index $< 8$) is first gated on remaining fuel; dispatch self-modifies a [[JMP]] (a tail jump, not a [[JSR]]), so the handlers return by jumping back into the loop. A timeout simply runs the physics with no command.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=5.5mm and 14mm]
-  \node[dgterminal] (entry) {SPA\_LOOP};
-  \node[dgprocess, below=of entry] (status) {Shld$|$Fuel status};
-  \node[dgio, below=of status] (poll) {KEY\_GET};
-  \node[dgprocess, below=of poll] (spend) {SPEND\_TURN\\GET\_COMMAND};
-  \node[dgdecision, below=of spend] (flight) {flight cmd\\(index $<$ 8)?};
-  \node[dgdecision, right=18mm of flight] (fuel) {fuel $>$ 0?};
-  \node[dgnote, right=14mm of fuel] (nofuel) {"No fuel!!"};
-  \node[dgsub, below=of flight] (disp)
-        {patch DISP\_OP from DISPATCH\_TBL\\\scriptsize JMP (tail-jump dispatch)};
-  \node[dgprocess, right=20mm of disp] (phys)
-        {PHYSICS\\\scriptsize integrate ZP\_VX/VY into\\SHIP\_X/Y on the torus;\\dock / collide / star hazard};
-
-  \draw[->] (entry)--(status); \draw[->] (status)--(poll);
-  \draw[->] (poll) -- node[dgnote,left]{key} (spend);
-  \draw[->] (poll.east) -- node[dgnote,above]{none} ($(poll.east)+(40mm,0)$) |- (phys.north);
-  \draw[->] (spend)--(flight);
-  \draw[->] (flight) -- node[dgnote,above]{yes} (fuel);
-  \draw[->] (flight) -- node[dgnote,left]{no} (disp);
-  \draw[->] (fuel) -- node[dgnote,left]{yes} (disp);
-  \draw[->] (fuel) -- node[dgnote,above]{no} (nofuel);
-  \draw[->] (nofuel) |- (phys.north);
-  \draw[->] (disp) -- (phys);
-  \draw[->] (phys.south) -- ($(phys.south)+(0,-4mm)$) -| ($(entry.east)+(34mm,0)$) |- (status.east);
-\end{tikzpicture}
-\caption{The \texttt{SPA} main loop --- the one that breaks the template
-  (Figure~\ref{fig:mode-loop}). There is no discrete end-of-turn tick:
-  every lap runs [[PHYSICS]], which integrates the velocity vector into the
-  ship position on a wrapping torus and resolves the docking, collision,
-  and star hazards in real time. A keypress that decodes to a flight
-  command (index $< 8$) is first gated on remaining fuel; dispatch
-  self-modifies a [[JMP]] (a tail jump, not a [[JSR]]), so the handlers
-  return by jumping back into the loop. A timeout simply runs the physics
-  with no command.}
-\label{fig:spa-loop}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["SPA_LOOP"]) --> status["Shld | Fuel status"]
+  status --> poll[/"KEY_GET"/]
+  poll -->|key| spend["SPEND_TURN<br/>GET_COMMAND"]
+  poll -->|none| phys
+  spend --> flight{"flight cmd<br/>(index 0–7)?"}
+  flight -->|yes| fuel{"fuel remaining?"}
+  flight -->|no| disp["patch DISP_OP from DISPATCH_TBL<br/>JMP (tail-jump dispatch)"]
+  fuel -->|yes| disp
+  fuel -->|no| nofuel["'No fuel!!'"]
+  nofuel --> phys
+  disp --> phys["PHYSICS<br/>integrate ZP_VX/VY into SHIP_X/Y on the torus;<br/>dock / collide / star hazard"]
+  phys --> status
+  classDef hot fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class phys hot;
 ```
+
+**Figure — the `SPA` main loop** — the one that breaks the [template](#fig:mode-loop). There is no discrete end-of-turn tick: every lap runs [[PHYSICS]], which integrates the velocity vector into the ship position on a wrapping torus and resolves the docking, collision, and star hazards in real time. A keypress that decodes to a flight command (index 0–7) is first gated on remaining fuel; dispatch self-modifies a [[JMP]] (a tail jump, not a [[JSR]]), so the handlers return by jumping back into the loop. A timeout simply runs the physics with no command.
 
 
 <<spa physics>>=
@@ -29051,6 +28959,8 @@ rotation frames.
 <<spa sprite tables>>
 @
 
+<!-- nwpage: gen | GEN — character generation -->
+
 ## GEN: character generation and the disk formatter
 
 <a id="ch:gen"></a>
@@ -30309,53 +30219,23 @@ DO_FORMAT
 
 <a id="fig:format"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The bundled disk formatter ([[FORMAT_ENTRY]] $\to$ [[DO_FORMAT]]), the only code in the game that bypasses the file library and drives the hardware directly. After choosing a slot and drive and confirming, it brackets a zero-page save around two layers: layer 1, [[RWTS_FORMAT]] (highlighted), is a complete hand-rolled Disk II RWTS that steps the arm across all 35 tracks and writes each as 16 sectors of D5/AA/96 address fields plus 6-and-2 gcr data, verifying by read-back through raw [[$C0xx]] soft switches; on success layer 2, [[FORMAT_VOLUME]], writes the four ProDOS directory blocks and the volume bitmap through the MLI. The result is an empty `/U1.PLAYER` volume the game can save to.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
-  \node[dgterminal] (entry) {FORMAT\_ENTRY\\\scriptsize pick slot \& drive};
-  \node[dgdecision, below=of entry] (diskii) {Disk II\\present?};
-  \node[dgnote, right=16mm of diskii] (nod) {"No Disk II" -> restart};
-  \node[dgprocess, below=of diskii] (chk)
-        {VOL\_CHECK\\\scriptsize ProDOS volume? show its name};
-  \node[dgdecision, below=of chk] (confirm) {confirm\\"...? (Y-N)"};
-  \node[dgnote, right=16mm of confirm] (abort) {N -> restart};
-  % the two layers inside DO_FORMAT
-  \node[dgsub, dgaccentnode, below=10mm of confirm] (rwts)
-        {layer 1: RWTS\_FORMAT\\\scriptsize hand-rolled Disk II RWTS:\\step 35 tracks; per track write 16\\D5/AA/96 addr fields + 6\&2 GCR;\\verify by read-back (raw \$C0xx)};
-  \node[dgdecision, below=of rwts] (ok) {carry set\\(error)?};
-  \node[dgnote, right=16mm of ok] (err)
-        {$27$ unable / $2B$ write-prot /\\else speed error -> restart};
-  \node[dgsub, below=of ok] (vol)
-        {layer 2: FORMAT\_VOLUME\\\scriptsize ProDOS directory writer:\\write the 4 dir blocks + bitmap\\via the MLI (WRITE\_BLOCK)};
-  \node[dgterminal, below=of vol] (done) {empty /U1.PLAYER volume};
-
-  \draw[->] (entry)--(diskii);
-  \draw[->] (diskii) -- node[dgnote,above]{no} (nod);
-  \draw[->] (diskii) -- node[dgnote,left]{yes} (chk);
-  \draw[->] (chk)--(confirm);
-  \draw[->] (confirm) -- node[dgnote,above]{N} (abort);
-  \draw[->] (confirm) -- node[dgnote,left]{Y (DO\_FORMAT:\\save zero page)} (rwts);
-  \draw[->] (rwts)--(ok);
-  \draw[->] (ok) -- node[dgnote,above]{yes} (err);
-  \draw[->] (ok) -- node[dgnote,left]{no} (vol);
-  \draw[->] (vol)--(done);
-\end{tikzpicture}
-\caption{The bundled disk formatter ([[FORMAT_ENTRY]] $\to$ [[DO_FORMAT]]),
-  the only code in the game that bypasses the file library and drives the
-  hardware directly. After choosing a slot and drive and confirming, it
-  brackets a zero-page save around two layers: layer~1, [[RWTS_FORMAT]]
-  (highlighted), is a complete hand-rolled Disk~II RWTS that steps the arm
-  across all 35 tracks and writes each as 16 sectors of D5/AA/96 address
-  fields plus 6-and-2 \textsc{gcr} data, verifying by read-back through raw
-  [[$C0xx]] soft switches; on success layer~2, [[FORMAT_VOLUME]], writes the
-  four ProDOS directory blocks and the volume bitmap through the MLI. The
-  result is an empty \texttt{/U1.PLAYER} volume the game can save to.}
-\label{fig:format}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["FORMAT_ENTRY<br/>pick slot & drive"]) --> diskii{"Disk II present?"}
+  diskii -->|no| nod["'No Disk II' → restart"]
+  diskii -->|yes| chk["VOL_CHECK<br/>ProDOS volume? show its name"]
+  chk --> confirm{"confirm '...? (Y-N)'"}
+  confirm -->|N| abort["N → restart"]
+  confirm -->|"Y (DO_FORMAT: save zero page)"| rwts["layer 1: RWTS_FORMAT<br/>hand-rolled Disk II RWTS: step 35 tracks;<br/>per track write 16 D5/AA/96 addr fields + 6&2 GCR;<br/>verify by read-back (raw $C0xx)"]
+  rwts --> ok{"carry set (error)?"}
+  ok -->|yes| err["$27 unable / $2B write-prot /<br/>else speed error → restart"]
+  ok -->|no| vol["layer 2: FORMAT_VOLUME<br/>ProDOS directory writer:<br/>write the 4 dir blocks + bitmap via the MLI"]
+  vol --> done(["empty /U1.PLAYER volume"])
+  classDef hot fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class rwts hot;
 ```
+
+**Figure — the bundled disk formatter ([[FORMAT_ENTRY]] → [[DO_FORMAT]])**, the only code in the game that bypasses the file library and drives the hardware directly. After choosing a slot and drive and confirming, it brackets a zero-page save around two layers: layer 1, [[RWTS_FORMAT]] (highlighted), is a complete hand-rolled Disk II RWTS that steps the arm across all 35 tracks and writes each as 16 sectors of D5/AA/96 address fields plus 6-and-2 GCR data, verifying by read-back through raw [[$C0xx]] soft switches; on success layer 2, [[FORMAT_VOLUME]], writes the four ProDOS directory blocks and the volume bitmap through the MLI. The result is an empty `/U1.PLAYER` volume the game can save to.
 
 
 `WRITE_VOLDIR` is the thin wrapper that calls the directory writer and,
@@ -32332,6 +32212,8 @@ RW_SEEKDLT
 @ %def FMT_GEOM RW_DRVSEL RW_HALFTRK RW_RETRY RW_SECMAP RW_SWIDX
 @ %def RW_SEEKDLT
 
+<!-- nwpage: tm | TM — the time machine -->
+
 ## TM: the time machine and the final battle
 
 <a id="ch:tm"></a>
@@ -34265,51 +34147,22 @@ Gem of Immortality still stands.
 
 <a id="fig:mondain-ai"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** Mondain's AI ([[MONDAIN_TURN]]): a three-way choice on distance — melee when adjacent, a coin-flip cast (one of three spells) at mid range, a biased step toward the player when far. Every action also runs the highlighted gem regeneration: while the Gem of Immortality stands, [[GEM_HP]] heals five per turn toward 500, so the player must destroy the gem ([[TM_GET]]) and then finish him before it recovers.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=7mm and 13mm]
-  \node[dgterminal] (e) {MONDAIN\_TURN};
-  \node[dgdecision, below=of e] (dist) {distance to\\player?};
-  \node[dgprocess, below=of dist] (mid) {mid range};
-  \node[dgprocess, left=16mm of dist] (adj) {adjacent};
-  \node[dgprocess, right=16mm of dist] (far) {far};
-  \node[dgprocess, below=of adj] (melee) {MONDAIN\_MELEE\\\scriptsize strike player};
-  \node[dgdecision, below=of mid] (roll) {1/2 roll?};
-  \node[dgprocess, below=of roll] (cast)
-        {MONDAIN\_CAST\\\scriptsize one of 3 spells};
-  \node[dgnote, right=2mm of cast] {missile / mind blast /\\psionic shock};
-  \node[dgprocess, below=of far] (step)
-        {MONDAIN\_STEP\\\scriptsize biased wander toward player};
-  % the gem-regen side effect
-  \node[dgprocess, dgaccentnode, below=22mm of cast, text width=34mm]
-        (regen) {while gem stands: GEM\_HP += 5 toward 500; cycle sprite state};
-
-  \draw[->] (e)--(dist);
-  \draw[->] (dist) -- node[dgnote,above]{adjacent} (adj);
-  \draw[->] (dist) -- node[dgnote,left]{mid} (mid);
-  \draw[->] (dist) -- node[dgnote,above]{far} (far);
-  \draw[->] (adj)--(melee);
-  \draw[->] (mid)--(roll);
-  \draw[->] (roll) -- node[dgnote,left]{yes} (cast);
-  \draw[->] (roll.east) -- node[dgnote,above]{no} ($(roll.east)+(8mm,0)$) |- (step.north east);
-  \draw[->] (far)--(step);
-  % all actions feed the regen tick
-  \draw[->, dgaccentedge] (melee) |- (regen.west);
-  \draw[->, dgaccentedge] (cast) -- (regen);
-  \draw[->, dgaccentedge] (step) |- (regen.east);
-\end{tikzpicture}
-\caption{Mondain's AI ([[MONDAIN_TURN]]): a three-way choice on distance
-  --- melee when adjacent, a coin-flip cast (one of three spells) at mid
-  range, a biased step toward the player when far. Every action also runs
-  the highlighted gem regeneration: while the Gem of Immortality stands,
-  [[GEM_HP]] heals five per turn toward 500, so the player must destroy the
-  gem ([[TM_GET]]) and then finish him before it recovers.}
-\label{fig:mondain-ai}
-\end{figure}
+```mermaid
+flowchart TB
+  e(["MONDAIN_TURN"]) --> dist{"distance to player?"}
+  dist -->|adjacent| melee["MONDAIN_MELEE<br/>strike player"]
+  dist -->|mid| roll{"1/2 roll?"}
+  dist -->|far| step["MONDAIN_STEP<br/>biased wander toward player"]
+  roll -->|yes| cast["MONDAIN_CAST<br/>one of 3 spells (missile / mind blast / psionic shock)"]
+  roll -->|no| step
+  melee --> regen["while gem stands: GEM_HP += 5 toward 500;<br/>cycle sprite state"]
+  cast --> regen
+  step --> regen
+  classDef hot fill:#f6dccb,stroke:#b03a2e,stroke-width:2px;
+  class regen hot;
 ```
+
+**Figure — Mondain's AI ([[MONDAIN_TURN]]):** a three-way choice on distance — melee when adjacent, a coin-flip cast (one of three spells) at mid range, a biased step toward the player when far. Every action also runs the highlighted gem regeneration: while the Gem of Immortality stands, [[GEM_HP]] heals five per turn toward 500, so the player must destroy the gem ([[TM_GET]]) and then finish him before it recovers.
 
 
 <<tm mondain>>=
@@ -36350,55 +36203,26 @@ MI_DECODE:
 
 <a id="fig:mi-decode"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The stream decompressor [[MI_DECODE]], one cell per call. The two run flags let a run resume across calls without re-reading the header. In the idle state it fetches a byte: equal to sentinel A it begins a *vertical run* (a [[(length, value)]] pair painted down the column); equal to sentinel B it begins a *background run* (a [[(rows, span)]] pair that fills a region and saves [[MI_BACK]] so the stream can be replayed); otherwise the byte is a literal cell. All paths converge on the common store-and-advance exit. The driver [[MI_DECOMP]] calls this once per row, column by column.
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 14mm]
-  \node[dgterminal] (entry) {MI\_DECODE\\\scriptsize emit one cell};
-  \node[dgdecision, below=of entry] (rrun) {in a\\vertical run?};
-  \node[dgprocess, right=22mm of rrun] (resA)
-        {paint MI\_VAL down the column\\\scriptsize MI\_RUNLEN -= 1};
-  \node[dgdecision, below=of rrun] (rback) {in a\\background run?};
-  \node[dgprocess, right=22mm of rback] (resB)
-        {fill MI\_VAL across the span\\\scriptsize MI\_ROWS/MI\_SPAN; replay via MI\_BACK};
-  \node[dgio, below=of rback] (fetch) {fetch stream byte\\\scriptsize -> MI\_VAL};
-  \node[dgdecision, below=of fetch] (isA) {== MI\_SENT\_A?};
-  \node[dgprocess, right=22mm of isA] (startA)
-        {start vertical run\\\scriptsize read MI\_RUNLEN, MI\_VAL\\set MI\_F\_RUN};
-  \node[dgdecision, below=of isA] (isB) {== MI\_SENT\_B?};
-  \node[dgprocess, right=22mm of isB] (startB)
-        {start background run\\\scriptsize read MI\_ROWS, MI\_SPAN\\save MI\_BACK; set MI\_F\_BACK};
-  \node[dgprocess, below=of isB] (lit) {literal: store MI\_VAL};
-  \node[dgterminal, below=of lit] (ret) {store cell, advance,\\return (.store\_ret)};
-
-  \draw[->] (entry)--(rrun);
-  \draw[->] (rrun) -- node[dgnote,above]{yes} (resA);
-  \draw[->] (rrun) -- node[dgnote,left]{no} (rback);
-  \draw[->] (rback) -- node[dgnote,above]{yes} (resB);
-  \draw[->] (rback) -- node[dgnote,left]{no} (fetch);
-  \draw[->] (fetch)--(isA);
-  \draw[->] (isA) -- node[dgnote,above]{yes} (startA);
-  \draw[->] (isA) -- node[dgnote,left]{no} (isB);
-  \draw[->] (isB) -- node[dgnote,above]{yes} (startB);
-  \draw[->] (isB) -- node[dgnote,left]{no} (lit);
-  \draw[->] (lit)--(ret);
-  \draw[->] (resA) |- (ret); \draw[->] (resB) |- (ret);
-  \draw[->] (startA) |- (ret); \draw[->] (startB) |- (ret);
-\end{tikzpicture}
-\caption{The stream decompressor [[MI_DECODE]], one cell per call. The two
-  run flags let a run resume across calls without re-reading the header. In
-  the idle state it fetches a byte: equal to sentinel~A it begins a
-  \emph{vertical run} (a [[(length, value)]] pair painted down the column);
-  equal to sentinel~B it begins a \emph{background run} (a [[(rows, span)]]
-  pair that fills a region and saves [[MI_BACK]] so the stream can be
-  replayed); otherwise the byte is a literal cell. All paths converge on
-  the common store-and-advance exit. The driver [[MI_DECOMP]] calls this
-  once per row, column by column.}
-\label{fig:mi-decode}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["MI_DECODE<br/>emit one cell"]) --> rrun{"in a vertical run?"}
+  rrun -->|yes| resA["paint MI_VAL down the column<br/>MI_RUNLEN -= 1"]
+  rrun -->|no| rback{"in a background run?"}
+  rback -->|yes| resB["fill MI_VAL across the span<br/>MI_ROWS/MI_SPAN; replay via MI_BACK"]
+  rback -->|no| fetch[/"fetch stream byte → MI_VAL"/]
+  fetch --> isA{"== MI_SENT_A?"}
+  isA -->|yes| startA["start vertical run<br/>read MI_RUNLEN, MI_VAL; set MI_F_RUN"]
+  isA -->|no| isB{"== MI_SENT_B?"}
+  isB -->|yes| startB["start background run<br/>read MI_ROWS, MI_SPAN; save MI_BACK; set MI_F_BACK"]
+  isB -->|no| lit["literal: store MI_VAL"]
+  lit --> ret(["store cell, advance, return (.store_ret)"])
+  resA --> ret
+  resB --> ret
+  startA --> ret
+  startB --> ret
 ```
+
+**Figure — the stream decompressor [[MI_DECODE]]**, one cell per call. The two run flags let a run resume across calls without re-reading the header. In the idle state it fetches a byte: equal to sentinel A it begins a *vertical run* (a (length, value) pair painted down the column); equal to sentinel B it begins a *background run* (a (rows, span) pair that fills a region and saves [[MI_BACK]] so the stream can be replayed); otherwise the byte is a literal cell. All paths converge on the common store-and-advance exit. The driver [[MI_DECOMP]] calls this once per row, column by column.
 
 
 ### The page-copy helper
@@ -36703,47 +36527,21 @@ MI_PAYLOAD_IMAGE:
 
 <a id="fig:mi-payload"></a>
 
-> **TODO-CONVERT — figure (TikZ → Mermaid):** The payload decompressor (the [[$8700]] stamp). The eight pages the builder copies to [[MI_PAYLOAD]] are a self-contained unpacker plus its own stream. It clears the [[$9600]]–[[$B5FF]] buffer, then walks a high-bit-flagged rle: a byte with bit 7 clear is a literal, a byte with bit 7 set introduces a [[(value, count)]] run. Bit 7 is forced on every emitted byte (the hi-res palette bit), and the loop stops when the destination crosses into page [[$B7]]. The result is the Origin Systems logo at [[LOGO_BUF]], which [[MI_FIZZLE]] then dissolves onto the screen. Contrast the screen-targeted column-major decompressor in Figure [fig:mi-decode](#fig:mi-decode).
-
-```latex
-\begin{figure}[ht]
-\centering
-\begin{tikzpicture}[dg, >=Stealth, node distance=6mm and 16mm]
-  \node[dgterminal] (entry) {payload at [[$8700]]};
-  \node[dgprocess, below=of entry] (zero) {zero [[$9600]]--[[$B5FF]]};
-  \node[dgio, below=of zero] (fetch) {fetch stream byte};
-  \node[dgdecision, below=of fetch] (bit7) {bit 7 set?};
-  \node[dgprocess, right=24mm of bit7] (run)
-        {run: read (value, count)\\\scriptsize emit value count times};
-  \node[dgprocess, below=of bit7] (lit) {literal: emit the byte};
-  \node[dgprocess, below=of lit] (orh)
-        {OR [[$80]] onto each output byte\\\scriptsize set the hi-res palette bit};
-  \node[dgdecision, below=of orh] (done) {dest page\\= [[$B7]]?};
-  \node[dgterminal, below=of done] (ret) {logo ready at LOGO\_BUF};
-
-  \draw[->] (entry)--(zero); \draw[->] (zero)--(fetch);
-  \draw[->] (fetch)--(bit7);
-  \draw[->] (bit7) -- node[dgnote,above]{yes} (run);
-  \draw[->] (bit7) -- node[dgnote,left]{no} (lit);
-  \draw[->] (lit)--(orh);
-  \draw[->] (run) |- (orh);
-  \draw[->] (orh)--(done);
-  \draw[->] (done) -- node[dgnote,right]{no} ($(done.east)+(30mm,0)$) |- (fetch.east);
-  \draw[->] (done) -- node[dgnote,left]{yes} (ret);
-\end{tikzpicture}
-\caption{The payload decompressor (the [[$8700]] stamp). The eight pages
-  the builder copies to [[MI_PAYLOAD]] are a self-contained unpacker plus
-  its own stream. It clears the [[$9600]]--[[$B5FF]] buffer, then walks a
-  high-bit-flagged \textsc{rle}: a byte with bit~7 clear is a literal, a
-  byte with bit~7 set introduces a [[(value, count)]] run. Bit~7 is forced
-  on every emitted byte (the hi-res palette bit), and the loop stops when
-  the destination crosses into page [[$B7]]. The result is the
-  \textsc{Origin Systems} logo at [[LOGO_BUF]], which [[MI_FIZZLE]] then
-  dissolves onto the screen. Contrast the screen-targeted column-major
-  decompressor in Figure~\ref{fig:mi-decode}.}
-\label{fig:mi-payload}
-\end{figure}
+```mermaid
+flowchart TB
+  entry(["payload at $8700"]) --> zero["zero $9600–$B5FF"]
+  zero --> fetch[/"fetch stream byte"/]
+  fetch --> bit7{"bit 7 set?"}
+  bit7 -->|yes| run["run: read (value, count)<br/>emit value count times"]
+  bit7 -->|no| lit["literal: emit the byte"]
+  lit --> orh["OR $80 onto each output byte<br/>set the hi-res palette bit"]
+  run --> orh
+  orh --> done{"dest page = $B7?"}
+  done -->|no| fetch
+  done -->|yes| ret(["logo ready at LOGO_BUF"])
 ```
+
+**Figure — the payload decompressor (the [[$8700]] stamp).** The eight pages the builder copies to [[MI_PAYLOAD]] are a self-contained unpacker plus its own stream. It clears the [[$9600]]–[[$B5FF]] buffer, then walks a high-bit-flagged RLE: a byte with bit 7 clear is a literal, a byte with bit 7 set introduces a (value, count) run. Bit 7 is forced on every emitted byte (the hi-res palette bit), and the loop stops when the destination crosses into page [[$B7]]. The result is the Origin Systems logo at [[LOGO_BUF]], which [[MI_FIZZLE]] then dissolves onto the screen. Contrast the screen-targeted column-major decompressor in [the stream decompressor figure](#fig:mi-decode).
 
 
 ### The intro artwork
@@ -40656,33 +40454,19 @@ reverse engineering proceeds.
 
 <a id="tab:memory-map"></a>
 
-> **TODO-CONVERT — table (→ pipe/HTML table):** Memory map as currently known. Boot-time and run-time uses of the same ranges are noted; details will be refined in later rounds.
+**Table — memory map as currently known.** Boot-time and run-time uses of the same ranges are noted; details will be refined in later rounds.
 
-```latex
-\begin{table}[H]
-\centering
-\ra{1.1}
-\begin{tabular}{@{}lll@{}}
-\toprule
-\thead{Range} & \thead{Contents} & \thead{Source} \\
-\midrule
-\$0000--\$00FF & zero page (PROM, boot, game workspaces) & --- \\
-\$0800--\$09FF & boot block (boot time only) & block 0 \\
-\$0800--\$1FFF & \texttt{STUPH} resident library (run time;
-  \texttt{MAPCHARS} overlays \$0800--\$0BFF in towns/castles) & files \\
-\$0C00--\$13FF & volume directory buffer (boot time) & boot \\
-\$1E00--\$1FFF & kernel index block buffer (boot time) & boot \\
-\$2000--\$3FFF & hi-res page 1; kernel load area (boot time) & --- \\
-\$4000--\$5FFF & hi-res page 2; \texttt{TCMAPS}/\texttt{NIF} data & files \\
-\$7000--\$8955 & \texttt{MI.U1} resident engine & file \\
-\$8956--\$ABFF & mode overlay region (\texttt{OUT} \dots \texttt{TM}) & files \\
-high memory & ProDOS kernel (relocated) & \texttt{PRODOS} \\
-\bottomrule
-\end{tabular}
-\caption{Memory map as currently known. Boot-time and run-time uses of
-the same ranges are noted; details will be refined in later rounds.}
-\label{tab:memory-map}
-\end{table}
-```
+| Range | Contents | Source |
+|---|---|---|
+| [[$0000]]–[[$00FF]] | zero page (PROM, boot, game workspaces) | — |
+| [[$0800]]–[[$09FF]] | boot block (boot time only) | block 0 |
+| [[$0800]]–[[$1FFF]] | `STUPH` resident library (run time; `MAPCHARS` overlays [[$0800]]–[[$0BFF]] in towns/castles) | files |
+| [[$0C00]]–[[$13FF]] | volume directory buffer (boot time) | boot |
+| [[$1E00]]–[[$1FFF]] | kernel index block buffer (boot time) | boot |
+| [[$2000]]–[[$3FFF]] | hi-res page 1; kernel load area (boot time) | — |
+| [[$4000]]–[[$5FFF]] | hi-res page 2; `TCMAPS`/`NIF` data | files |
+| [[$7000]]–[[$8955]] | `MI.U1` resident engine | file |
+| [[$8956]]–[[$ABFF]] | mode overlay region (`OUT` … `TM`) | files |
+| high memory | ProDOS kernel (relocated) | `PRODOS` |
 
 
