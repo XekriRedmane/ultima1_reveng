@@ -96,7 +96,7 @@ def main() -> None:
             and viol == 0)
     if done:
         print('  All measurable criteria met. Remaining work is editorial:')
-        print('  synthesis chapters, organization, and PDF quality.')
+        print('  synthesis chapters, organization, and HTML site quality.')
     else:
         print('  Work remains — pick the first failing criterion above,')
         print('  or run /find-gaps for byte-level targets.')

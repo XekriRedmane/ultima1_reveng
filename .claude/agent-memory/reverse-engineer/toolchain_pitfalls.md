@@ -132,10 +132,11 @@ Toolchain facts proven byte-perfect in rounds 0-2.
   resolve. Splitting it on the documented entry points (MI_DECODE_RUN/_BACK)
   forces cross-chunk .L refs that die in the real per-chunk tangle. Keep the
   documented entries as local labels (.run/.back) inside the single scope.
-- A `$[[...]]` code-ref inside LaTeX math mode CRASHES pdflatex ("\ttfamily
-  invalid in math mode") -- noweb [[ ]] expands to \Tt{} which can't live in
-  $...$. Never put an address ref inside math; write the formula in words or
-  put the math and the ref in separate spans (round 25).
+- Don't put a `[[ ]]` address ref inside `$...$` math: the weaver's $...$
+  rule hands the whole span to KaTeX as TeX, so a `[[ ]]` inside is not a
+  link and renders as literal TeX. Write the formula in words, or keep the
+  math and the ref in separate spans. (HTML-era restatement of the old
+  pdflatex math-mode crash, round 25.)
 - The status.py plate heuristic needs the LITERAL "Behavior:" within 15 lines
   of SUBROUTINE; a perfectly good plate written without that header word counts
   as "missing" (round 25 had 4). Always include a "Behavior:" line.

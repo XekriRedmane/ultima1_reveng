@@ -52,16 +52,20 @@ Added chapter labels for cross-refs: ch:boot, ch:intro, ch:stuph,
 ch:engine (the assembly chapters), plus the five above. sec:makeindata is
 the MAKE.INDATA section (a \section under \chapter{Game data}, NOT a chapter).
 
-KEY CONVENTIONS proven for synthesis prose:
-- verbatim/struct/pseudocode blocks are EXEMPT from the prose [[ ]] address-
-  wrapping rule (they are literal, like code) -- the style-sweep awk must skip
-  \begin{verbatim}..\end{verbatim}.
-- a $[[...]] code-ref inside LaTeX MATH MODE crashes pdflatex; never put an
-  address ref inside $...$ (write the formula in words or split the spans).
-- opcode BYTE values in prose (\texttt{\$B0}, \texttt{\$2C}) are an allowed
-  exception (CLAUDE.md) -- texttt, not [[ ]].
-- \ref a section as section~\ref{sec:...}, not chapter~\ref -- mismatched
-  \chapter/\section labels show as "undefined" only on the 2nd pdflatex pass.
+KEY CONVENTIONS proven for synthesis prose (now Markdown/HTML -- the doc
+weaves to HTML via weave_html.py; the old LaTeX notes below are restated):
+- fenced code / pseudocode blocks (```text, ```mermaid) are literal and
+  EXEMPT from the prose [[ ]] address-wrapping rule, like code chunks.
+- don't put a [[ ]] address ref inside $...$ math -- KaTeX renders the span
+  as TeX, so the ref won't link; write the formula in words or split spans.
+- opcode BYTE values in prose are written as `code` backticks (e.g. `$B0`,
+  `$2C`), not [[ ]] -- and wrapping a $NN that sits next to another $ in
+  backticks also stops the $...$ math rule from eating the span.
+- diagrams are Mermaid (```mermaid), state machines/flowcharts included;
+  byte/record/memory layouts are HTML tables; data tables are pipe tables.
+- cross-reference with a Markdown link to the target's anchor
+  (`[text](#fig:...)` / `[[SYMBOL]]`); the weaver resolves anchors
+  site-wide across the multi-page split, so cross-page refs just work.
 
 WHAT REMAINS: nothing valuable. All three formerly-open optional items are
 resolved (rounds 31-32): the SPA flight-model + chargen point-buy algorithm

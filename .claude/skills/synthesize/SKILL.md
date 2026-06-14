@@ -26,12 +26,12 @@ These are prose chapters/sections in main.nw, separate from (and cross-referenci
 
 ## Process
 
-1. **Audit.** List which of the six sections above exist in main.nw and which subsystems each covers. Compare against the subsystems actually documented at the assembly level (grep for `\section` headers and the agent-memory notes). The gap list is the work queue.
-2. **Recover the design, don't restate the code.** For each target subsystem, re-read the relevant annotated routines and write what the *programmer was implementing*: state machines (draw them as tables: state, transition condition, next state), formulas (in math or pseudocode, not LDA/ADC sequences), tuning constants (collected into tables with their gameplay meaning).
-3. **Use the document's existing evidence.** Cross-reference routines and variables with `[[SYMBOL]]` noweb refs. Reference rendered sprite/font images by their figures. Follow all prose rules in CLAUDE.md (address wrapping, symbol preference).
-4. **Pseudocode convention.** Use typed, language-neutral pseudocode in `verbatim`/`alltt` blocks or LaTeX algorithm-style lists. Name things with the same symbols as the assembly (`ZP_PLAYER_Y` etc.) so the reader can drill down.
+1. **Audit.** List which of the six sections above exist in main.nw and which subsystems each covers. Compare against the subsystems actually documented at the assembly level (grep for `##`/`###` Markdown headings and the agent-memory notes). The gap list is the work queue.
+2. **Recover the design, don't restate the code.** For each target subsystem, re-read the relevant annotated routines and write what the *programmer was implementing*: state machines and control flow (draw them as Mermaid `flowchart`/`stateDiagram` in ```mermaid blocks — accent stroke `#b03a2e` for win/critical paths, dashed `-.->` for death/discarded), formulas (in `$…$` math or pseudocode, not LDA/ADC sequences), tuning constants (collected into pipe tables with their gameplay meaning), and byte/record layouts (as HTML tables).
+3. **Use the document's existing evidence.** Cross-reference routines and variables with `[[SYMBOL]]` refs. Reference rendered sprite/font images by their figures. Follow all prose rules in CLAUDE.md (address wrapping, symbol preference, Mermaid/table conventions).
+4. **Pseudocode convention.** Use typed, language-neutral pseudocode in fenced code blocks (```text) or Markdown lists. Name things with the same symbols as the assembly (`ZP_PLAYER_Y` etc.) so the reader can drill down.
 5. **Place chapters deliberately.** Synthesis chapters go before the assembly chapters they summarize (overview first, evidence after) or in a dedicated part — follow the document's established structure, and propose reorganization when the structure fights comprehension.
-6. **Verify and commit.** Synthesis work is prose-only, but still run the full build gate (tangle, assemble, verify, PDF) before committing — LaTeX errors in new prose are common.
+6. **Verify and commit.** Synthesis work is prose-only, but still run the full build gate (tangle, assemble, verify, then `/gen-html`) before committing — broken `[[ ]]` refs and malformed Mermaid blocks in new prose are common.
 
 ## Quality bar
 

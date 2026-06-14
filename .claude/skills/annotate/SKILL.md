@@ -12,7 +12,7 @@ Annotate an existing documented routine: replace raw addresses and constants wit
 ROUTINE_NAME is the label of a routine already in main.nw.
 
 When annotating all routines in a section or subsection:
-1. Find the section boundaries by **line number**: search for the `\section{...}` or `\subsection{...}` header, then find the NEXT header at the same or higher level. The range is ALL lines between these two headers. Do NOT use any address range in the section title as the boundary — the title is just a summary and may not cover all routines in the section.
+1. Find the section boundaries by **line number**: search for the Markdown heading (`## ` for a section, `### ` for a subsection), then find the NEXT heading at the same or higher level. The range is ALL lines between these two headers. Do NOT use any address range in the section title as the boundary — the title is just a summary and may not cover all routines in the section.
 2. List ALL routines (ORG + `@ %def` pairs) within the line range. Print the list and verify it is complete before proceeding.
 3. Skip routines that already have plate comments (a `;` comment block with `; Inputs:` or `; Behavior:` immediately after SUBROUTINE).
 4. Launch **parallel sub-agents** (one per routine, or group small related routines). Each sub-agent receives the routine source text as INPUT and returns PROPOSED REPLACEMENT TEXT. Sub-agents must **NOT edit the file directly** — they only return text. This prevents concurrent clobbering when multiple agents run in parallel on the same file.
