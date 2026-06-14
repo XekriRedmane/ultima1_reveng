@@ -1,6 +1,7 @@
 {
   "game": "Ultima I: The First Age of Darkness (Origin Systems, 1986; all-assembly remake of California Pacific's 1981 Ultima) — 4am crack preservation release",
   "disk_image": "Ultima I - The Beginning (4am crack).dsk",
+  "source_url": "https://archive.org/details/UltimaITheBeginning4amCrack",
   "dsk_sector_order": "dos33",
   "filesystem": "ProDOS 1.1.1 volume /U1 (extract with .claude/scripts/prodos_extract.py)",
   "nw_source": "main.nw",

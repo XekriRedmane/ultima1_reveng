@@ -33,7 +33,7 @@ time-machine endgame — each implemented as a separate overlay loaded at
 | Title | Ultima I: The First Age of Darkness |
 | Publisher | Origin Systems, 1986 (remake of California Pacific's 1981 *Ultima*) |
 | Platform | Apple II |
-| Disk | 4am crack — DOS-order `.dsk`, ProDOS 1.1.1 volume `/U1` |
+| Disk | [4am crack](https://archive.org/details/UltimaITheBeginning4amCrack) — DOS-order `.dsk`, ProDOS 1.1.1 volume `/U1` |
 | Code | Entirely 6502 assembly |
 
 ## Assembly targets
