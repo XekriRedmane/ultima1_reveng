@@ -1,8 +1,19 @@
+# Normalize all text files to LF, both in the repository and in working-tree
+# checkouts on every platform. Git auto-detects text vs. binary; the explicit
+# binary rules below are belt-and-suspenders so line-ending normalization can
+# never corrupt a disk image, reference binary, or image asset.
+* text=auto eol=lf
+
+# Binary assets: never touch line endings.
+*.png   binary
+*.bin   binary
+*.dsk   binary
+
 # Shell scripts and the Docker entrypoint must use LF endings, otherwise the
 # container fails with "exec docker-entrypoint.sh: no such file or directory"
 # (the kernel reads the "#!/bin/bash\r" shebang literally). Force LF even on
 # Windows checkouts.
-*.sh            text eol=lf
+*.sh                 text eol=lf
 docker-entrypoint.sh text eol=lf
-Dockerfile      text eol=lf
-*.py            text eol=lf
+Dockerfile           text eol=lf
+*.py                 text eol=lf
